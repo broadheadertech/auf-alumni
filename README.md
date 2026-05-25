@@ -1,37 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AUF Alumni Network
 
-## Getting Started
+The school-verified alumni network and hiring platform for **Angeles University Foundation** graduates and the employers who want to hire them.
 
-First, run the development server:
+- **App**: Next.js 16 (App Router, Turbopack)
+- **Backend**: Convex (live deployment: `judicious-goose-928`)
+- **Planning**: BMAD Method v6.6.0 — planning artifacts live in the parent project tree
+
+## Quick start
 
 ```bash
+npm install
+
+# 1. Generate Convex types (REQUIRED on first checkout — _generated/ is gitignored)
+npx convex dev
+#   The CLI prompts to log in + link the deployment. Pick `judicious-goose-928`.
+#   Leave this running in one terminal — it watches convex/ and hot-pushes.
+
+# 2. In a second terminal, run the Next dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+If you see `Module not found: Can't resolve '../../convex/_generated/api'`, you skipped step 1.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Demo accounts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+After running `npx convex run seedAccounts:run` (one-time, idempotent):
 
-## Learn More
+| Role     | Email                       | Password                 |
+| -------- | --------------------------- | ------------------------ |
+| Alumna   | `alumna@demo.auf.local`     | `DemoAlumna-2026-Pass`   |
+| Employer | `employer@demo.auf.local`   | `DemoEmployer-2026-Pass` |
+| Admin    | `admin@demo.auf.local`      | `DemoAdmin-2026-Pass`    |
 
-To learn more about Next.js, take a look at the following resources:
+For demo content (10 alumni, 6 employers, 6 jobs, events, posts):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npx convex run seed:run
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Both seeders are idempotent — safe to re-run.
 
-## Deploy on Vercel
+## Scripts
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run dev               # next dev (Turbopack)
+npm run build             # production build
+npm run lint              # eslint
+npm run lint:privacy      # custom: enforces applyPrivacy on profiles reads
+npm run lint:admin        # custom: enforces requireRole + withAuditLog on admin mutations
+npm test                  # vitest
+npx tsc --noEmit          # typecheck
+npx convex dev --once     # one-shot Convex push
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-# auf-alumni
+## Architecture highlights
+
+- **Three-sided marketplace**: alumni / employers / school admin — each gets its own shell + nav
+- **Per-field privacy tiers** (`public` / `alumni` / `connections` / `private`) — enforced by `applyPrivacy` invariant + lint script
+- **Audit logging** — every admin mutation wrapped with `withAuditLog`, lint-enforced
+- **DPA compliance** — DSR tracking, 72-hour incident clock, k-anonymity (k≥5) on analytics exports
+- **Convex Auth** with email/password + JWT (Scrypt hashing via Lucia)
+
+## Status
+
+All 16 epics across 3 phases are implemented (MVP + Phase 2 + Phase 3). Demo accounts work end-to-end; brand visuals from the Claude Design prototype are in place.
