@@ -1,26 +1,256 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "../styles/tokens.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Locked-in AUF font stack — Geist for UI, Source Serif 4 for editorial,
+   * JetBrains Mono for utility ticks. No system-default fallback to anything
+   * else; the named font must always win.
+   */
   --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-source-serif);
+  --font-mono: var(--font-jetbrains-mono);
+  --font-heading: var(--font-source-serif);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  /* AUF brand — royal blue + gold from the official seal */
+  --brand: oklch(0.36 0.14 264);
+  --brand-deep: oklch(0.22 0.09 264);
+  --brand-ink: oklch(0.26 0.11 264);
+  --brand-50: oklch(0.97 0.02 264);
+  --brand-100: oklch(0.93 0.04 264);
+  --brand-200: oklch(0.85 0.08 264);
+  --gold: oklch(0.78 0.14 82);
+  --gold-50: oklch(0.97 0.04 82);
+  --gold-ink: oklch(0.50 0.10 82);
+
+  /* Warm-white surfaces from the design */
+  --bg: oklch(0.985 0.004 90);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.005 90);
+  --border-soft: oklch(0.91 0.006 90);
+  --border-strong: oklch(0.84 0.008 90);
+  --ink: oklch(0.18 0.01 152);
+  --ink-2: oklch(0.36 0.01 152);
+  --ink-3: oklch(0.55 0.01 152);
+  --ink-4: oklch(0.72 0.008 90);
+
+  --shadow-card: 0 1px 0 oklch(0.92 0.005 90), 0 1px 2px -1px oklch(0 0 0 / 0.06);
+
+  /* shadcn tokens — re-mapped to AUF palette so existing components inherit */
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--brand);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--brand-50);
+  --accent-foreground: var(--brand-ink);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: var(--border-soft);
+  --input: var(--border-soft);
+  --ring: var(--brand);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Form controls don't inherit font-family by default in any browser —
+   * force them so Geist applies to inputs, textareas, selects, buttons. */
+  input, textarea, select, button, kbd {
+    font-family: inherit;
+  }
+  kbd {
+    font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* ──────────────────────────────────────────────────────────
+ * AUF design utilities (ported from Claude Design prototype)
+ * Use these alongside Tailwind for the marketing + auth shells
+ * and the alumni Sidebar / TopBar chrome.
+ * ────────────────────────────────────────────────────────── */
+@layer utilities {
+  .font-serif { font-family: var(--font-source-serif), Georgia, serif; }
+  .font-mono  { font-family: var(--font-jetbrains-mono), ui-monospace, monospace; }
+
+  .auf-card    { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 14px; box-shadow: var(--shadow-card); }
+  .auf-hairline { border-color: var(--border-soft); }
+
+  .ink   { color: var(--ink); }
+  .ink-2 { color: var(--ink-2); }
+  .ink-3 { color: var(--ink-3); }
+  .ink-4 { color: var(--ink-4); }
+
+  .brand-bg { background: var(--brand); }
+  .brand-fg { color: var(--brand); }
+  .brand-50 { background: var(--brand-50); }
+  .gold-bg  { background: var(--gold); }
+  .gold-fg  { color: var(--gold-ink); }
+
+  /* Buttons */
+  .auf-btn { display:inline-flex; align-items:center; gap:.5rem; padding: .55rem .9rem; border-radius: 10px; font-weight:500; font-size:.875rem; transition: all .15s ease; border:1px solid transparent; white-space:nowrap; cursor:pointer; }
+  .auf-btn-primary { background: var(--brand); color: white; }
+  .auf-btn-primary:hover { filter: brightness(1.08); }
+  .auf-btn-ghost { color: var(--ink-2); background: transparent; }
+  .auf-btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+  .auf-btn-outline { border-color: var(--border-strong); color: var(--ink); background: var(--surface); }
+  .auf-btn-outline:hover { background: var(--surface-2); }
+  .auf-btn-sm { padding: .35rem .65rem; font-size: .8125rem; }
+
+  /* Chips */
+  .auf-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .55rem; border-radius:999px; font-size:.75rem; font-weight:500; border:1px solid var(--border-soft); background: var(--surface); color: var(--ink-2); }
+  .auf-chip-brand { background: var(--brand-50); color: var(--brand-ink); border-color: oklch(0.88 0.05 264); }
+  .auf-chip-gold  { background: var(--gold-50); color: var(--gold-ink); border-color: oklch(0.9 0.06 85); }
+  .auf-chip-verified { background: oklch(0.96 0.04 145); color: oklch(0.36 0.13 145); border-color: oklch(0.85 0.08 145); }
+
+  /* Sidebar nav */
+  .auf-nav-item { display:flex; align-items:center; gap:.7rem; padding:.55rem .75rem; border-radius:10px; color: var(--ink-2); font-size:.9rem; font-weight:500; cursor:pointer; position:relative; transition: background .15s, color .15s; }
+  .auf-nav-item:hover { background: var(--surface-2); color: var(--ink); }
+  .auf-nav-item.active { background: var(--brand-50); color: var(--brand-ink); }
+  .auf-nav-item.active::before { content:""; position:absolute; left:-12px; top:8px; bottom:8px; width:3px; background: var(--brand); border-radius:3px; }
+
+  /* Topbar search */
+  .auf-search { background: var(--surface-2); border:1px solid transparent; padding:.5rem .85rem .5rem 2.25rem; border-radius: 10px; width:100%; font-size:.875rem; color: var(--ink); }
+  .auf-search:focus { outline:none; background: var(--surface); border-color: var(--border-strong); }
+
+  /* Auth inputs */
+  .auf-input { width:100%; padding:.65rem .85rem; border:1px solid var(--border-strong); border-radius:10px; background: var(--surface); font-size:14px; color: var(--ink); transition: border-color .15s, box-shadow .15s; }
+  .auf-input:focus { outline:none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-100); }
+
+  /* Section eyebrow */
+  .section-eyebrow { font-size:.7rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color: var(--ink-3); }
+
+  /* Avatar gradient backgrounds */
+  .av-grad-1 { background: linear-gradient(135deg, oklch(0.78 0.1 152), oklch(0.55 0.13 152)); }
+  .av-grad-2 { background: linear-gradient(135deg, oklch(0.82 0.09 85),  oklch(0.6 0.13 60)); }
+  .av-grad-3 { background: linear-gradient(135deg, oklch(0.78 0.09 240), oklch(0.5 0.13 250)); }
+  .av-grad-4 { background: linear-gradient(135deg, oklch(0.8 0.09 30),   oklch(0.55 0.14 20)); }
+  .av-grad-5 { background: linear-gradient(135deg, oklch(0.8 0.08 290),  oklch(0.55 0.13 280)); }
+  .av-grad-6 { background: linear-gradient(135deg, oklch(0.82 0.09 180), oklch(0.55 0.12 200)); }
+
+  .ring-brand { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand); }
+
+  /* Pulse dot for "live / online" */
+  @keyframes auf-pulse { 0%,100% { opacity:.4 } 50% { opacity:1 } }
+  .live-dot { width:7px; height:7px; border-radius:50%; background: oklch(0.55 0.18 145); display:inline-block; animation: auf-pulse 1.6s infinite; }
+
+  /* Striped placeholder image */
+  .placeholder-img {
+    background: repeating-linear-gradient(135deg,
+      oklch(0.94 0.005 90) 0 12px,
+      oklch(0.97 0.005 90) 12px 24px);
+    color: oklch(0.5 0.01 90);
+    font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border-soft);
+  }
 }

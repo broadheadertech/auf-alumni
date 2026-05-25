@@ -1,0 +1,36 @@
+/*
+ * AUF Alumni — design tokens (Story 1.6)
+ *
+ * Three palettes that work together. The trust-signal palette is brand-independent
+ * — when AUF brand colors land, only the neutral chrome + brand accent variables
+ * need to change. See ux-design-specification.md §Visual Design Foundation.
+ */
+
+:root {
+  /* Trust-signal palette — fixed across brand themes */
+  --color-verified: oklch(0.55 0.18 145); /* school-green — alumni verified badge */
+  --color-partner: oklch(0.55 0.16 280); /* partner-purple — Partner Employer badge */
+  --color-employer: oklch(0.55 0.14 240); /* employer-blue — Verified Employer badge */
+  --color-warning: oklch(0.70 0.15 60); /* amber — admin attention, registry mismatch */
+  --color-success: oklch(0.65 0.17 145); /* fresh-green — approval state */
+
+  /* Privacy-tier palette — visual hierarchy from open to private */
+  --color-privacy-public: oklch(0.55 0.04 220); /* slate-blue */
+  --color-privacy-alumni: oklch(0.55 0.18 145); /* school-green (shared semantic) */
+  --color-privacy-connections: oklch(0.65 0.17 60); /* warm amber */
+  --color-privacy-private: oklch(0.30 0 0); /* near-black */
+
+  /* Density modifier — set via [data-density="..."] on a group-layout container */
+  --density-spacing: 1rem;
+  --density-font-base: 0.95rem;
+}
+
+[data-density="compact"] {
+  --density-spacing: 0.5rem;
+  --density-font-base: 0.875rem;
+}
+
+[data-density="dense"] {
+  --density-spacing: 0.25rem;
+  --density-font-base: 0.8125rem;
+}
