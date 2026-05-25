@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 /**
  * Admin job-post moderation queue (Epic 13).
@@ -38,7 +38,7 @@ export default function AdminJobModerationPage() {
 
   if (queue === undefined) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -73,7 +73,7 @@ export default function AdminJobModerationPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8">
+    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">
         Job moderation queue
       </h1>

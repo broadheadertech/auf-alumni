@@ -136,7 +136,7 @@ export default function FeedPage() {
     profileSnap?.displayName ?? meSnap?.name ?? meSnap?.email ?? null;
 
   return (
-    <div className="grid grid-cols-12 gap-6 px-7 py-6">
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 px-4 sm:px-7 py-6">
       {/* Main column */}
       <div className="col-span-12 lg:col-span-8 space-y-5">
         <GreetingHero name={personName} />

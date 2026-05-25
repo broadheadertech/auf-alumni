@@ -36,14 +36,14 @@ export default function MentorshipPage() {
 
   if (data === undefined) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (data === null) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Sign in to view mentorship"
           cta={{ label: "Sign in", href: "/login" }}
@@ -107,7 +107,7 @@ export default function MentorshipPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Mentorship</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Brief, structured 30-minute sessions. Pick from proposed windows;

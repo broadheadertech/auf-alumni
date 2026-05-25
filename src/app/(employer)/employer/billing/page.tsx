@@ -51,14 +51,14 @@ export default function EmployerBillingPage() {
 
   if (employersRaw === undefined) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (!employers || employers.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="No employer organisations yet"
           description="Once an admin grants you Partner access or you complete Verified-tier onboarding, billing surfaces here."
@@ -83,7 +83,7 @@ export default function EmployerBillingPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Plan, quota, and recent payment events. Card data never touches our

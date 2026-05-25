@@ -19,21 +19,21 @@ export default function AdminReportsPage() {
 
   if (metrics === undefined) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (metrics === null) {
     return (
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState message="Admin access required" cta={{ label: "Sign in", href: "/login" }} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-6">
+    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
       <p className="text-sm text-muted-foreground">
         Weekly and monthly operational summaries.

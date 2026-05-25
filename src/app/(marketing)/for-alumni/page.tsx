@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function ForAlumniPage() {
   return (
-    <div className="max-w-[860px] mx-auto px-7 py-16">
+    <div className="max-w-[860px] mx-auto px-4 sm:px-7 py-12 sm:py-16">
       <div className="section-eyebrow brand-fg mb-3">For alumni</div>
       <h1 className="font-serif text-[40px] sm:text-[48px] leading-tight font-semibold">
         Built for you, free for life.

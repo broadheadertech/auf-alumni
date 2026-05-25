@@ -107,7 +107,7 @@ function Hero() {
             "radial-gradient(circle at 15% 0%, var(--brand) 0%, transparent 45%), radial-gradient(circle at 90% 110%, var(--gold) 0%, transparent 40%)",
         }}
       />
-      <div className="max-w-[1240px] mx-auto px-7 pt-20 pb-24 grid grid-cols-12 gap-10 relative">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 pt-12 pb-16 sm:pt-20 sm:pb-24 grid grid-cols-12 gap-10 relative">
         <div className="col-span-12 lg:col-span-7">
           <div className="auf-chip auf-chip-brand mb-5">
             <span className="live-dot" /> Now open to all AUF alumni
@@ -277,7 +277,7 @@ function StatsStrip({ stats }: { stats: PublicStats }) {
   ];
   return (
     <section className="border-y auf-hairline" style={{ background: "var(--surface)" }}>
-      <div className="max-w-[1240px] mx-auto px-7 py-10 grid grid-cols-2 md:grid-cols-4">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-8 sm:py-10 grid grid-cols-2 md:grid-cols-4">
         {rows.map(([v, l], i) => (
           <div key={l} className={`text-center ${i > 0 ? "md:border-l auf-hairline" : ""}`}>
             <div className="font-serif text-[32px] md:text-[40px] font-semibold leading-none">
@@ -313,7 +313,7 @@ function HowItWorks() {
     },
   ];
   return (
-    <section className="max-w-[1240px] mx-auto px-7 py-20">
+    <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
       <div className="text-center mb-12">
         <div className="section-eyebrow brand-fg">How it works</div>
         <h2 className="font-serif text-[32px] md:text-[40px] font-semibold mt-3 leading-tight">
@@ -354,7 +354,7 @@ function formatPay(job: PublicJob): string | null {
 function FeaturedJobs({ jobs }: { jobs: PublicJob[] }) {
   return (
     <section className="border-y auf-hairline" style={{ background: "var(--surface-2)" }}>
-      <div className="max-w-[1240px] mx-auto px-7 py-20">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
           <div>
             <div className="section-eyebrow brand-fg">Hiring now</div>
@@ -432,7 +432,7 @@ function batchSuffix(batch?: number): string {
 
 function MentorSpotlight({ mentors }: { mentors: PublicMentor[] }) {
   return (
-    <section className="max-w-[1240px] mx-auto px-7 py-20">
+    <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
       <div className="grid gap-10 lg:grid-cols-12 items-center">
         <div className="lg:col-span-5">
           <div className="section-eyebrow brand-fg">Mentorship</div>
@@ -522,7 +522,7 @@ function MentorSpotlight({ mentors }: { mentors: PublicMentor[] }) {
 function Testimonial() {
   return (
     <section className="py-20" style={{ background: "var(--brand-deep)", color: "white" }}>
-      <div className="max-w-[1000px] mx-auto px-7 text-center">
+      <div className="max-w-[1000px] mx-auto px-4 sm:px-7 text-center">
         <div className="text-[80px] font-serif leading-none" style={{ color: "var(--gold)" }}>
           &ldquo;
         </div>
@@ -547,8 +547,8 @@ function Testimonial() {
 
 function FinalCTA() {
   return (
-    <section className="max-w-[1240px] mx-auto px-7 py-24">
-      <div className="auf-card p-12 relative overflow-hidden text-center">
+    <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-24">
+      <div className="auf-card p-6 sm:p-12 relative overflow-hidden text-center">
         <div
           className="absolute inset-0 pointer-events-none opacity-[0.07]"
           style={{

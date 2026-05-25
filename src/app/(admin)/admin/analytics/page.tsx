@@ -31,14 +31,14 @@ export default function AdminAnalyticsPage() {
 
   if (data === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (data === null) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Admin access required"
           cta={{ label: "Sign in", href: "/login" }}
@@ -73,7 +73,7 @@ export default function AdminAnalyticsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

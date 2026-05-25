@@ -74,14 +74,14 @@ export default function CompliancePage() {
 
   if (dsrs === undefined || incidents === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (dsrs === null || incidents === null) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Super-admin access required"
           cta={{ label: "Back to dashboard", href: "/admin/dashboard" }}
@@ -158,7 +158,7 @@ export default function CompliancePage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Compliance</h1>
       <p className="text-sm text-muted-foreground">
         Data subject rights (DPA) + incident response (NFR34 72-hour window).

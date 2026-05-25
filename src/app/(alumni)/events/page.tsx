@@ -133,7 +133,7 @@ export default function EventsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-serif text-[28px] font-semibold leading-tight">
@@ -421,18 +421,18 @@ function CreateEventDialog({
               className="auf-input"
             />
           </Field>
-          <div className="flex justify-end gap-2 pt-3">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="auf-btn auf-btn-outline"
+              className="auf-btn auf-btn-outline justify-center"
               disabled={submitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="auf-btn auf-btn-primary"
+              className="auf-btn auf-btn-primary justify-center"
               disabled={submitting}
             >
               {submitting ? (

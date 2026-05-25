@@ -74,18 +74,23 @@ export default function MessagesPage() {
 
   if (threads === undefined) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>
       <div className="mt-4 grid gap-4 lg:grid-cols-[260px_1fr]">
-        {/* Thread list */}
-        <aside className="space-y-1">
+        {/* Thread list — hide on mobile when a thread is active so the thread view fills the screen */}
+        <aside
+          className={cn(
+            "space-y-1",
+            activeThreadId && "hidden lg:block",
+          )}
+        >
           {list.length === 0 ? (
             <Card>
               <CardContent className="p-4 text-sm text-muted-foreground">
@@ -136,7 +141,15 @@ export default function MessagesPage() {
             </Card>
           ) : (
             <>
-              <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2 border-b border-border pb-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveThreadId(null)}
+                  className="lg:hidden p-2 -ml-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                  aria-label="Back to conversations"
+                >
+                  <span aria-hidden>←</span>
+                </button>
                 <h2 className="text-sm font-medium">
                   {thread.otherSlug ? (
                     <Link

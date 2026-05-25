@@ -20,7 +20,7 @@ export default function AdminDashboardPage() {
 
   if (metrics === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">
             Loading…
@@ -32,7 +32,7 @@ export default function AdminDashboardPage() {
 
   if (metrics === null) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Admin access required"
           cta={{ label: "Sign in", href: "/login" }}
@@ -42,7 +42,7 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

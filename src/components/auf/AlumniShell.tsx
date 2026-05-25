@@ -6,8 +6,12 @@
  * Renders the AUFWordmark on a navy band, the role-aware nav, a network
  * mini-stats block, and the user-profile footer card. The topbar handles
  * page title, search, notifications, and the "Post a job" CTA.
+ *
+ * Below `lg` the sidebar slides off-canvas and is toggled by a hamburger
+ * in the topbar.
  */
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
@@ -18,11 +22,13 @@ import {
   GraduationCap,
   Home,
   LogOut,
+  Menu,
   MessageCircle,
   Plus,
   Search,
   Settings,
   Users,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { AUFWordmark } from "./AUFMark";
@@ -68,18 +74,44 @@ function titleFor(pathname: string): string {
 
 export function AlumniShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Reset drawer on navigation.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [pathname]);
+
   return (
     <div className="min-h-screen flex" data-density="cozy">
-      <Sidebar pathname={pathname} />
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          aria-hidden
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+      <Sidebar
+        pathname={pathname}
+        drawerOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+      />
       <main className="flex-1 min-w-0">
-        <TopBar pathname={pathname} />
+        <TopBar pathname={pathname} onOpenDrawer={() => setDrawerOpen(true)} />
         {children}
       </main>
     </div>
   );
 }
 
-function Sidebar({ pathname }: { pathname: string }) {
+function Sidebar({
+  pathname,
+  drawerOpen,
+  onClose,
+}: {
+  pathname: string;
+  drawerOpen: boolean;
+  onClose: () => void;
+}) {
   const me = useQuery(api.users.getMe);
   const myProfile = useQuery(api.profiles.getMyProfile);
 
@@ -100,9 +132,26 @@ function Sidebar({ pathname }: { pathname: string }) {
       : "Verified alumna";
 
   return (
-    <aside className="w-[248px] shrink-0 h-screen sticky top-0 border-r auf-hairline flex flex-col bg-[var(--surface)]">
-      <div className="px-3 pt-3 pb-3">
+    <aside
+      className={cn(
+        "w-[248px] shrink-0 border-r auf-hairline flex flex-col bg-[var(--surface)]",
+        // Off-canvas drawer below lg, static sidebar at lg+.
+        "fixed inset-y-0 left-0 z-50 h-screen transition-transform lg:sticky lg:top-0 lg:translate-x-0 lg:z-auto",
+        drawerOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
+      )}
+      role="navigation"
+      aria-label="Primary"
+    >
+      <div className="px-3 pt-3 pb-3 flex items-center justify-between">
         <AUFWordmark />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close menu"
+          className="lg:hidden p-2 -mr-1 rounded-md ink-3 hover:ink hover:bg-[var(--surface-2)]"
+        >
+          <X size={18} />
+        </button>
       </div>
 
       <nav className="px-3 flex flex-col gap-0.5 mt-1">
@@ -151,8 +200,9 @@ function Sidebar({ pathname }: { pathname: string }) {
           </Link>
           <Link
             href="/settings"
-            className="p-1 rounded ink-3 hover:ink"
+            className="p-2 rounded ink-3 hover:ink"
             title="Settings"
+            aria-label="Settings"
           >
             <Settings size={16} />
           </Link>
@@ -206,16 +256,31 @@ function Row({
   );
 }
 
-function TopBar({ pathname }: { pathname: string }) {
+function TopBar({
+  pathname,
+  onOpenDrawer,
+}: {
+  pathname: string;
+  onOpenDrawer: () => void;
+}) {
   return (
     <header className="sticky top-0 z-30 bg-[var(--bg)]/85 backdrop-blur border-b auf-hairline">
-      <div className="flex items-center gap-4 px-7 h-[64px]">
-        <div className="font-serif text-[20px] tracking-tight font-semibold min-w-[120px]">
+      <div className="flex items-center gap-2 sm:gap-4 px-4 sm:px-7 h-[64px]">
+        <button
+          type="button"
+          onClick={onOpenDrawer}
+          aria-label="Open menu"
+          aria-expanded={false}
+          className="lg:hidden p-2 -ml-1 rounded-md ink-2 hover:ink hover:bg-[var(--surface-2)]"
+        >
+          <Menu size={20} />
+        </button>
+        <div className="font-serif text-[16px] sm:text-[20px] tracking-tight font-semibold min-w-0 truncate sm:min-w-[120px]">
           {titleFor(pathname)}
         </div>
 
         <form
-          className="flex-1 max-w-[520px] relative"
+          className="flex-1 max-w-[520px] relative hidden md:block"
           onSubmit={(e) => e.preventDefault()}
         >
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 ink-3" />
@@ -232,17 +297,25 @@ function TopBar({ pathname }: { pathname: string }) {
           </kbd>
         </form>
 
+        <div className="flex-1 md:hidden" />
+
         <NotificationDropdown />
-        <Link href="/messages" className="auf-btn auf-btn-ghost" title="Messages">
+        <Link
+          href="/messages"
+          className="auf-btn auf-btn-ghost"
+          title="Messages"
+          aria-label="Messages"
+        >
           <MessageCircle size={18} />
         </Link>
-        <div className="w-px h-6 bg-[var(--border-soft)]" />
+        <div className="w-px h-6 bg-[var(--border-soft)] hidden sm:block" />
         <Link
           href="/employer/jobs"
           className="auf-btn auf-btn-primary auf-btn-sm"
+          aria-label="Post a job"
         >
           <Plus size={14} />
-          Post a job
+          <span className="hidden md:inline">Post a job</span>
         </Link>
       </div>
     </header>
@@ -259,7 +332,7 @@ function SignOutButton() {
         await signOut();
         router.push("/");
       }}
-      className="p-1 rounded ink-3 hover:ink"
+      className="p-2 rounded ink-3 hover:ink"
       title="Sign out"
       aria-label="Sign out"
     >

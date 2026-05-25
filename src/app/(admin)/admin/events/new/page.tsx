@@ -53,7 +53,7 @@ export default function NewEventPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
+    <div className="mx-auto max-w-2xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Publish event</h1>
       <Card className="mt-6">
         <CardContent className="p-6">

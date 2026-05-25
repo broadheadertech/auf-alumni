@@ -23,7 +23,7 @@ export default function ConnectionsPage() {
 
   if (inbox === undefined) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -31,7 +31,7 @@ export default function ConnectionsPage() {
 
   if (inbox === null) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Sign in to manage your connections"
           cta={{ label: "Sign in", href: "/login" }}
@@ -76,7 +76,7 @@ export default function ConnectionsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
       <h1 className="text-3xl font-bold tracking-tight">Connections</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Pending requests and active connections.

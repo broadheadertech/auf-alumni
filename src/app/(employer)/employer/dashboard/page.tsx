@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Briefcase, Users, Receipt } from "lucide-react";
@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 
 export default function EmployerDashboardPage() {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Employer dashboard</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Post jobs to verified AUF graduates. Track applicants in your pipeline.

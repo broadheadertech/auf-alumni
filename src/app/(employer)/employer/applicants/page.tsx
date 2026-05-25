@@ -96,7 +96,7 @@ export default function EmployerApplicantsPage() {
 
   if (employersRaw === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -104,7 +104,7 @@ export default function EmployerApplicantsPage() {
 
   if (jobs.length === 0) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="No jobs yet"
           description="Post a job and admin-approval first; applicants will land here."
@@ -117,7 +117,7 @@ export default function EmployerApplicantsPage() {
   const applications = (pipelineData?.applications ?? []) as Application[];
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Applicants</h1>
 
       <div className="mt-4 flex flex-wrap items-end gap-3">

@@ -61,14 +61,14 @@ export default function AdminAuditPage() {
 
   if (rows === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
   if (rows === null) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Admin access required"
           cta={{ label: "Sign in", href: "/login" }}
@@ -80,7 +80,7 @@ export default function AdminAuditPage() {
   const list = rows as AuditRow[];
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Audit log</h1>
       <p className="text-sm text-muted-foreground">
         Immutable append-only log of every admin action.

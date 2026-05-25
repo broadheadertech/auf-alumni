@@ -109,7 +109,7 @@ export default function VerifyPage() {
     <div data-density="comfortable" className="flex min-h-screen flex-col">
       <SiteNav role="marketing" />
       <main className="flex-1">
-        <div className="mx-auto max-w-2xl px-6 py-12">
+        <div className="mx-auto max-w-2xl px-4 sm:px-6 py-8 sm:py-12">
           {/* Status panel */}
           {submission && (
             <StatusPanel submission={submission} />

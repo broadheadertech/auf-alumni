@@ -46,7 +46,7 @@ export default function AdminEmployersPage() {
 
   if (rows === undefined) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -110,7 +110,7 @@ export default function AdminEmployersPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Employers</h1>
       <p className="mt-1 text-sm text-muted-foreground">
         Grant Partner-tier directly, or approve Verified-tier applicants.

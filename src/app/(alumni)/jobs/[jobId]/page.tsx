@@ -141,14 +141,14 @@ export default function JobDetailPage() {
 
   if (jobs === undefined) {
     return (
-      <div className="mx-auto max-w-[1180px] px-7 py-10">
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-7 py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin ink-3" />
       </div>
     );
   }
   if (!job) {
     return (
-      <div className="mx-auto max-w-[1180px] px-7 py-10">
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-7 py-10">
         <EmptyState
           message="Job not found"
           description="This role may have closed or been removed."
@@ -216,7 +216,7 @@ export default function JobDetailPage() {
   const lookList = DEFAULT_LOOKING;
 
   return (
-    <div className="mx-auto max-w-[1180px] px-7 py-6">
+    <div className="mx-auto max-w-[1180px] px-4 sm:px-7 py-6">
       <button
         onClick={() => router.back()}
         className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] ink-3 hover:ink-2"
@@ -226,7 +226,7 @@ export default function JobDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <div className="auf-card relative overflow-hidden p-7">
+          <div className="auf-card relative overflow-hidden p-5 sm:p-7">
             <div
               className="absolute right-0 top-0 h-1 w-full"
               style={{ background: "linear-gradient(90deg, var(--gold), var(--brand))" }}

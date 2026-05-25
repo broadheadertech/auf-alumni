@@ -5,9 +5,10 @@
  * Used by the public surface; auth and alumni surfaces have their own chrome.
  */
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Menu, X } from "lucide-react";
 import { AUFInlineLockup, AUFLockup } from "./AUFMark";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +22,12 @@ const LINKS: Array<[string, string]> = [
 
 export function MarketingNav() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
   return (
     <header
       className="sticky top-0 z-30 backdrop-blur"
@@ -29,8 +36,8 @@ export function MarketingNav() {
         borderBottom: "1px solid var(--border-soft)",
       }}
     >
-      <div className="max-w-[1240px] mx-auto px-7 h-[68px] flex items-center gap-8">
-        <Link href="/" className="flex items-center gap-2.5">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 h-[64px] md:h-[68px] flex items-center gap-3 md:gap-8">
+        <Link href="/" className="flex items-center gap-2.5 min-w-0">
           <AUFInlineLockup />
         </Link>
 
@@ -53,14 +60,60 @@ export function MarketingNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Link href="/login" className="auf-btn auf-btn-ghost auf-btn-sm">
+          <Link
+            href="/login"
+            className="auf-btn auf-btn-ghost auf-btn-sm hidden sm:inline-flex"
+          >
             Sign in
           </Link>
           <Link href="/signup" className="auf-btn auf-btn-primary auf-btn-sm">
             Get started <ArrowRight size={13} />
           </Link>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            className="md:hidden p-2 -mr-1 rounded-md ink-2 hover:ink hover:bg-[var(--surface-2)]"
+          >
+            {menuOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <nav
+          className="md:hidden border-t auf-hairline bg-[var(--bg)]"
+          role="navigation"
+          aria-label="Mobile"
+        >
+          <div className="max-w-[1240px] mx-auto px-4 py-2 flex flex-col">
+            {LINKS.map(([href, label]) => {
+              const active = pathname === href;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={cn(
+                    "py-3 px-2 rounded-md text-[14px] font-medium transition",
+                    active
+                      ? "brand-fg bg-[var(--brand-50)]"
+                      : "ink-2 hover:ink hover:bg-[var(--surface-2)]",
+                  )}
+                >
+                  {label}
+                </Link>
+              );
+            })}
+            <Link
+              href="/login"
+              className="sm:hidden py-3 px-2 rounded-md text-[14px] font-medium ink-2 hover:ink hover:bg-[var(--surface-2)]"
+            >
+              Sign in
+            </Link>
+          </div>
+        </nav>
+      )}
     </header>
   );
 }
@@ -71,7 +124,7 @@ export function MarketingFooter() {
       className="mt-20 pt-14 pb-10"
       style={{ background: "var(--brand-deep)", color: "rgba(255,255,255,0.78)" }}
     >
-      <div className="max-w-[1240px] mx-auto px-7 grid grid-cols-12 gap-8">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 grid grid-cols-12 gap-6 sm:gap-8">
         <div className="col-span-12 md:col-span-4">
           <AUFLockup height={40} />
           <p
@@ -127,7 +180,7 @@ export function MarketingFooter() {
         />
       </div>
       <div
-        className="max-w-[1240px] mx-auto px-7 mt-12 pt-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between text-[11.5px]"
+        className="max-w-[1240px] mx-auto px-4 sm:px-7 mt-12 pt-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between text-[11.5px]"
         style={{ borderTop: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.5)" }}
       >
         <div>© 2026 Angeles University Foundation. All rights reserved.</div>

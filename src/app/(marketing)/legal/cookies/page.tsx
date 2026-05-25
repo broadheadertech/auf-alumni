@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function CookiesPage() {
   return (
-    <div className="max-w-[860px] mx-auto px-7 py-16">
+    <div className="max-w-[860px] mx-auto px-4 sm:px-7 py-12 sm:py-16">
       <div className="section-eyebrow brand-fg mb-3">Cookie policy</div>
       <h1 className="font-serif text-[40px] sm:text-[48px] leading-tight font-semibold">
         Cookies on AUF Alumni.

@@ -118,14 +118,14 @@ export default function EmployerJobsPage() {
 
   if (employersRaw === undefined) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
         <Loader2 className="mx-auto h-6 w-6 animate-spin ink-3" />
       </div>
     );
   }
   if (!employers || employers.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-12">
         <EmptyState
           message="No employer organisation yet"
           description="Once an admin grants you Partner access or you complete Verified-tier onboarding, you'll be able to post jobs here."
@@ -136,7 +136,7 @@ export default function EmployerJobsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-8 sm:py-8">
       <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
         <div>
           <h1 className="font-serif text-[28px] font-semibold leading-tight">
@@ -364,18 +364,18 @@ function PostJobDialog({
               />
             </Field>
           </div>
-          <div className="flex justify-end gap-2 pt-3">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="auf-btn auf-btn-outline"
+              className="auf-btn auf-btn-outline justify-center"
               disabled={submitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="auf-btn auf-btn-primary"
+              className="auf-btn auf-btn-primary justify-center"
               disabled={submitting}
             >
               {submitting ? (

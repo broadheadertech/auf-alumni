@@ -157,7 +157,7 @@ export default function AdminQueuePage() {
 
   if (queue === undefined) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -165,7 +165,7 @@ export default function AdminQueuePage() {
 
   if (queue === null) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
         <EmptyState
           message="Admin access required"
           cta={{ label: "Sign in", href: "/login" }}
@@ -176,7 +176,7 @@ export default function AdminQueuePage() {
 
   if (items.length === 0) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-12">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 py-8 sm:py-12">
         <EmptyState
           message="Queue empty"
           description="No pending verification submissions. Nice work."
@@ -187,7 +187,7 @@ export default function AdminQueuePage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-6">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">
           Verification queue
