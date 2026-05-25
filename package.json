@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "convex deploy --cmd 'next build'",
-    "build:local": "next build",
+    "build": "next build",
+    "build:with-convex-deploy": "convex deploy --cmd 'next build'",
     "start": "next start",
     "lint": "eslint",
     "lint:privacy": "node scripts/lint-privacy-usage.mjs",

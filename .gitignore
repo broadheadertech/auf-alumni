@@ -34,8 +34,10 @@ yarn-error.log*
 .env*
 !.env.example
 
-# convex
-/convex/_generated
+# convex — keeping the generated dir COMMITTED so Vercel/CI builds work
+# without needing CONVEX_DEPLOY_KEY at build time. `npx convex dev`
+# regenerates these locally; commit the changes when schema/functions move.
+# /convex/_generated
 
 # test artifacts
 /test-results
