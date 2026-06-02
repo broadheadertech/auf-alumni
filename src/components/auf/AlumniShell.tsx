@@ -21,6 +21,7 @@ import {
   Calendar,
   GraduationCap,
   Home,
+  IdCard,
   LogOut,
   Menu,
   MessageCircle,
@@ -50,6 +51,7 @@ const NAV: NavItem[] = [
   { href: "/mentorship", label: "Mentorship", Icon: GraduationCap },
   { href: "/events", label: "Events", Icon: Calendar },
   { href: "/messages", label: "Messages", Icon: MessageCircle, badge: 2 },
+  { href: "/id", label: "Alumni ID", Icon: IdCard },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -60,6 +62,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/events": "Events",
   "/messages": "Messages",
   "/connections": "Network",
+  "/id": "Alumni ID",
   "/profile/edit": "My Profile",
   "/settings": "Settings",
   "/settings/notifications": "Notifications",

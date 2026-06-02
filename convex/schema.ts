@@ -85,13 +85,20 @@ export default defineSchema({
     photoStorageId: v.optional(v.id("_storage")),
     privacyTiers: v.record(v.string(), v.string()),
     verifiedAt: v.optional(v.number()),
+    // Stable, opaque virtual Alumni-ID — minted once on the first ID-card
+    // request for a verified profile. Format: `AUF-{batch}-{6-digit-seq}`.
+    // The QR on the digital ID encodes this so anyone can hit
+    // `/verify/{alumniId}` to confirm authenticity.
+    alumniId: v.optional(v.string()),
+    alumniIdIssuedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     excludeFromSearchEngines: v.boolean(),
   })
     .index("by_slug", ["slug"])
     .index("by_userId", ["userId"])
-    .index("by_batch_program", ["batch", "program"]),
+    .index("by_batch_program", ["batch", "program"])
+    .index("by_alumni_id", ["alumniId"]),
 
   // ---------- verificationSubmissions (Epic 2 Stories 2.3, 2.4) ----------
   verificationSubmissions: defineTable({

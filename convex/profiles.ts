@@ -89,6 +89,117 @@ export const getBySlug = query({
 });
 
 /**
+ * Virtual Alumni ID card — own view. Returns the fields the card surfaces
+ * plus the alumniId. The ID is minted lazily via `ensureMyAlumniId` (a
+ * mutation) the first time the alumna opens their card.
+ */
+export const getMyAlumniCard = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (!profile) return null;
+    // Self-view: full fields permitted.
+    const safe = applyPrivacy(profile, { kind: "self", userId });
+    return {
+      ...safe,
+      alumniId: profile.alumniId ?? null,
+      alumniIdIssuedAt: profile.alumniIdIssuedAt ?? null,
+      photoUrl: profile.photoStorageId
+        ? await ctx.storage.getUrl(profile.photoStorageId)
+        : null,
+    };
+  },
+});
+
+/**
+ * Public verification of an Alumni ID by its opaque ID string. Anyone with
+ * the QR can hit `/verify/{alumniId}` and confirm the ID is real + which
+ * alumna it belongs to, without seeing private profile fields.
+ */
+// @no-privacy-required: returns only verification status + public-tier fields.
+export const verifyAlumniId = query({
+  args: { alumniId: v.string() },
+  handler: async (ctx, { alumniId }) => {
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_alumni_id", (q) => q.eq("alumniId", alumniId))
+      .unique();
+    if (!profile || profile.verifiedAt == null) {
+      return { ok: false as const };
+    }
+    return {
+      ok: true as const,
+      alumniId,
+      displayName: profile.displayName,
+      slug: profile.slug,
+      batch: profile.batch,
+      program: profile.program,
+      degree: profile.degree,
+      issuedAt: profile.alumniIdIssuedAt ?? profile.verifiedAt,
+    };
+  },
+});
+
+/**
+ * Lazily mint the alumniId for the signed-in verified alumna. Idempotent —
+ * if an ID already exists, returns it. Format: `AUF-{batch}-{6-digit-seq}`
+ * where the sequence is the count of issued IDs in that batch + 1.
+ */
+// @no-audit-required: user self-service; no PII change, mints an opaque ID.
+export const ensureMyAlumniId = mutation({
+  args: {},
+  handler: async (ctx): Promise<{ alumniId: string }> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (!profile) {
+      throw new ConvexError({
+        code: "no-profile",
+        message: "Create your profile before requesting an Alumni ID",
+      });
+    }
+    if (profile.verifiedAt == null) {
+      throw new ConvexError({
+        code: "not-verified",
+        message: "Your alumni status must be verified first",
+      });
+    }
+    if (profile.alumniId) {
+      return { alumniId: profile.alumniId };
+    }
+    // Mint a new ID using a count over the batch year (good enough for v1;
+    // race-tolerant within a single transaction).
+    const sameBatch = await ctx.db
+      .query("profiles")
+      .withIndex("by_batch_program", (q) => q.eq("batch", profile.batch))
+      .collect();
+    const issuedCount = sameBatch.filter((p) => p.alumniId != null).length;
+    const seq = String(issuedCount + 1).padStart(6, "0");
+    const alumniId = `AUF-${profile.batch}-${seq}`;
+    const now = Date.now();
+    await ctx.db.patch(profile._id, {
+      alumniId,
+      alumniIdIssuedAt: now,
+      updatedAt: now,
+    });
+    return { alumniId };
+  },
+});
+
+/**
  * Sitemap source — public slugs of verified profiles who have NOT opted out
  * of search indexing. Returns only slugs + updatedAt; safe to serve unauth.
  * Privacy: no profile fields exposed; opt-out (excludeFromSearchEngines)
