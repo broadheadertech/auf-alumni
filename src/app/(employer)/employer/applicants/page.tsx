@@ -34,8 +34,22 @@ type Application = {
   profileSnapshot: Record<string, unknown>;
   stage: string;
   referredBy?: string;
+  salaryExpectation?: {
+    min: number;
+    max: number;
+    currency: string;
+    period: string;
+  };
+  resumeUrl?: string | null;
+  resumeFilename?: string;
   createdAt: number;
 };
+
+function formatSalary(s: NonNullable<Application["salaryExpectation"]>): string {
+  const c = s.currency || "PHP";
+  const p = s.period === "annual" ? "/yr" : "/mo";
+  return `${c} ${s.min.toLocaleString()} – ${s.max.toLocaleString()}${p}`;
+}
 
 export default function EmployerApplicantsPage() {
   type EmployerOrg = { _id: string; name: string };
@@ -202,11 +216,29 @@ export default function EmployerApplicantsPage() {
                                 {app.coverNote}
                               </p>
                             )}
-                            {app.referredBy && (
-                              <p className="text-[10px] uppercase tracking-wide text-(--color-success)">
-                                Referred
-                              </p>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1 pt-1">
+                              {app.referredBy && (
+                                <span className="text-[10px] uppercase tracking-wide text-(--color-success)">
+                                  Referred
+                                </span>
+                              )}
+                              {app.salaryExpectation && (
+                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                                  Asking {formatSalary(app.salaryExpectation)}
+                                </span>
+                              )}
+                              {app.resumeUrl && (
+                                <a
+                                  href={app.resumeUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium hover:bg-(--brand-50) hover:text-(--brand-ink)"
+                                  title={app.resumeFilename ?? "Resume"}
+                                >
+                                  Resume ↗
+                                </a>
+                              )}
+                            </div>
                             <div className="flex flex-wrap gap-1 pt-1">
                               {STAGES.filter(
                                 (s) => s.value !== app.stage,

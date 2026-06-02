@@ -189,6 +189,20 @@ export default defineSchema({
     profileSnapshot: v.any(), // privacy-filtered snapshot at submission time
     stage: v.string(), // "new" | "screening" | "interview" | "offered" | "hired" | "not-selected"
     referredBy: v.optional(v.id("users")),
+    // Optional applicant-disclosed salary expectation. Captured at apply
+    // time; visible to the posting employer + moderators only.
+    salaryExpectation: v.optional(
+      v.object({
+        min: v.number(),
+        max: v.number(),
+        currency: v.string(), // ISO 4217 — "PHP" by default
+        period: v.string(), // "monthly" | "annual"
+      }),
+    ),
+    // Optional resume / CV uploaded via Convex storage at apply time.
+    // The PDF/DOC binary lives in storage; we keep only the pointer.
+    resumeStorageId: v.optional(v.id("_storage")),
+    resumeFilename: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

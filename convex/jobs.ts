@@ -244,8 +244,21 @@ export const apply = mutation({
   args: {
     jobId: v.id("jobs"),
     coverNote: v.optional(v.string()),
+    salaryExpectation: v.optional(
+      v.object({
+        min: v.number(),
+        max: v.number(),
+        currency: v.string(),
+        period: v.string(),
+      }),
+    ),
+    resumeStorageId: v.optional(v.id("_storage")),
+    resumeFilename: v.optional(v.string()),
   },
-  handler: async (ctx, { jobId, coverNote }) => {
+  handler: async (
+    ctx,
+    { jobId, coverNote, salaryExpectation, resumeStorageId, resumeFilename },
+  ) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError({
@@ -288,6 +301,38 @@ export const apply = mutation({
       userId,
     });
 
+    // Validate salary expectation if provided.
+    if (salaryExpectation) {
+      if (
+        !Number.isFinite(salaryExpectation.min) ||
+        !Number.isFinite(salaryExpectation.max) ||
+        salaryExpectation.min < 0 ||
+        salaryExpectation.max < salaryExpectation.min
+      ) {
+        throw new ConvexError({
+          code: "invalid-salary",
+          message: "Salary range must be non-negative and max ≥ min",
+        });
+      }
+      if (
+        salaryExpectation.period !== "monthly" &&
+        salaryExpectation.period !== "annual"
+      ) {
+        throw new ConvexError({
+          code: "invalid-salary-period",
+          message: "Period must be 'monthly' or 'annual'",
+        });
+      }
+    }
+
+    // Resume sanity: filename ≤ 200 chars when supplied.
+    if (resumeFilename && resumeFilename.length > 200) {
+      throw new ConvexError({
+        code: "filename-too-long",
+        message: "Resume filename is too long",
+      });
+    }
+
     const now = Date.now();
     const id = await ctx.db.insert("applications", {
       jobId,
@@ -295,6 +340,9 @@ export const apply = mutation({
       coverNote: coverNote?.trim() || undefined,
       profileSnapshot: snapshot,
       stage: "new",
+      salaryExpectation,
+      resumeStorageId,
+      resumeFilename: resumeFilename?.trim() || undefined,
       createdAt: now,
       updatedAt: now,
     });
@@ -333,16 +381,43 @@ export const pipeline = query({
       .collect();
     return {
       job,
-      applications: applications.map((a) => ({
-        _id: a._id,
-        applicantId: a.applicantId,
-        coverNote: a.coverNote,
-        profileSnapshot: a.profileSnapshot,
-        stage: a.stage,
-        referredBy: a.referredBy,
-        createdAt: a.createdAt,
-      })),
+      applications: await Promise.all(
+        applications.map(async (a) => ({
+          _id: a._id,
+          applicantId: a.applicantId,
+          coverNote: a.coverNote,
+          profileSnapshot: a.profileSnapshot,
+          stage: a.stage,
+          referredBy: a.referredBy,
+          salaryExpectation: a.salaryExpectation,
+          resumeFilename: a.resumeFilename,
+          resumeUrl: a.resumeStorageId
+            ? await ctx.storage.getUrl(a.resumeStorageId)
+            : null,
+          createdAt: a.createdAt,
+        })),
+      ),
     };
+  },
+});
+
+/**
+ * Short-lived upload URL for the applicant's resume / CV. Convex storage
+ * issues the URL; the client POSTs the file directly to it and gets back a
+ * storage ID, which is then passed into `apply` along with the filename.
+ */
+// @no-audit-required: helper for the apply flow; ephemeral upload token only.
+export const generateResumeUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    return await ctx.storage.generateUploadUrl();
   },
 });
 
