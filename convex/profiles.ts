@@ -116,6 +116,127 @@ export const getMyAlumniCard = query({
   },
 });
 
+// ─────────────────────────────────────────────────────────────
+// Profile-level resume (reusable across job applications)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Short-lived upload URL for the alumna's default profile resume.
+ * The client POSTs the file directly to it and then calls
+ * `setMyProfileResume({ storageId, filename })` to persist the pointer.
+ */
+// @no-audit-required: helper for the resume settings flow; ephemeral token only.
+export const generateProfileResumeUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// @no-audit-required: user self-service; sets / replaces own profile resume.
+export const setMyProfileResume = mutation({
+  args: {
+    storageId: v.id("_storage"),
+    filename: v.string(),
+  },
+  handler: async (ctx, { storageId, filename }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    const trimmed = filename.trim();
+    if (trimmed.length === 0 || trimmed.length > 200) {
+      throw new ConvexError({
+        code: "invalid-filename",
+        message: "Filename must be 1–200 characters",
+      });
+    }
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (!profile) {
+      throw new ConvexError({
+        code: "no-profile",
+        message: "Create your profile before uploading a resume",
+      });
+    }
+    // Replace existing resume — delete the old blob to reclaim storage.
+    if (profile.resumeStorageId && profile.resumeStorageId !== storageId) {
+      await ctx.storage.delete(profile.resumeStorageId);
+    }
+    await ctx.db.patch(profile._id, {
+      resumeStorageId: storageId,
+      resumeFilename: trimmed,
+      resumeUploadedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    return { ok: true };
+  },
+});
+
+// @no-audit-required: user self-service; clears own profile resume.
+export const removeMyProfileResume = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (!profile) return { ok: true };
+    if (profile.resumeStorageId) {
+      await ctx.storage.delete(profile.resumeStorageId);
+    }
+    await ctx.db.patch(profile._id, {
+      resumeStorageId: undefined,
+      resumeFilename: undefined,
+      resumeUploadedAt: undefined,
+      updatedAt: Date.now(),
+    });
+    return { ok: true };
+  },
+});
+
+/**
+ * Returns the signed-in alumna's default profile resume metadata and a
+ * short-lived URL for download/preview. Returns null when no resume is set.
+ */
+export const getMyProfileResume = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    if (!profile || !profile.resumeStorageId) return null;
+    return {
+      filename: profile.resumeFilename ?? "resume.pdf",
+      uploadedAt: profile.resumeUploadedAt ?? null,
+      url: await ctx.storage.getUrl(profile.resumeStorageId),
+      storageId: profile.resumeStorageId,
+    };
+  },
+});
+
 /**
  * Public verification of an Alumni ID by its opaque ID string. Anyone with
  * the QR can hit `/verify/{alumniId}` and confirm the ID is real + which

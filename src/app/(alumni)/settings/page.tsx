@@ -5,7 +5,8 @@ import { useQuery, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { toast } from "sonner";
-import { Download, AlertTriangle, Loader2 } from "lucide-react";
+import { Download, AlertTriangle, FileText, Loader2 } from "lucide-react";
+import Link from "next/link";
 import { api } from "@/lib/convex-api";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,6 +112,31 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Resume management */}
+      <Card className="mt-6">
+        <CardContent className="space-y-3 p-6">
+          <div className="flex items-start gap-3">
+            <FileText
+              className="h-5 w-5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <h2 className="font-semibold">Resume / CV</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Upload a default resume to attach to job applications, or
+                auto-generate one from your profile fields.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/settings/resume"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Manage resume →
+          </Link>
+        </CardContent>
+      </Card>
 
       {/* DPA self-export (Story 3.6) */}
       <Card className="mt-6">

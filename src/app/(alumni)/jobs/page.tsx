@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { Briefcase, Loader2, MapPin } from "lucide-react";
@@ -48,6 +49,15 @@ function formatSalary(min?: number, max?: number, ccy?: string): string | null {
 export default function JobsBoardPage() {
   const [showUnmatched, setShowUnmatched] = useState(false);
   const jobs = useQuery(api.jobs.browse, { showUnmatched });
+  type SavedResume = {
+    filename: string;
+    uploadedAt: number | null;
+    url: string | null;
+    storageId: string;
+  } | null;
+  const savedResume = useQuery(api.profiles.getMyProfileResume) as
+    | SavedResume
+    | undefined;
   const apply = useMutation(api.jobs.apply);
   const generateResumeUploadUrl = useMutation(api.jobs.generateResumeUploadUrl);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
@@ -55,6 +65,8 @@ export default function JobsBoardPage() {
   const [salaryShare, setSalaryShare] = useState(false);
   const [salaryMin, setSalaryMin] = useState("");
   const [salaryMax, setSalaryMax] = useState("");
+  const [resumeMode, setResumeMode] =
+    useState<"saved" | "upload" | "none">("saved");
   const [salaryPeriod, setSalaryPeriod] =
     useState<"monthly" | "annual">("monthly");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -93,10 +105,13 @@ export default function JobsBoardPage() {
       };
     }
 
-    // Validate resume.
+    // Validate resume + select source.
     let resumeStorageId: string | undefined;
     let resumeFilename: string | undefined;
-    if (resumeFile) {
+    if (resumeMode === "saved" && savedResume) {
+      resumeStorageId = savedResume.storageId;
+      resumeFilename = savedResume.filename;
+    } else if (resumeMode === "upload" && resumeFile) {
       const okType = /\.(pdf|doc|docx)$/i.test(resumeFile.name);
       if (!okType) {
         toast.error("Resume must be a PDF, DOC, or DOCX");
@@ -110,7 +125,7 @@ export default function JobsBoardPage() {
 
     setBusyJobId(dialogJobId);
     try {
-      if (resumeFile) {
+      if (resumeMode === "upload" && resumeFile) {
         const uploadUrl = await generateResumeUploadUrl({});
         const res = await fetch(uploadUrl, {
           method: "POST",
@@ -319,22 +334,88 @@ export default function JobsBoardPage() {
               )}
             </div>
 
-            {/* Resume / CV upload */}
+            {/* Resume / CV */}
             <div>
-              <label className="block text-xs font-medium ink-2 mb-1">
-                Resume / CV <span className="ink-3">(optional · PDF, DOC, DOCX · ≤ 8 MB)</span>
+              <label className="block text-xs font-medium ink-2 mb-2">
+                Resume / CV <span className="ink-3">(optional)</span>
               </label>
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={(e) => setResumeFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-[var(--brand-50)] file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-[var(--brand-ink)] hover:file:bg-[var(--brand-100)]"
-              />
-              {resumeFile && (
-                <div className="text-[11px] ink-3 mt-1">
-                  {resumeFile.name} · {(resumeFile.size / 1024).toFixed(0)} KB
-                </div>
-              )}
+              <div className="space-y-2">
+                {savedResume ? (
+                  <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+                    <input
+                      type="radio"
+                      name="resumeMode"
+                      checked={resumeMode === "saved"}
+                      onChange={() => setResumeMode("saved")}
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span className="flex-1">
+                      <span className="block font-medium">
+                        Use my saved resume
+                      </span>
+                      <span className="block text-[11.5px] ink-3 truncate">
+                        {savedResume.filename}
+                      </span>
+                    </span>
+                  </label>
+                ) : (
+                  <p className="text-[11.5px] ink-3">
+                    No saved resume on file —{" "}
+                    <Link
+                      href="/settings/resume"
+                      className="brand-fg underline-offset-2 hover:underline"
+                    >
+                      add one in settings
+                    </Link>{" "}
+                    to reuse on every application.
+                  </p>
+                )}
+                <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+                  <input
+                    type="radio"
+                    name="resumeMode"
+                    checked={resumeMode === "upload"}
+                    onChange={() => setResumeMode("upload")}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span className="flex-1">
+                    <span className="block font-medium">
+                      Upload a new file for this application
+                    </span>
+                    <span className="block text-[11.5px] ink-3">
+                      PDF, DOC, or DOCX · ≤ 8 MB
+                    </span>
+                    {resumeMode === "upload" && (
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(e) =>
+                          setResumeFile(e.target.files?.[0] ?? null)
+                        }
+                        className="mt-2 block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-(--brand-50) file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-(--brand-ink) hover:file:bg-(--brand-100)"
+                      />
+                    )}
+                    {resumeMode === "upload" && resumeFile && (
+                      <span className="block text-[11px] ink-3 mt-1">
+                        {resumeFile.name} ·{" "}
+                        {(resumeFile.size / 1024).toFixed(0)} KB
+                      </span>
+                    )}
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[13px] cursor-pointer">
+                  <input
+                    type="radio"
+                    name="resumeMode"
+                    checked={resumeMode === "none"}
+                    onChange={() => setResumeMode("none")}
+                    className="mt-0.5 h-4 w-4"
+                  />
+                  <span className="text-[13px] font-medium">
+                    Skip — apply without a resume
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 

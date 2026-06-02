@@ -83,6 +83,12 @@ export default defineSchema({
       }),
     ),
     photoStorageId: v.optional(v.id("_storage")),
+    // Default resume — uploaded once on the profile and reusable across job
+    // applications. The apply flow can either reuse this or accept a
+    // per-application upload.
+    resumeStorageId: v.optional(v.id("_storage")),
+    resumeFilename: v.optional(v.string()),
+    resumeUploadedAt: v.optional(v.number()),
     privacyTiers: v.record(v.string(), v.string()),
     verifiedAt: v.optional(v.number()),
     // Stable, opaque virtual Alumni-ID — minted once on the first ID-card
