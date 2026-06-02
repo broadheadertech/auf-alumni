@@ -17,6 +17,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
+  BookOpen,
   Briefcase,
   Calendar,
   GraduationCap,
@@ -49,6 +50,7 @@ const NAV: NavItem[] = [
   { href: "/jobs", label: "Jobs", Icon: Briefcase, badge: 4 },
   { href: "/directory", label: "Directory", Icon: Users },
   { href: "/mentorship", label: "Mentorship", Icon: GraduationCap },
+  { href: "/academy", label: "Academy", Icon: BookOpen },
   { href: "/events", label: "Events", Icon: Calendar },
   { href: "/messages", label: "Messages", Icon: MessageCircle, badge: 2 },
   { href: "/id", label: "Alumni ID", Icon: IdCard },
@@ -62,6 +64,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/events": "Events",
   "/messages": "Messages",
   "/connections": "Network",
+  "/academy": "AUF Academy",
   "/id": "Alumni ID",
   "/profile/edit": "My Profile",
   "/settings": "Settings",

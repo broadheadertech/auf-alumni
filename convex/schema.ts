@@ -457,4 +457,52 @@ export default defineSchema({
   })
     .index("by_slug", ["slug"])
     .index("by_tier", ["tier"]),
+
+  // ---------- AUF Academy (Epic 17) ----------
+  // On-demand "how to" courses taught by verified alumni instructors.
+  // Pairs with mentorship: every course exposes a 1-click DM-to-instructor.
+  academyCourses: defineTable({
+    instructorId: v.id("users"),
+    slug: v.string(),
+    title: v.string(),
+    summary: v.string(), // 1-2 sentence elevator pitch
+    description: v.string(), // longer markdown body
+    category: v.string(), // "career" | "tech" | "healthcare" | "design" | "leadership" | "soft-skills" | …
+    level: v.string(), // "beginner" | "intermediate" | "advanced"
+    durationMinutes: v.optional(v.number()), // sum across lessons
+    coverImageStorageId: v.optional(v.id("_storage")),
+    status: v.string(), // "draft" | "published" | "archived"
+    publishedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_instructor", ["instructorId"])
+    .index("by_status_published", ["status", "publishedAt"])
+    .index("by_category_status", ["category", "status"]),
+
+  academyLessons: defineTable({
+    courseId: v.id("academyCourses"),
+    order: v.number(),
+    title: v.string(),
+    kind: v.string(), // "video" | "article"
+    videoUrl: v.optional(v.string()), // YouTube / Vimeo embed URL
+    articleMarkdown: v.optional(v.string()),
+    durationMinutes: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_course_order", ["courseId", "order"]),
+
+  academyEnrollments: defineTable({
+    userId: v.id("users"),
+    courseId: v.id("academyCourses"),
+    completedLessonIds: v.array(v.id("academyLessons")),
+    enrolledAt: v.number(),
+    lastViewedLessonId: v.optional(v.id("academyLessons")),
+    completedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_course", ["userId", "courseId"])
+    .index("by_course", ["courseId"]),
 });

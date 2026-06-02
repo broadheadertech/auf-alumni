@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as academy from "../academy.js";
 import type * as actions_email from "../actions/email.js";
 import type * as actions_sendConnectionEmail from "../actions/sendConnectionEmail.js";
 import type * as actions_sendVerificationEmail from "../actions/sendVerificationEmail.js";
@@ -47,6 +48,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  academy: typeof academy;
   "actions/email": typeof actions_email;
   "actions/sendConnectionEmail": typeof actions_sendConnectionEmail;
   "actions/sendVerificationEmail": typeof actions_sendVerificationEmail;

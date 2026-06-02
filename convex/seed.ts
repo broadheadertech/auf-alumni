@@ -282,6 +282,184 @@ const JOB_SEEDS: JobSeed[] = [
   },
 ];
 
+/**
+ * Idempotent Academy-only seeder. Safe to run after the main `run` has
+ * already short-circuited — it inserts the demo courses if their slugs
+ * aren't already in `academyCourses`.
+ */
+export const runAcademy = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const userIdBySlug = new Map<string, Id<"users">>();
+    const allProfiles = await ctx.db.query("profiles").collect();
+    for (const p of allProfiles) {
+      userIdBySlug.set(p.slug, p.userId);
+    }
+
+    type AcademySeed = {
+      instructorSlug: string;
+      slug: string;
+      title: string;
+      summary: string;
+      description: string;
+      category: string;
+      level: "beginner" | "intermediate" | "advanced";
+      lessons: Array<{
+        title: string;
+        kind: "video" | "article";
+        videoUrl?: string;
+        articleMarkdown?: string;
+        durationMinutes?: number;
+      }>;
+    };
+
+    const ACADEMY_SEEDS: AcademySeed[] = [
+      {
+        instructorSlug: "anjelica-pineda",
+        slug: "land-your-first-frontend-role",
+        title: "Land your first frontend role",
+        summary:
+          "A senior frontend at Kumu walks you from BS IT '25 grad to first offer in 90 days — without going through cold portals.",
+        description:
+          "**Who this is for**\n\nFresh AUF grads in BS IT, BS CS, or BS MMA who want their first frontend role at a Filipino product company.\n\n**What you'll learn**\n\n- How to read a job posting and decide if you're a real fit\n- Building a 3-project portfolio that's actually hireable\n- Reaching out to AUF alumni at the company instead of cold-applying\n- Interview prep specific to Philippine product teams (Kumu, GCash, Coins.ph)\n- Negotiating your first salary band\n\n**Time investment**: ~3 hours of video + reading.",
+        category: "career",
+        level: "beginner",
+        lessons: [
+          {
+            title: "Why cold portal applications don't work",
+            kind: "article",
+            articleMarkdown:
+              "The cold-portal funnel converts at roughly 0.3% for fresh grads in PH tech. Here's the math, and what to do instead.\n\n**The 3 numbers**\n\n- ~250 applications per job posting at a series-A company\n- ~25 phone screens\n- 1-2 offers\n\n**Why AUF alumni referrals beat the portal**\n\n1. You skip the resume screen — the referring alumna can vouch directly\n2. Your CV lands in the *referred* pile, not the inbound flood\n3. You get a real-name internal advocate, not a recruiter\n\n**Action step**: list 3 Filipino product companies you'd want to work at. Search the AUF directory for alumni at each.",
+            durationMinutes: 12,
+          },
+          {
+            title: "Build a hireable 3-project portfolio",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 28,
+          },
+          {
+            title: "DMing alumni without being awkward",
+            kind: "article",
+            articleMarkdown:
+              "Reaching out to a senior alumna feels weird. It shouldn't. Here's the script I've used to ask for 40+ referrals.\n\n**The 4-line message**\n\n> Hi [Name] — I'm [Your name], BS IT '24 from AUF. I noticed you're at [Company] and saw they're hiring a [Role]. I built [1-sentence portfolio link]. Would you be open to a 15-min chat or willing to refer if you think I'm a fit? No pressure either way.\n\n**Why it works**\n\n- Names the alumni connection up front (one-degree-of-separation principle)\n- Asks ONE specific thing (a chat OR a referral)\n- Gives them an easy out\n- Includes a portfolio link so they can decide quickly",
+            durationMinutes: 8,
+          },
+        ],
+      },
+      {
+        instructorSlug: "marvin-cabrera",
+        slug: "bsn-abroad-pgh-to-singapore",
+        title: "BSN abroad: PGH to Singapore",
+        summary:
+          "How I went from charity-ward rotation at PGH to a critical-care role in Singapore — visa, exams, and the long-game financial math.",
+        description:
+          "**The path I actually took**\n\n1. AUF BSN '19 → 2 years at Med City Clark to build clinical hours\n2. Took the SNB exam (Singapore Nursing Board) in year 3\n3. Applied to NUH critical-care residency in year 4\n4. Settled in year 5\n\nIf you're a BSN '23-'25 and thinking about working abroad, this course gives you the realistic timeline, the costs, and the trade-offs nobody on YouTube tells you about.",
+        category: "healthcare",
+        level: "intermediate",
+        lessons: [
+          {
+            title: "The 5-year timeline (don't skip steps)",
+            kind: "article",
+            articleMarkdown:
+              "Year 1-2 in PH builds clinical hours that count abroad. Year 3 is exams. Year 4 is applications. Year 5 you're settling in. **Skipping years usually backfires.**\n\nHere's what each year actually costs in ₱ and what you should be doing.",
+            durationMinutes: 14,
+          },
+          {
+            title: "Passing the SNB on the first try",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 22,
+          },
+          {
+            title: "Money: what you'll actually take home",
+            kind: "article",
+            articleMarkdown:
+              "The headline SGD 4,500/mo looks great. After housing, food, and remittances back to your family — here's what actually lands in your account.\n\n**Real numbers from my first year:**\n- Gross: SGD 4,500\n- Tax + CPF: SGD 760\n- Housing (shared HDB): SGD 800\n- Food + transport: SGD 600\n- Remittance home: SGD 1,500\n- **Net to save: SGD 840/mo**\n\nNot bad, but it's not the magic-money story you see on TikTok.",
+            durationMinutes: 11,
+          },
+        ],
+      },
+      {
+        instructorSlug: "mark-lim",
+        slug: "crit-stage-product-design",
+        title: "Crit-stage product design",
+        summary:
+          "How designers at GCash run weekly crits — and how to use the same playbook to level up at any PH product company.",
+        description:
+          "Product design crits are the single biggest leverage on a designer's growth. This course teaches you the GCash crit playbook: how to present, how to receive feedback, and how to run them when you eventually lead a team.",
+        category: "design",
+        level: "intermediate",
+        lessons: [
+          {
+            title: "Why crits matter more than 1:1s",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 18,
+          },
+          {
+            title: "Presenting work without being defensive",
+            kind: "article",
+            articleMarkdown:
+              "The instinct is to defend every decision. The pros walk into a crit *expecting* to change their mind.\n\nHere's the 3-slide structure: **Context → Decision points → Open questions.**",
+            durationMinutes: 9,
+          },
+        ],
+      },
+    ];
+
+    let academyCourses = 0;
+    let academyLessons = 0;
+    for (const c of ACADEMY_SEEDS) {
+      // Skip if a course with this slug already exists.
+      const existing = await ctx.db
+        .query("academyCourses")
+        .withIndex("by_slug", (q) => q.eq("slug", c.slug))
+        .unique();
+      if (existing) continue;
+      const instructorId = userIdBySlug.get(c.instructorSlug);
+      if (!instructorId) continue;
+      const totalMinutes = c.lessons.reduce(
+        (acc, l) => acc + (l.durationMinutes ?? 0),
+        0,
+      );
+      const courseId = await ctx.db.insert("academyCourses", {
+        instructorId,
+        slug: c.slug,
+        title: c.title,
+        summary: c.summary,
+        description: c.description,
+        category: c.category,
+        level: c.level,
+        durationMinutes: totalMinutes,
+        status: "published",
+        publishedAt: now - 7 * MS_PER_DAY,
+        createdAt: now - 14 * MS_PER_DAY,
+        updatedAt: now - 7 * MS_PER_DAY,
+      });
+      academyCourses += 1;
+      for (let i = 0; i < c.lessons.length; i += 1) {
+        const l = c.lessons[i];
+        await ctx.db.insert("academyLessons", {
+          courseId,
+          order: i + 1,
+          title: l.title,
+          kind: l.kind,
+          videoUrl: l.videoUrl,
+          articleMarkdown: l.articleMarkdown,
+          durationMinutes: l.durationMinutes,
+          createdAt: now - 14 * MS_PER_DAY,
+          updatedAt: now - 7 * MS_PER_DAY,
+        });
+        academyLessons += 1;
+      }
+    }
+
+    return { status: "academy-seeded", academyCourses, academyLessons };
+  },
+});
+
 export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -491,6 +669,160 @@ export const run = internalMutation({
       });
     }
 
+    // -------- AUF Academy courses --------
+    type AcademySeed = {
+      instructorSlug: string;
+      slug: string;
+      title: string;
+      summary: string;
+      description: string;
+      category: string;
+      level: "beginner" | "intermediate" | "advanced";
+      lessons: Array<{
+        title: string;
+        kind: "video" | "article";
+        videoUrl?: string;
+        articleMarkdown?: string;
+        durationMinutes?: number;
+      }>;
+    };
+
+    const ACADEMY_SEEDS: AcademySeed[] = [
+      {
+        instructorSlug: "anjelica-pineda",
+        slug: "land-your-first-frontend-role",
+        title: "Land your first frontend role",
+        summary:
+          "A senior frontend at Kumu walks you from BS IT '25 grad to first offer in 90 days — without going through cold portals.",
+        description:
+          "**Who this is for**\n\nFresh AUF grads in BS IT, BS CS, or BS MMA who want their first frontend role at a Filipino product company.\n\n**What you'll learn**\n\n- How to read a job posting and decide if you're a real fit\n- Building a 3-project portfolio that's actually hireable\n- Reaching out to AUF alumni at the company instead of cold-applying\n- Interview prep specific to Philippine product teams (Kumu, GCash, Coins.ph)\n- Negotiating your first salary band\n\n**Time investment**: ~3 hours of video + reading.",
+        category: "career",
+        level: "beginner",
+        lessons: [
+          {
+            title: "Why cold portal applications don't work",
+            kind: "article",
+            articleMarkdown:
+              "The cold-portal funnel converts at roughly 0.3% for fresh grads in PH tech. Here's the math, and what to do instead.\n\n**The 3 numbers**\n\n- ~250 applications per job posting at a series-A company\n- ~25 phone screens\n- 1-2 offers\n\n**Why AUF alumni referrals beat the portal**\n\n1. You skip the resume screen — the referring alumna can vouch directly\n2. Your CV lands in the *referred* pile, not the inbound flood\n3. You get a real-name internal advocate, not a recruiter\n\n**Action step**: list 3 Filipino product companies you'd want to work at. Search the AUF directory for alumni at each.",
+            durationMinutes: 12,
+          },
+          {
+            title: "Build a hireable 3-project portfolio",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 28,
+          },
+          {
+            title: "DMing alumni without being awkward",
+            kind: "article",
+            articleMarkdown:
+              "Reaching out to a senior alumna feels weird. It shouldn't. Here's the script I've used to ask for 40+ referrals.\n\n**The 4-line message**\n\n> Hi [Name] — I'm [Your name], BS IT '24 from AUF. I noticed you're at [Company] and saw they're hiring a [Role]. I built [1-sentence portfolio link]. Would you be open to a 15-min chat or willing to refer if you think I'm a fit? No pressure either way.\n\n**Why it works**\n\n- Names the alumni connection up front (one-degree-of-separation principle)\n- Asks ONE specific thing (a chat OR a referral)\n- Gives them an easy out\n- Includes a portfolio link so they can decide quickly\n\n**What to expect**\n\n- 60% no reply\n- 30% nice but \"I'm not on the hiring team\"\n- 10% \"sure, send me your CV\" — these are the ones that change your life",
+            durationMinutes: 8,
+          },
+        ],
+      },
+      {
+        instructorSlug: "marvin-cabrera",
+        slug: "bsn-abroad-pgh-to-singapore",
+        title: "BSN abroad: PGH to Singapore",
+        summary:
+          "How I went from charity-ward rotation at PGH to a critical-care role in Singapore — visa, exams, and the long-game financial math.",
+        description:
+          "**The path I actually took**\n\n1. AUF BSN '19 → 2 years at Med City Clark to build clinical hours\n2. Took the SNB exam (Singapore Nursing Board) in year 3\n3. Applied to NUH critical-care residency in year 4\n4. Settled in year 5\n\nIf you're a BSN '23-'25 and thinking about working abroad, this course gives you the realistic timeline, the costs, and the trade-offs nobody on YouTube tells you about.",
+        category: "healthcare",
+        level: "intermediate",
+        lessons: [
+          {
+            title: "The 5-year timeline (don't skip steps)",
+            kind: "article",
+            articleMarkdown:
+              "Year 1-2 in PH builds clinical hours that count abroad. Year 3 is exams. Year 4 is applications. Year 5 you're settling in. **Skipping years usually backfires.**\n\nHere's what each year actually costs in ₱ and what you should be doing.",
+            durationMinutes: 14,
+          },
+          {
+            title: "Passing the SNB on the first try",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 22,
+          },
+          {
+            title: "Money: what you'll actually take home",
+            kind: "article",
+            articleMarkdown:
+              "The headline SGD 4,500/mo looks great. After housing, food, and remittances back to your family — here's what actually lands in your account.\n\n**Real numbers from my first year:**\n- Gross: SGD 4,500\n- Tax + CPF: SGD 760\n- Housing (shared HDB): SGD 800\n- Food + transport: SGD 600\n- Remittance home: SGD 1,500\n- **Net to save: SGD 840/mo**\n\nNot bad, but it's not the magic-money story you see on TikTok.",
+            durationMinutes: 11,
+          },
+        ],
+      },
+      {
+        instructorSlug: "mark-lim",
+        slug: "crit-stage-product-design",
+        title: "Crit-stage product design",
+        summary:
+          "How designers at GCash run weekly crits — and how to use the same playbook to level up at any PH product company.",
+        description:
+          "Product design crits are the single biggest leverage on a designer's growth. This course teaches you the GCash crit playbook: how to present, how to receive feedback, and how to run them when you eventually lead a team.",
+        category: "design",
+        level: "intermediate",
+        lessons: [
+          {
+            title: "Why crits matter more than 1:1s",
+            kind: "video",
+            videoUrl: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            durationMinutes: 18,
+          },
+          {
+            title: "Presenting work without being defensive",
+            kind: "article",
+            articleMarkdown:
+              "The instinct is to defend every decision. The pros walk into a crit *expecting* to change their mind.\n\nHere's the 3-slide structure: **Context → Decision points → Open questions.**",
+            durationMinutes: 9,
+          },
+        ],
+      },
+    ];
+
+    let academyCourses = 0;
+    let academyLessons = 0;
+    for (const c of ACADEMY_SEEDS) {
+      const instructorId = userIdBySlug.get(c.instructorSlug);
+      if (!instructorId) continue;
+      const totalMinutes = c.lessons.reduce(
+        (acc, l) => acc + (l.durationMinutes ?? 0),
+        0,
+      );
+      const courseId = await ctx.db.insert("academyCourses", {
+        instructorId,
+        slug: c.slug,
+        title: c.title,
+        summary: c.summary,
+        description: c.description,
+        category: c.category,
+        level: c.level,
+        durationMinutes: totalMinutes,
+        status: "published",
+        publishedAt: now - 7 * MS_PER_DAY,
+        createdAt: now - 14 * MS_PER_DAY,
+        updatedAt: now - 7 * MS_PER_DAY,
+      });
+      academyCourses += 1;
+      for (let i = 0; i < c.lessons.length; i += 1) {
+        const l = c.lessons[i];
+        await ctx.db.insert("academyLessons", {
+          courseId,
+          order: i + 1,
+          title: l.title,
+          kind: l.kind,
+          videoUrl: l.videoUrl,
+          articleMarkdown: l.articleMarkdown,
+          durationMinutes: l.durationMinutes,
+          createdAt: now - 14 * MS_PER_DAY,
+          updatedAt: now - 7 * MS_PER_DAY,
+        });
+        academyLessons += 1;
+      }
+    }
+
     return {
       status: "seeded",
       counts: {
@@ -500,6 +832,8 @@ export const run = internalMutation({
         events: 2,
         posts: 3,
         connections: connectTo.length + 1,
+        academyCourses,
+        academyLessons,
       },
     };
   },
