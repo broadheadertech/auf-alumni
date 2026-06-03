@@ -1,14 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { toast } from "sonner";
-import { Download, AlertTriangle, FileText, Loader2 } from "lucide-react";
+import {
+  Download,
+  AlertTriangle,
+  Briefcase,
+  FileText,
+  Loader2,
+  Sparkles,
+} from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/convex-api";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,16 +32,70 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+type DiscoveryProfile = {
+  openToWork?: boolean;
+  openToWorkNote?: string;
+  openToHire?: boolean;
+  openToHireNote?: string;
+} | null | undefined;
+
 export default function SettingsPage() {
   const me = useQuery(api.users.getMe);
   const myExport = useQuery(api.profiles.exportMyData);
+  const myProfile = useQuery(api.profiles.getMyProfile) as DiscoveryProfile;
   const requestDeletion = useMutation(api.profiles.requestAccountDeletion);
   const recordExportRequest = useMutation(api.profiles.recordExportRequest);
+  const setOpenToWork = useMutation(api.social.setOpenToWork);
+  const setOpenToHire = useMutation(api.social.setOpenToHire);
   const { signOut } = useAuthActions();
   const router = useRouter();
   const [downloading, setDownloading] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // Discovery banners — local mirror of profile state so the user can edit
+  // both rows before saving. We sync from the server query the first time
+  // it returns (and on slug changes — rare on this screen).
+  const [openWork, setOpenWork] = useState(false);
+  const [openWorkNote, setOpenWorkNote] = useState("");
+  const [openHire, setOpenHire] = useState(false);
+  const [openHireNote, setOpenHireNote] = useState("");
+  const [discoveryHydrated, setDiscoveryHydrated] = useState(false);
+  const [savingDiscovery, setSavingDiscovery] = useState(false);
+
+  useEffect(() => {
+    if (discoveryHydrated || !myProfile) return;
+    setOpenWork(!!myProfile.openToWork);
+    setOpenWorkNote(myProfile.openToWorkNote ?? "");
+    setOpenHire(!!myProfile.openToHire);
+    setOpenHireNote(myProfile.openToHireNote ?? "");
+    setDiscoveryHydrated(true);
+  }, [discoveryHydrated, myProfile]);
+
+  const onSaveDiscovery = async () => {
+    if (openWorkNote.length > 280 || openHireNote.length > 280) {
+      toast.error("Notes must be 280 characters or fewer");
+      return;
+    }
+    setSavingDiscovery(true);
+    try {
+      await Promise.all([
+        setOpenToWork({
+          on: openWork,
+          note: openWork ? openWorkNote.trim() || undefined : undefined,
+        }),
+        setOpenToHire({
+          on: openHire,
+          note: openHire ? openHireNote.trim() || undefined : undefined,
+        }),
+      ]);
+      toast.success("Discovery banners saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSavingDiscovery(false);
+    }
+  };
 
   const onExport = async () => {
     if (!myExport) return;
@@ -112,6 +174,123 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Discovery banners — open-to-work / open-to-hire */}
+      <Card className="mt-6">
+        <CardContent className="space-y-4 p-6">
+          <div className="flex items-start gap-3">
+            <Sparkles
+              className="h-5 w-5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <h2 className="font-semibold">Discovery banners</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Surface receptivity signals at the top of your profile and on
+                discovery surfaces. Both are off by default — switch on the
+                ones you want recruiters and peers to see.
+              </p>
+            </div>
+          </div>
+
+          {/* Open to work */}
+          <div className="space-y-2 rounded-md border border-border/60 p-4">
+            <label className="flex items-start gap-3">
+              <Checkbox
+                checked={openWork}
+                onCheckedChange={(v) => setOpenWork(v === true)}
+                disabled={!discoveryHydrated}
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">Open to work</span>
+                <span className="block text-xs text-muted-foreground">
+                  Shown as a gold banner at the top of your profile.
+                </span>
+              </span>
+            </label>
+            {openWork && (
+              <div className="space-y-1.5 pl-7">
+                <Label
+                  htmlFor="open-to-work-note"
+                  className="text-xs font-medium"
+                >
+                  Optional note (280 chars)
+                </Label>
+                <Input
+                  id="open-to-work-note"
+                  value={openWorkNote}
+                  onChange={(e) => setOpenWorkNote(e.target.value)}
+                  maxLength={280}
+                  placeholder="e.g. Looking for senior FE roles, remote PH/SG."
+                />
+                <div className="text-right text-[11px] text-muted-foreground">
+                  {openWorkNote.length} / 280
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Open to hire */}
+          <div className="space-y-2 rounded-md border border-border/60 p-4">
+            <label className="flex items-start gap-3">
+              <Checkbox
+                checked={openHire}
+                onCheckedChange={(v) => setOpenHire(v === true)}
+                disabled={!discoveryHydrated}
+              />
+              <span className="flex-1">
+                <span className="block text-sm font-medium">
+                  Open to hire — surface on company page
+                </span>
+                <span className="block text-xs text-muted-foreground">
+                  Use this if you (or your employer) want alumni to see active
+                  hiring intent on the company page.
+                </span>
+              </span>
+            </label>
+            {openHire && (
+              <div className="space-y-1.5 pl-7">
+                <Label
+                  htmlFor="open-to-hire-note"
+                  className="text-xs font-medium"
+                >
+                  Optional note (280 chars)
+                </Label>
+                <Input
+                  id="open-to-hire-note"
+                  value={openHireNote}
+                  onChange={(e) => setOpenHireNote(e.target.value)}
+                  maxLength={280}
+                  placeholder="e.g. Hiring 2 junior backend engineers this quarter."
+                />
+                <div className="text-right text-[11px] text-muted-foreground">
+                  {openHireNote.length} / 280
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Button
+              type="button"
+              onClick={onSaveDiscovery}
+              disabled={!discoveryHydrated || savingDiscovery}
+            >
+              {savingDiscovery ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Briefcase className="mr-2 h-4 w-4" />
+                  Save discovery banners
+                </>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Resume management */}
       <Card className="mt-6">

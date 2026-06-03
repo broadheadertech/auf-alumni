@@ -27,7 +27,6 @@ import {
   Menu,
   MessageCircle,
   Plus,
-  Search,
   Settings,
   Users,
   X,
@@ -35,6 +34,7 @@ import {
 import { api } from "@/lib/convex-api";
 import { AUFWordmark } from "./AUFMark";
 import { AUFAvatar } from "./AUFAvatar";
+import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { cn } from "@/lib/utils";
 
@@ -285,23 +285,7 @@ function TopBar({
           {titleFor(pathname)}
         </div>
 
-        <form
-          className="flex-1 max-w-[520px] relative hidden md:block"
-          onSubmit={(e) => e.preventDefault()}
-        >
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 ink-3" />
-          <input
-            placeholder={
-              pathname.startsWith("/jobs")
-                ? "Search jobs, companies, skills…"
-                : "Search alumni, jobs, posts…"
-            }
-            className="auf-search"
-          />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] ink-3 font-mono border auf-hairline rounded px-1.5 py-0.5 bg-white">
-            ⌘K
-          </kbd>
-        </form>
+        <GlobalSearch />
 
         <div className="flex-1 md:hidden" />
 

@@ -97,13 +97,12 @@ export default function LoginPage() {
           label="Password"
           htmlFor="password"
           hint={
-            <button
-              type="button"
+            <Link
+              href="/forgot-password"
               className="text-[12px] brand-fg hover:underline font-medium"
-              onClick={() => toast.info("Password reset coming soon")}
             >
               Forgot password?
-            </button>
+            </Link>
           }
         >
           <div className="relative">

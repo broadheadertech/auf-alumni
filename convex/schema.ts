@@ -89,6 +89,12 @@ export default defineSchema({
     resumeStorageId: v.optional(v.id("_storage")),
     resumeFilename: v.optional(v.string()),
     resumeUploadedAt: v.optional(v.number()),
+    // Discovery banners — opt-in flags surfaced to viewers + recruiters.
+    openToWork: v.optional(v.boolean()),
+    openToWorkNote: v.optional(v.string()),
+    openToWorkUpdatedAt: v.optional(v.number()),
+    openToHire: v.optional(v.boolean()),
+    openToHireNote: v.optional(v.string()),
     privacyTiers: v.record(v.string(), v.string()),
     verifiedAt: v.optional(v.number()),
     // Stable, opaque virtual Alumni-ID — minted once on the first ID-card
@@ -505,4 +511,56 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_course", ["userId", "courseId"])
     .index("by_course", ["courseId"]),
+
+  // ---------- LinkedIn-parity social primitives ----------
+
+  // Asymmetric follow (one-way). Distinct from connections (two-way).
+  // Lets thought-leader alumni broadcast without needing reciprocation.
+  follows: defineTable({
+    followerId: v.id("users"),
+    followeeId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_follower", ["followerId"])
+    .index("by_followee", ["followeeId"])
+    .index("by_pair", ["followerId", "followeeId"]),
+
+  // Skill endorsements — peers endorse a named skill on someone's profile.
+  // One row per (endorser, profile, skill); endorser can only endorse once
+  // per skill on a given profile.
+  endorsements: defineTable({
+    profileUserId: v.id("users"), // owner of the profile being endorsed
+    endorserId: v.id("users"),
+    skill: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_profile_skill", ["profileUserId", "skill"])
+    .index("by_endorser", ["endorserId"]),
+
+  // Peer recommendations — long-form testimonials shown on profile.
+  // status flow: "pending" (author wrote, awaiting subject approval) →
+  // "published" (subject approved) or "rejected" (subject declined).
+  recommendations: defineTable({
+    subjectUserId: v.id("users"), // recommendation is about this person
+    authorId: v.id("users"),
+    relationship: v.string(), // "manager" | "report" | "peer" | "client" | "classmate" | "mentor" | …
+    body: v.string(),
+    status: v.string(), // "pending" | "published" | "rejected"
+    createdAt: v.number(),
+    decidedAt: v.optional(v.number()),
+  })
+    .index("by_subject_status", ["subjectUserId", "status"])
+    .index("by_author", ["authorId"]),
+
+  // Single-use password-reset tokens (30-min TTL). `usedAt` set when consumed
+  // so the token can't be replayed.
+  passwordResetTokens: defineTable({
+    userId: v.id("users"),
+    token: v.string(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_user", ["userId"]),
 });

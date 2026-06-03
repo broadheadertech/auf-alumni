@@ -15,7 +15,10 @@ import type * as actions_sendVerificationEmail from "../actions/sendVerification
 import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
+import type * as authReset from "../authReset.js";
+import type * as authResetHelpers from "../authResetHelpers.js";
 import type * as billing from "../billing.js";
+import type * as companies from "../companies.js";
 import type * as compliance from "../compliance.js";
 import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
@@ -38,6 +41,7 @@ import type * as reports from "../reports.js";
 import type * as seed from "../seed.js";
 import type * as seedAccounts from "../seedAccounts.js";
 import type * as seedAccountsHelpers from "../seedAccountsHelpers.js";
+import type * as social from "../social.js";
 import type * as users from "../users.js";
 import type * as verification from "../verification.js";
 
@@ -55,7 +59,10 @@ declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   analytics: typeof analytics;
   auth: typeof auth;
+  authReset: typeof authReset;
+  authResetHelpers: typeof authResetHelpers;
   billing: typeof billing;
+  companies: typeof companies;
   compliance: typeof compliance;
   connections: typeof connections;
   crons: typeof crons;
@@ -78,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   seedAccounts: typeof seedAccounts;
   seedAccountsHelpers: typeof seedAccountsHelpers;
+  social: typeof social;
   users: typeof users;
   verification: typeof verification;
 }>;

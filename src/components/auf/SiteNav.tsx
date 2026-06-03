@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { LogOut, Menu, X } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { GlobalSearch } from "@/components/auf/GlobalSearch";
 import { NotificationDropdown } from "@/components/auf/NotificationDropdown";
 import { cn } from "@/lib/utils";
 
@@ -97,6 +98,7 @@ export function SiteNav({ role }: SiteNavProps) {
               Sign in
             </Link>
           )}
+          {role !== "marketing" && <GlobalSearch variant="icon" />}
           {role !== "marketing" && <NotificationDropdown />}
           {role !== "marketing" && <NavSignOut />}
         </nav>
@@ -111,6 +113,7 @@ export function SiteNav({ role }: SiteNavProps) {
               Sign in
             </Link>
           )}
+          {role !== "marketing" && <GlobalSearch variant="icon" />}
           {role !== "marketing" && <NotificationDropdown />}
           {role !== "marketing" && <NavSignOut compact />}
           <button

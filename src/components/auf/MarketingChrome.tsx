@@ -143,6 +143,7 @@ export function MarketingFooter() {
           items={[
             { label: "For alumni", href: "/for-alumni" },
             { label: "For employers", href: "/for-employers" },
+            { label: "Hiring partners", href: "/companies" },
             { label: "Jobs board", href: "/jobs" },
             { label: "Mentorship", href: "/mentorship" },
             { label: "Events", href: "/events" },
