@@ -57,7 +57,9 @@ export function PrivacyTierIcon({
   className,
 }: PrivacyTierIconProps) {
   const [open, setOpen] = useState(false);
-  const meta = TIER_META[tier];
+  // Defensive: stale data in profiles.privacyTiers can produce values outside
+  // the union. Fall back to "alumni" rather than crashing on .icon.
+  const meta = TIER_META[tier] ?? TIER_META.alumni;
   const Icon = meta.icon;
   const ariaLabel = editable
     ? `Visibility: ${meta.label}. Click to change.`
