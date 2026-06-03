@@ -31,6 +31,7 @@ type Params = Promise<{ slug: string }>;
 
 type PublicProfile = {
   _id: string;
+  userId: string;
   slug: string;
   displayName: string;
   batch?: number;
@@ -102,7 +103,9 @@ export default async function PublicProfilePage({
   const [profile, meId] = await Promise.all([loadProfile(slug), loadMeId()]);
   if (!profile) notFound();
 
-  const isMe = meId != null && meId === profile._id;
+  // `meId` is the viewer's `users` ID; profile._id is a `profiles` ID, so
+  // compare against profile.userId (the foreign key to users) instead.
+  const isMe = meId != null && meId === profile.userId;
 
   const structuredData = {
     "@context": "https://schema.org",
@@ -201,7 +204,7 @@ export default async function PublicProfilePage({
                 )}
               </div>
               <div className="mt-3">
-                <FollowControl profileUserId={profile._id} isMe={isMe} />
+                <FollowControl profileUserId={profile.userId} isMe={isMe} />
               </div>
             </div>
           </div>
@@ -218,7 +221,7 @@ export default async function PublicProfilePage({
       </Card>
 
       <ProfileSocial
-        profileUserId={profile._id}
+        profileUserId={profile.userId}
         skills={profile.skills ?? []}
         isMe={isMe}
       />
