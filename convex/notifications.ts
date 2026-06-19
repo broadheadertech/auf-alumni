@@ -15,6 +15,7 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
 
 export const DEFAULT_PREFS: Record<string, boolean> = {
   connectionRequestEmail: true,
@@ -193,9 +194,13 @@ export const scheduleWeeklyDigests = internalMutation({
         (prefs?.prefs?.digestEmail ?? DEFAULT_PREFS.digestEmail);
       if (!wantsDigest) continue;
       // Defer the actual compose+send to an internal action so we don't
-      // block this mutation transaction on external IO.
-      // (Action would be added when Resend's full digest template lands.)
-      void u;
+      // block this mutation transaction on external IO. 500ms stagger keeps
+      // the dispatch rate at ~2 sends/sec (Resend's default rate limit).
+      await ctx.scheduler.runAfter(
+        scheduled * 500,
+        internal.actions.sendDigestEmail.sendDigestEmail,
+        { userId: u._id },
+      );
       scheduled += 1;
     }
     return { scheduled };

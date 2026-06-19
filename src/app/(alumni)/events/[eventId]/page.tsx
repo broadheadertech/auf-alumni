@@ -7,13 +7,16 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   Calendar,
+  CalendarPlus,
   CalendarX,
   ExternalLink,
+  Link2,
   Loader2,
   MapPin,
   Users,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
+import { buildEventIcs, googleCalendarUrl } from "@/lib/calendar";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
 import { EmptyState } from "@/components/auf/EmptyState";
 
@@ -22,6 +25,12 @@ type Attendee = {
   slug: string;
   program?: string;
   batch?: number;
+};
+
+type AgendaItem = {
+  time: string;
+  title: string;
+  description?: string;
 };
 
 type EventDetail = {
@@ -34,11 +43,23 @@ type EventDetail = {
   onlineUrl?: string;
   capacity?: number;
   cancelledAt?: number;
+  coverImageUrl: string | null;
+  category?: "reunion" | "webinar" | "meetup" | "other";
+  agenda?: AgendaItem[];
+  organizer: { displayName: string; slug: string } | null;
+  batchGoingCount: number;
   myRsvpStatus: string | null;
   goingCount: number;
   maybeCount: number;
   waitlistCount: number;
   attendees: Attendee[];
+};
+
+const CATEGORY_LABELS: Record<NonNullable<EventDetail["category"]>, string> = {
+  reunion: "Reunion",
+  webinar: "Webinar",
+  meetup: "Meetup",
+  other: "Other",
 };
 
 function formatDateLine(startsAt: number, endsAt?: number): string {
@@ -122,6 +143,45 @@ export default function EventDetailPage() {
 
   const isCancelled = e.cancelledAt != null;
 
+  const calendarInput = {
+    id: e._id,
+    title: e.title,
+    description: e.description,
+    startsAt: e.startsAt,
+    endsAt: e.endsAt,
+    location: e.locationLabel,
+    url: typeof window !== "undefined" ? window.location.href : undefined,
+  };
+
+  const onDownloadIcs = () => {
+    const ics = buildEventIcs(calendarInput);
+    const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${
+      e.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "event"
+    }.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoke later — a synchronous revoke can abort the download in
+    // Firefox/Safari before the browser has read the blob.
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  };
+
+  const onShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copied to clipboard");
+    } catch {
+      toast.error("Couldn't copy the link");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <Link
@@ -130,6 +190,15 @@ export default function EventDetailPage() {
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to events
       </Link>
+
+      {e.coverImageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={e.coverImageUrl}
+          alt=""
+          className="mt-4 w-full aspect-[2/1] rounded-xl border border-border object-cover"
+        />
+      )}
 
       <div className="mt-4">
         <span className="section-eyebrow inline-flex items-center gap-1.5">
@@ -140,11 +209,21 @@ export default function EventDetailPage() {
           {e.title}
         </h1>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] ink-3 mt-3">
+          {e.category && (
+            <span className="auf-chip auf-chip-brand text-[10.5px]">
+              {CATEGORY_LABELS[e.category]}
+            </span>
+          )}
           {e.locationLabel && (
-            <span className="inline-flex items-center gap-1.5">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.locationLabel)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 ink-2 hover:underline"
+            >
               <MapPin className="h-3.5 w-3.5" />
               {e.locationLabel}
-            </span>
+            </a>
           )}
           {e.onlineUrl && (
             <a
@@ -240,11 +319,94 @@ export default function EventDetailPage() {
         </div>
       )}
 
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!isCancelled && (
+          <>
+            <button
+              type="button"
+              className="auf-btn auf-btn-outline auf-btn-sm inline-flex items-center gap-1.5"
+              onClick={onDownloadIcs}
+            >
+              <CalendarPlus className="h-3.5 w-3.5" />
+              Add to calendar
+            </button>
+            <a
+              href={googleCalendarUrl(calendarInput)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="auf-btn auf-btn-outline auf-btn-sm inline-flex items-center gap-1.5"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Google Calendar
+            </a>
+          </>
+        )}
+        <button
+          type="button"
+          className="auf-btn auf-btn-outline auf-btn-sm inline-flex items-center gap-1.5"
+          onClick={onShare}
+        >
+          <Link2 className="h-3.5 w-3.5" />
+          Copy link
+        </button>
+      </div>
+
       <div className="mt-6 auf-card p-6">
         <p className="text-[14.5px] ink whitespace-pre-line leading-relaxed">
           {e.description}
         </p>
       </div>
+
+      {e.agenda && e.agenda.length > 0 && (
+        <section className="mt-8">
+          <h2 className="section-eyebrow">Agenda</h2>
+          <ol className="mt-3">
+            {e.agenda.map((item, i) => (
+              <li key={i} className="flex gap-4">
+                <span className="w-20 shrink-0 pt-0.5 text-right text-[12px] ink-3 tabular-nums">
+                  {item.time}
+                </span>
+                <div
+                  className={`flex-1 border-l border-border pl-4 ${
+                    i < e.agenda!.length - 1 ? "pb-5" : "pb-1"
+                  }`}
+                >
+                  <div className="font-medium text-[14px]">{item.title}</div>
+                  {item.description && (
+                    <p className="text-[13px] ink-3 mt-0.5 leading-relaxed">
+                      {item.description}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {e.organizer && (
+        <section className="mt-8">
+          <h2 className="section-eyebrow">Organized by</h2>
+          <div className="mt-3 auf-card p-4 flex items-center gap-3">
+            <AUFAvatar name={e.organizer.displayName} size={40} grad={1} />
+            <div className="min-w-0 flex-1">
+              {e.organizer.slug ? (
+                <Link
+                  href={`/profile/${e.organizer.slug}`}
+                  className="font-medium text-[14px] hover:underline underline-offset-2 truncate block"
+                >
+                  {e.organizer.displayName}
+                </Link>
+              ) : (
+                <span className="font-medium text-[14px] truncate block">
+                  {e.organizer.displayName}
+                </span>
+              )}
+              <span className="text-[12px] ink-3">Event organizer</span>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="mt-6 grid grid-cols-3 gap-3">
         <StatCard label="Going" value={e.goingCount} />
@@ -254,9 +416,16 @@ export default function EventDetailPage() {
 
       <section className="mt-8">
         <h2 className="section-eyebrow">Attendees</h2>
+        {e.batchGoingCount > 0 && (
+          <p className="mt-3 inline-flex items-center gap-1.5 text-[13px] ink-2">
+            <Users className="h-3.5 w-3.5" />
+            {e.batchGoingCount} from your batch{" "}
+            {e.batchGoingCount === 1 ? "is" : "are"} going
+          </p>
+        )}
         {e.attendees.length === 0 ? (
           <p className="text-[13px] ink-3 mt-3">
-            No one has RSVP'd yet. Be the first.
+            No one has RSVP&apos;d yet. Be the first.
           </p>
         ) : (
           <ul className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">

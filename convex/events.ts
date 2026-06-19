@@ -21,6 +21,66 @@ import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 
+const categoryValidator = v.union(
+  v.literal("reunion"),
+  v.literal("webinar"),
+  v.literal("meetup"),
+  v.literal("other"),
+);
+
+const agendaValidator = v.array(
+  v.object({
+    time: v.string(),
+    title: v.string(),
+    description: v.optional(v.string()),
+  }),
+);
+
+/**
+ * Server-side agenda limits shared by publishEvent and createEvent:
+ * ≤ 50 rows; every row needs a non-empty title; title ≤ 200 chars,
+ * time ≤ 40 chars, description ≤ 1000 chars.
+ */
+function validateAgenda(
+  agenda:
+    | Array<{ time: string; title: string; description?: string }>
+    | undefined,
+): void {
+  if (!agenda) return;
+  if (agenda.length > 50) {
+    throw new ConvexError({
+      code: "validation",
+      message: "Agenda cannot have more than 50 items",
+    });
+  }
+  for (const row of agenda) {
+    if (!row.title.trim()) {
+      throw new ConvexError({
+        code: "validation",
+        message: "Every agenda item needs a title",
+      });
+    }
+    if (row.title.length > 200) {
+      throw new ConvexError({
+        code: "validation",
+        message: "Agenda item titles must be 200 characters or fewer",
+      });
+    }
+    if (row.time.length > 40) {
+      throw new ConvexError({
+        code: "validation",
+        message: "Agenda item times must be 40 characters or fewer",
+      });
+    }
+    if (row.description != null && row.description.length > 1000) {
+      throw new ConvexError({
+        code: "validation",
+        message: "Agenda item descriptions must be 1000 characters or fewer",
+      });
+    }
+  }
+}
+
 async function profileMatchesAudience(
   ctx: QueryCtx,
   userId: Id<"users">,
@@ -52,6 +112,9 @@ export const publishEvent = mutation({
     capacity: v.optional(v.number()),
     audienceBatches: v.optional(v.array(v.number())),
     audiencePrograms: v.optional(v.array(v.string())),
+    coverImageStorageId: v.optional(v.id("_storage")),
+    category: v.optional(categoryValidator),
+    agenda: v.optional(agendaValidator),
   },
   handler: withAuditLog(async (ctx, args) => {
     const { userId } = await requireRole(ctx, ["moderator", "super-admin"]);
@@ -60,6 +123,28 @@ export const publishEvent = mutation({
         code: "validation",
         message: "Title and description required",
       });
+    }
+    validateAgenda(args.agenda);
+    if (args.endsAt != null && args.endsAt <= args.startsAt) {
+      throw new ConvexError({
+        code: "validation",
+        message: "End time must be after start time",
+      });
+    }
+    // Guard against attaching a non-image (or unrelated) stored blob as the
+    // cover: verify the storage metadata before insert.
+    if (args.coverImageStorageId) {
+      const meta = await ctx.db.system.get(args.coverImageStorageId);
+      if (
+        !meta ||
+        !("contentType" in meta) ||
+        !meta.contentType?.startsWith("image/")
+      ) {
+        throw new ConvexError({
+          code: "validation",
+          message: "Cover image must be an uploaded image file",
+        });
+      }
     }
     const audience =
       args.audienceBatches?.length || args.audiencePrograms?.length
@@ -79,6 +164,9 @@ export const publishEvent = mutation({
       audienceFilter: audience,
       publishedBy: userId,
       publishedAt: Date.now(),
+      coverImageStorageId: args.coverImageStorageId,
+      category: args.category,
+      agenda: args.agenda?.length ? args.agenda : undefined,
     });
     return {
       action: "publish-event",
@@ -103,23 +191,50 @@ export const cancelEvent = mutation({
 });
 
 export const listUpcoming = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    scope: v.optional(v.union(v.literal("upcoming"), v.literal("past"))),
+    category: v.optional(categoryValidator),
+  },
+  handler: async (ctx, { scope, category }) => {
     const userId = await getAuthUserId(ctx);
     const now = Date.now();
-    const events = await ctx.db
-      .query("events")
-      .withIndex("by_starts_at")
-      .order("asc")
-      .collect();
-    const future = events.filter(
-      (e) => e.startsAt > now && e.cancelledAt == null,
-    );
+    let matched: Array<Doc<"events">>;
+    if (scope === "past") {
+      // Walk newest-first lazily and stop once the cap of ended events is
+      // kept. The index range bound skips the future-events prefix entirely
+      // (an ended event always has startsAt <= now once endsAt > startsAt
+      // is enforced at write time).
+      matched = [];
+      const newestFirst = ctx.db
+        .query("events")
+        .withIndex("by_starts_at", (q) => q.lte("startsAt", now))
+        .order("desc");
+      for await (const e of newestFirst) {
+        if ((e.endsAt ?? e.startsAt) > now || e.cancelledAt != null) continue;
+        if (category != null && e.category !== category) continue;
+        matched.push(e);
+        if (matched.length >= 50) break;
+      }
+    } else {
+      const events = await ctx.db
+        .query("events")
+        .withIndex("by_starts_at")
+        .order("asc")
+        .collect();
+      matched = events.filter(
+        (e) =>
+          e.startsAt > now &&
+          e.cancelledAt == null &&
+          (category == null || e.category === category),
+      );
+    }
     const out: Array<{
       _id: Id<"events">;
       title: string;
       description: string;
       startsAt: number;
+      endsAt?: number;
+      category?: "reunion" | "webinar" | "meetup" | "other";
       locationLabel?: string;
       onlineUrl?: string;
       capacity?: number;
@@ -129,7 +244,7 @@ export const listUpcoming = query({
       waitlistCount: number;
       myRsvpStatus: string | null;
     }> = [];
-    for (const e of future) {
+    for (const e of matched) {
       const audienceMatch = userId
         ? await profileMatchesAudience(ctx, userId, e.audienceFilter)
         : !e.audienceFilter;
@@ -151,6 +266,8 @@ export const listUpcoming = query({
         title: e.title,
         description: e.description,
         startsAt: e.startsAt,
+        endsAt: e.endsAt,
+        category: e.category,
         locationLabel: e.locationLabel,
         onlineUrl: e.onlineUrl,
         capacity: e.capacity,
@@ -201,6 +318,8 @@ export const createEvent = mutation({
     locationLabel: v.optional(v.string()),
     onlineUrl: v.optional(v.string()),
     capacity: v.optional(v.number()),
+    category: v.optional(categoryValidator),
+    agenda: v.optional(agendaValidator),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -228,6 +347,7 @@ export const createEvent = mutation({
         message: "End time must be after start time",
       });
     }
+    validateAgenda(args.agenda);
     const id = await ctx.db.insert("events", {
       title: args.title.trim(),
       description: args.description.trim(),
@@ -238,8 +358,24 @@ export const createEvent = mutation({
       capacity: args.capacity,
       publishedBy: userId,
       publishedAt: Date.now(),
+      category: args.category,
+      agenda: args.agenda?.length ? args.agenda : undefined,
     });
     return { eventId: id };
+  },
+});
+
+/**
+ * Short-lived upload URL for an event cover image (admin publish form).
+ * Mirrors the academy cover-image pattern: client POSTs the file to the
+ * returned URL and passes the resulting storageId into `publishEvent`.
+ */
+// @no-audit-required: mints an ephemeral upload token only; the publish itself is audited.
+export const generateCoverUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, ["moderator", "super-admin"]);
+    return await ctx.storage.generateUploadUrl();
   },
 });
 
@@ -261,15 +397,27 @@ export const getEvent = query({
       ? active.find((r) => r.userId === userId)
       : undefined;
 
-    const yesRsvps = active
-      .filter((r) => r.status === "yes")
-      .slice(0, 20);
+    // Viewer's own batch, resolved server-side; social proof only applies to
+    // verified viewers with a profile (otherwise the count stays 0).
+    let viewerBatch: number | null = null;
+    if (userId) {
+      const myProfile = await ctx.db
+        .query("profiles")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .unique();
+      if (myProfile && myProfile.verifiedAt != null) {
+        viewerBatch = myProfile.batch;
+      }
+    }
+
+    const yesRsvps = active.filter((r) => r.status === "yes");
     const attendees: Array<{
       displayName: string;
       slug: string;
       program?: string;
       batch?: number;
     }> = [];
+    let batchGoingCount = 0;
     for (const r of yesRsvps) {
       const profile = await ctx.db
         .query("profiles")
@@ -278,16 +426,50 @@ export const getEvent = query({
       if (!profile) continue;
       const viewer = await getViewerContext(ctx, profile.userId);
       const safe = applyPrivacy(profile, viewer);
-      attendees.push({
+      // Batch social proof: count batchmates (never the viewer themselves,
+      // mirroring digest.ts) whose batch SURVIVES privacy filtering — a
+      // viewer-hidden batch excludes that attendee from the count.
+      if (
+        viewerBatch != null &&
+        r.userId !== userId &&
+        safe.batch === viewerBatch
+      ) {
+        batchGoingCount += 1;
+      }
+      if (attendees.length < 20) {
+        attendees.push({
+          displayName: safe.displayName ?? "Alumnus",
+          slug: safe.slug ?? "",
+          program: safe.program,
+          batch: safe.batch,
+        });
+      }
+    }
+
+    // Organizer card: never expose the raw publishedBy id — only the
+    // privacy-filtered always-include identity fields of their profile.
+    const { publishedBy, coverImageStorageId, ...publicEvent } = event;
+    let organizer: { displayName: string; slug: string } | null = null;
+    const organizerProfile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", publishedBy))
+      .unique();
+    if (organizerProfile) {
+      const viewer = await getViewerContext(ctx, organizerProfile.userId);
+      const safe = applyPrivacy(organizerProfile, viewer);
+      organizer = {
         displayName: safe.displayName ?? "Alumnus",
         slug: safe.slug ?? "",
-        program: safe.program,
-        batch: safe.batch,
-      });
+      };
     }
 
     return {
-      ...event,
+      ...publicEvent,
+      coverImageUrl: coverImageStorageId
+        ? await ctx.storage.getUrl(coverImageStorageId)
+        : null,
+      organizer,
+      batchGoingCount,
       myRsvpStatus: mine?.status ?? null,
       goingCount,
       maybeCount,

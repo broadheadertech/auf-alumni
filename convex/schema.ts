@@ -316,6 +316,24 @@ export default defineSchema({
     publishedBy: v.id("users"),
     publishedAt: v.number(),
     cancelledAt: v.optional(v.number()),
+    coverImageStorageId: v.optional(v.id("_storage")),
+    category: v.optional(
+      v.union(
+        v.literal("reunion"),
+        v.literal("webinar"),
+        v.literal("meetup"),
+        v.literal("other"),
+      ),
+    ),
+    agenda: v.optional(
+      v.array(
+        v.object({
+          time: v.string(),
+          title: v.string(),
+          description: v.optional(v.string()),
+        }),
+      ),
+    ),
   })
     .index("by_starts_at", ["startsAt"])
     .index("by_published_at", ["publishedAt"]),

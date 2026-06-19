@@ -15,11 +15,15 @@ import {
 import { api } from "@/lib/convex-api";
 import { EmptyState } from "@/components/auf/EmptyState";
 
+type EventCategory = "reunion" | "webinar" | "meetup" | "other";
+
 type EventRow = {
   _id: string;
   title: string;
   description: string;
   startsAt: number;
+  endsAt?: number;
+  category?: EventCategory;
   locationLabel?: string;
   onlineUrl?: string;
   capacity?: number;
@@ -29,6 +33,15 @@ type EventRow = {
   waitlistCount: number;
   myRsvpStatus: string | null;
 };
+
+const CATEGORY_LABELS: Record<EventCategory, string> = {
+  reunion: "Reunion",
+  webinar: "Webinar",
+  meetup: "Meetup",
+  other: "Other",
+};
+
+const CATEGORY_OPTIONS = Object.keys(CATEGORY_LABELS) as EventCategory[];
 
 const MONTHS = [
   "JAN",
@@ -62,7 +75,13 @@ const EMPTY_FORM = {
 };
 
 export default function EventsPage() {
-  const events = useQuery(api.events.listUpcoming);
+  const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
+  const [category, setCategory] = useState<"all" | EventCategory>("all");
+
+  const events = useQuery(api.events.listUpcoming, {
+    scope: tab === "past" ? "past" : undefined,
+    category: category === "all" ? undefined : category,
+  });
   const rsvp = useMutation(api.events.rsvp);
   const createEvent = useMutation(api.events.createEvent);
 
@@ -152,18 +171,73 @@ export default function EventsPage() {
         </button>
       </div>
 
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        {(["upcoming", "past"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            aria-pressed={tab === t}
+            className={`auf-chip text-[12px] transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              tab === t ? "auf-chip-brand" : "opacity-60 hover:opacity-100"
+            }`}
+          >
+            {t === "upcoming" ? "Upcoming" : "Past"}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        {(["all", ...CATEGORY_OPTIONS] as const).map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCategory(c)}
+            aria-pressed={category === c}
+            className={`auf-chip text-[11.5px] transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              category === c ? "auf-chip-brand" : "opacity-60 hover:opacity-100"
+            }`}
+          >
+            {c === "all" ? "All" : CATEGORY_LABELS[c]}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-6 space-y-3">
         {events === undefined ? (
           <div className="auf-card p-6 text-[13px] ink-3">Loading…</div>
         ) : list.length === 0 ? (
-          <EmptyState
-            icon={CalendarPlus}
-            message="No upcoming events"
-            description="Be the first to share a reunion, webinar, or meetup with fellow alumni."
-          />
+          category !== "all" ? (
+            <EmptyState
+              icon={CalendarPlus}
+              message={
+                tab === "past"
+                  ? "No past events in this category"
+                  : "No upcoming events in this category"
+              }
+              description="Try another category, or switch back to All to see everything."
+            />
+          ) : tab === "past" ? (
+            <EmptyState
+              icon={CalendarPlus}
+              message="No past events yet"
+              description="Once events wrap up, they'll be archived here."
+            />
+          ) : (
+            <EmptyState
+              icon={CalendarPlus}
+              message="No upcoming events"
+              description="Be the first to share a reunion, webinar, or meetup with fellow alumni."
+            />
+          )
         ) : (
           list.map((e) => (
-            <EventRowCard key={e._id} event={e} onRsvp={onRsvp} />
+            <EventRowCard
+              key={e._id}
+              event={e}
+              isPast={tab === "past"}
+              onRsvp={onRsvp}
+            />
           ))
         )}
       </div>
@@ -183,9 +257,11 @@ export default function EventsPage() {
 
 function EventRowCard({
   event,
+  isPast,
   onRsvp,
 }: {
   event: EventRow;
+  isPast: boolean;
   onRsvp: (id: string, status: "yes" | "maybe" | "cancelled") => void;
 }) {
   const d = new Date(event.startsAt);
@@ -221,11 +297,18 @@ function EventRowCard({
           >
             {event.title}
           </Link>
-          {!event.audienceMatch && (
-            <span className="auf-chip text-[10.5px] ink-3 shrink-0">
-              Not your audience
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {event.category && (
+              <span className="auf-chip text-[10.5px]">
+                {CATEGORY_LABELS[event.category]}
+              </span>
+            )}
+            {!event.audienceMatch && (
+              <span className="auf-chip text-[10.5px] ink-3">
+                Not your audience
+              </span>
+            )}
+          </div>
         </div>
         <p className="text-[13px] ink-2 mt-1 line-clamp-2">
           {event.description}
@@ -254,7 +337,7 @@ function EventRowCard({
             {event.goingCount} going
           </span>
         </div>
-        {event.audienceMatch && (
+        {!isPast && event.audienceMatch && (
           <div className="flex flex-wrap gap-2 pt-3">
             {statusLabel ? (
               <>

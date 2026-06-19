@@ -11,6 +11,7 @@
 import type * as academy from "../academy.js";
 import type * as actions_email from "../actions/email.js";
 import type * as actions_sendConnectionEmail from "../actions/sendConnectionEmail.js";
+import type * as actions_sendDigestEmail from "../actions/sendDigestEmail.js";
 import type * as actions_sendVerificationEmail from "../actions/sendVerificationEmail.js";
 import type * as admin from "../admin.js";
 import type * as analytics from "../analytics.js";
@@ -22,6 +23,8 @@ import type * as companies from "../companies.js";
 import type * as compliance from "../compliance.js";
 import type * as connections from "../connections.js";
 import type * as crons from "../crons.js";
+import type * as digest from "../digest.js";
+import type * as digestModel from "../digestModel.js";
 import type * as directory from "../directory.js";
 import type * as employerOrgs from "../employerOrgs.js";
 import type * as events from "../events.js";
@@ -55,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   academy: typeof academy;
   "actions/email": typeof actions_email;
   "actions/sendConnectionEmail": typeof actions_sendConnectionEmail;
+  "actions/sendDigestEmail": typeof actions_sendDigestEmail;
   "actions/sendVerificationEmail": typeof actions_sendVerificationEmail;
   admin: typeof admin;
   analytics: typeof analytics;
@@ -66,6 +70,8 @@ declare const fullApi: ApiFromModules<{
   compliance: typeof compliance;
   connections: typeof connections;
   crons: typeof crons;
+  digest: typeof digest;
+  digestModel: typeof digestModel;
   directory: typeof directory;
   employerOrgs: typeof employerOrgs;
   events: typeof events;

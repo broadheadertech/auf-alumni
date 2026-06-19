@@ -93,7 +93,7 @@ export default function FeedPage() {
   const myProfile = useQuery(api.profiles.getMyProfile);
   const feed = useQuery(api.feed.getFeed, { limit: 30 });
   const matchedJobs = useQuery(api.jobs.browse, { showUnmatched: true });
-  const upcomingEvents = useQuery(api.events.listUpcoming);
+  const upcomingEvents = useQuery(api.events.listUpcoming, {});
   const suggested = useQuery(api.directory.list, { pageSize: 3 });
   const publishPost = useMutation(api.feed.publishPost);
   const deletePost = useMutation(api.feed.deletePost);
