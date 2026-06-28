@@ -69,7 +69,7 @@ export default function CollegesPage() {
             <h2 className="font-serif text-[18px] font-semibold">{c.name}</h2>
             <p className="text-[14px] ink-2 mt-2 leading-[1.6]">{c.blurb}</p>
             <Link
-              href="/directory"
+              href="/signup"
               className="brand-fg text-[13px] font-medium mt-3 inline-block underline underline-offset-4"
             >
               Browse alumni &rarr;

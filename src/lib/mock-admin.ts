@@ -1491,3 +1491,316 @@ export function fmtMonth(key: string): string {
   const [y, m] = key.split("-");
   return `${MONTHS[Number(m) - 1]} ${y}`;
 }
+
+// ------------------------------------------------------------- events ---
+
+/**
+ * Alumni events with audience targeting. An event is sent to one of:
+ *   • everyone  — all verified alumni
+ *   • college   — one or more colleges
+ *   • batch     — one or more graduating years
+ *
+ * The admin sees a live "reach" estimate when composing. Reach is computed
+ * against a notional alumni population (the real network is far larger than
+ * the 14 sample alumnae), so the preview shows realistic numbers. Mirrors the
+ * Convex `events` table (audienceFilter) at /admin/events/new, extended with
+ * college-level targeting.
+ */
+
+export type EventCategory =
+  | "reunion"
+  | "webinar"
+  | "meetup"
+  | "fundraiser"
+  | "career-fair"
+  | "other";
+
+export const EVENT_CATEGORIES: { value: EventCategory; label: string }[] = [
+  { value: "reunion", label: "Reunion" },
+  { value: "webinar", label: "Webinar" },
+  { value: "meetup", label: "Meetup" },
+  { value: "fundraiser", label: "Fundraiser" },
+  { value: "career-fair", label: "Career fair" },
+  { value: "other", label: "Other" },
+];
+
+export const EVENT_CATEGORY_LABEL: Record<EventCategory, string> =
+  Object.fromEntries(EVENT_CATEGORIES.map((c) => [c.value, c.label])) as Record<
+    EventCategory,
+    string
+  >;
+
+export type AudienceKind = "everyone" | "college" | "batch";
+
+export type EventAudience =
+  | { kind: "everyone" }
+  | { kind: "college"; colleges: College[] }
+  | { kind: "batch"; batches: number[] };
+
+export type AdminEvent = {
+  id: string;
+  title: string;
+  description: string;
+  category: EventCategory;
+  startsAt: string; // ISO datetime, "2026-07-15T18:00"
+  location: string;
+  onlineUrl: string | null;
+  capacity: number | null;
+  audience: EventAudience;
+  rsvpYes: number;
+  rsvpMaybe: number;
+  createdAt: string; // ISO date
+};
+
+/**
+ * Notional alumni population by college — the live network is much larger than
+ * the sample roster, so targeting previews use these figures. Replace with a
+ * Convex count when wired.
+ */
+export const COLLEGE_ALUMNI: Record<College, number> = {
+  "College of Computer Studies": 1480,
+  "College of Engineering & Architecture": 1320,
+  "College of Business & Accountancy": 2100,
+  "College of Nursing": 1650,
+  "College of Allied Medical Professions": 720,
+  "College of Arts & Sciences": 760,
+  "College of Education": 420,
+};
+
+export const ALUMNI_POPULATION = Object.values(COLLEGE_ALUMNI).reduce(
+  (a, b) => a + b,
+  0,
+); // 8,450
+
+/** Graduating years available for event targeting (2008–2025, newest first). */
+export const GRAD_YEARS = Array.from(
+  { length: 2025 - 2008 + 1 },
+  (_, i) => 2025 - i,
+);
+
+/** Deterministic notional cohort size for a graduating year. */
+export function batchSize(year: number): number {
+  // Newer cohorts skew a little larger; stable, no randomness.
+  return 360 + ((year - 2008) % 12) * 14;
+}
+
+/** Estimated number of alumni an event's audience reaches. */
+export function audienceReach(a: EventAudience): number {
+  switch (a.kind) {
+    case "everyone":
+      return ALUMNI_POPULATION;
+    case "college":
+      return a.colleges.reduce((s, c) => s + (COLLEGE_ALUMNI[c] ?? 0), 0);
+    case "batch":
+      return a.batches.reduce((s, b) => s + batchSize(b), 0);
+  }
+}
+
+/** Human description of an event audience. */
+export function describeAudience(a: EventAudience): string {
+  switch (a.kind) {
+    case "everyone":
+      return "All verified alumni";
+    case "college":
+      if (a.colleges.length === 0) return "No college selected";
+      if (a.colleges.length === 1)
+        return a.colleges[0].replace("College of ", "");
+      return `${a.colleges.length} colleges`;
+    case "batch":
+      if (a.batches.length === 0) return "No year selected";
+      if (a.batches.length === 1) return `Class of ${a.batches[0]}`;
+      return `${a.batches.length} graduating years`;
+  }
+}
+
+const EVENT_TODAY = "2026-06-28";
+export function isUpcoming(ev: AdminEvent): boolean {
+  return ev.startsAt.slice(0, 10) >= EVENT_TODAY;
+}
+
+/** "Jul 15, 2026 · 6:00 PM" from an ISO datetime-local string. */
+export function fmtDateTime(iso: string): string {
+  const [date, time] = iso.split("T");
+  const d = new Date(date + "T00:00:00Z");
+  const datePart = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+  if (!time) return datePart;
+  const [hStr, m] = time.split(":");
+  let h = Number(hStr);
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${datePart} · ${h}:${m} ${ampm}`;
+}
+
+export const EVENTS: AdminEvent[] = [
+  {
+    id: "evt-001",
+    title: "AUF Grand Alumni Homecoming 2026",
+    description:
+      "Our flagship annual reunion — all colleges, all batches. Dinner, awarding of distinguished alumni, and the AUF Got Talent finals.",
+    category: "reunion",
+    startsAt: "2026-08-22T17:00",
+    location: "AUF Gymnasium, Angeles City",
+    onlineUrl: null,
+    capacity: 1200,
+    audience: { kind: "everyone" },
+    rsvpYes: 612,
+    rsvpMaybe: 188,
+    createdAt: "2026-05-30",
+  },
+  {
+    id: "evt-002",
+    title: "Tech Careers After AUF: A CCS Webinar",
+    description:
+      "Computer Studies alumni working at Globe, Grab, and Stripe share how they broke into top tech roles. Live Q&A.",
+    category: "webinar",
+    startsAt: "2026-07-10T19:00",
+    location: "Online (Zoom)",
+    onlineUrl: "https://zoom.us/j/auf-ccs",
+    capacity: null,
+    audience: { kind: "college", colleges: ["College of Computer Studies"] },
+    rsvpYes: 143,
+    rsvpMaybe: 67,
+    createdAt: "2026-06-12",
+  },
+  {
+    id: "evt-003",
+    title: "Class of 2018 — 8-Year Reunion",
+    description:
+      "Batch 2018, it's been eight years! Casual dinner and drinks at Marquee Mall. Bring your families.",
+    category: "reunion",
+    startsAt: "2026-07-26T18:30",
+    location: "Marquee Mall Atrium, Pampanga",
+    onlineUrl: null,
+    capacity: 200,
+    audience: { kind: "batch", batches: [2018] },
+    rsvpYes: 74,
+    rsvpMaybe: 31,
+    createdAt: "2026-06-18",
+  },
+  {
+    id: "evt-004",
+    title: "Healthcare Alumni Career Fair",
+    description:
+      "Nursing and Allied Medical Professions alumni — meet 12 hiring hospitals and agencies recruiting locally and abroad.",
+    category: "career-fair",
+    startsAt: "2026-09-05T09:00",
+    location: "AUF Allied Medical Building",
+    onlineUrl: null,
+    capacity: 400,
+    audience: {
+      kind: "college",
+      colleges: [
+        "College of Nursing",
+        "College of Allied Medical Professions",
+      ],
+    },
+    rsvpYes: 98,
+    rsvpMaybe: 52,
+    createdAt: "2026-06-20",
+  },
+  {
+    id: "evt-005",
+    title: "AUF Scholarship Fund — Benefit Gala",
+    description:
+      "An evening to raise funds for deserving AUF students. Open to all alumni who want to give back.",
+    category: "fundraiser",
+    startsAt: "2026-10-18T18:00",
+    location: "Clark Marriott Hotel",
+    onlineUrl: null,
+    capacity: 300,
+    audience: { kind: "everyone" },
+    rsvpYes: 41,
+    rsvpMaybe: 96,
+    createdAt: "2026-06-25",
+  },
+  {
+    id: "evt-006",
+    title: "Young Alumni Mixer (Batches 2022–2024)",
+    description:
+      "Recent grads — network with peers and near-peers over coffee. Light, casual, great for first jobs and referrals.",
+    category: "meetup",
+    startsAt: "2026-05-17T16:00",
+    location: "The Nest Cafe, Angeles City",
+    onlineUrl: null,
+    capacity: 80,
+    audience: { kind: "batch", batches: [2022, 2023, 2024] },
+    rsvpYes: 63,
+    rsvpMaybe: 12,
+    createdAt: "2026-04-20",
+  },
+];
+
+// ------------------------------------------------ employer (self) view ---
+
+/**
+ * The employer-facing surface (dashboard, postings, applicants, analytics,
+ * reports) is scoped to one signed-in employer org. For the prototype that's
+ * Kollab AI — its identity, contract, and postings come from EMPLOYERS, and
+ * the live applicant pipeline below references its real posting ids.
+ *
+ * An employer only ever sees applicants to its own postings (privacy). These
+ * applicant rows are self-contained — they do NOT link to the admin alumni
+ * profiles (EQ, full directory) which are not an employer's to see.
+ */
+export const CURRENT_EMPLOYER_ID = "emp-kollab";
+
+export function currentEmployer(): AdminEmployer {
+  return getEmployerById(CURRENT_EMPLOYER_ID)!;
+}
+
+export type EmployerApplicant = {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  college: College;
+  batch: number;
+  city: string;
+  jobId: string; // → currentEmployer().postings[].id
+  jobTitle: string;
+  appliedAt: string; // ISO date
+  stage: ApplicationStage;
+  matchScore: number; // 0–100
+  cv: UploadedDoc | null;
+  topSkills: string[];
+  currentRole: string | null;
+  yearsExperience: number;
+};
+
+export const EMPLOYER_APPLICANTS: EmployerApplicant[] = [
+  // job-kollab-1 · Machine Learning Engineer
+  { id: "ea-01", name: "Rafael Mendoza", initials: "RM", email: "rafael.mendoza@auf.edu.ph", college: "College of Computer Studies", batch: 2022, city: "Angeles City", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-18", stage: "interview", matchScore: 92, cv: { filename: "RMendoza_ML_CV.pdf", uploadedAt: "2026-06-18", sizeKb: 197 }, topSkills: ["Python", "PyTorch", "MLOps"], currentRole: "ML Engineer @ Shopee", yearsExperience: 4 },
+  { id: "ea-02", name: "Liza Tan", initials: "LT", email: "liza.tan@auf.edu.ph", college: "College of Computer Studies", batch: 2021, city: "Manila", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-19", stage: "screening", matchScore: 84, cv: { filename: "LizaTan_DS.pdf", uploadedAt: "2026-06-19", sizeKb: 180 }, topSkills: ["Python", "scikit-learn", "SQL"], currentRole: "Data Scientist @ Kalibrr", yearsExperience: 5 },
+  { id: "ea-03", name: "Mark Aquino", initials: "MA", email: "mark.aquino@auf.edu.ph", college: "College of Computer Studies", batch: 2023, city: "Angeles City", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-24", stage: "new", matchScore: 71, cv: { filename: "MAquino_CV.pdf", uploadedAt: "2026-06-24", sizeKb: 152 }, topSkills: ["Python", "TensorFlow"], currentRole: "Junior Data Analyst", yearsExperience: 2 },
+  { id: "ea-04", name: "Patricia Cruz", initials: "PC", email: "patricia.cruz@auf.edu.ph", college: "College of Computer Studies", batch: 2020, city: "Taguig", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-08", stage: "hired", matchScore: 88, cv: { filename: "PCruz_MLE.pdf", uploadedAt: "2026-06-08", sizeKb: 205 }, topSkills: ["Python", "PyTorch", "AWS"], currentRole: "ML Engineer @ Voyager", yearsExperience: 6 },
+  { id: "ea-05", name: "Dan Lim", initials: "DL", email: "dan.lim@auf.edu.ph", college: "College of Engineering & Architecture", batch: 2019, city: "San Fernando", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-12", stage: "not-selected", matchScore: 63, cv: { filename: "DanLim_CV.pdf", uploadedAt: "2026-06-12", sizeKb: 168 }, topSkills: ["MATLAB", "Python"], currentRole: "Controls Engineer", yearsExperience: 7 },
+  { id: "ea-06", name: "Joy Santos", initials: "JS", email: "joy.santos@auf.edu.ph", college: "College of Computer Studies", batch: 2024, city: "Angeles City", jobId: "job-kollab-1", jobTitle: "Machine Learning Engineer", appliedAt: "2026-06-26", stage: "new", matchScore: 69, cv: null, topSkills: ["Python", "Pandas"], currentRole: null, yearsExperience: 0 },
+
+  // job-kollab-2 · Application Security Engineer
+  { id: "ea-07", name: "Hannah Uy", initials: "HU", email: "hannah.uy@auf.edu.ph", college: "College of Computer Studies", batch: 2020, city: "Tokyo", jobId: "job-kollab-2", jobTitle: "Application Security Engineer", appliedAt: "2026-06-19", stage: "interview", matchScore: 90, cv: { filename: "HannahUy_Security.pdf", uploadedAt: "2026-06-19", sizeKb: 203 }, topSkills: ["AppSec", "Red Teaming", "Go"], currentRole: "Security Engineer @ Mercari", yearsExperience: 6 },
+  { id: "ea-08", name: "Carlo Reyes", initials: "CR", email: "carlo.reyes@auf.edu.ph", college: "College of Computer Studies", batch: 2021, city: "Cebu City", jobId: "job-kollab-2", jobTitle: "Application Security Engineer", appliedAt: "2026-06-21", stage: "screening", matchScore: 80, cv: { filename: "CReyes_SecOps.pdf", uploadedAt: "2026-06-21", sizeKb: 191 }, topSkills: ["SIEM", "Python", "Cloud Security"], currentRole: "SOC Analyst", yearsExperience: 4 },
+  { id: "ea-09", name: "Bea Cruz", initials: "BC", email: "bea.cruz@auf.edu.ph", college: "College of Computer Studies", batch: 2022, city: "Manila", jobId: "job-kollab-2", jobTitle: "Application Security Engineer", appliedAt: "2026-06-25", stage: "new", matchScore: 74, cv: { filename: "BeaCruz_CV.pdf", uploadedAt: "2026-06-25", sizeKb: 160 }, topSkills: ["Pentesting", "Burp Suite"], currentRole: "Junior Security Analyst", yearsExperience: 2 },
+  { id: "ea-10", name: "Niko Dela Cruz", initials: "ND", email: "niko.delacruz@auf.edu.ph", college: "College of Computer Studies", batch: 2019, city: "Quezon City", jobId: "job-kollab-2", jobTitle: "Application Security Engineer", appliedAt: "2026-06-14", stage: "not-selected", matchScore: 66, cv: { filename: "NDelacruz_CV.pdf", uploadedAt: "2026-06-14", sizeKb: 172 }, topSkills: ["Networking", "Linux"], currentRole: "SysAdmin", yearsExperience: 7 },
+
+  // job-kollab-3 · Director of Product
+  { id: "ea-11", name: "Juan Dela Cruz", initials: "JD", email: "juan.delacruz@auf.edu.ph", college: "College of Business & Accountancy", batch: 2014, city: "Manila", jobId: "job-kollab-3", jobTitle: "Director of Product", appliedAt: "2026-06-16", stage: "offered", matchScore: 94, cv: { filename: "JuanDC_Product.pdf", uploadedAt: "2026-06-16", sizeKb: 207 }, topSkills: ["Product Strategy", "Fintech", "Roadmapping"], currentRole: "Head of Product @ GCash", yearsExperience: 10 },
+  { id: "ea-12", name: "Maria Lopez", initials: "ML", email: "maria.lopez@auf.edu.ph", college: "College of Business & Accountancy", batch: 2013, city: "Singapore", jobId: "job-kollab-3", jobTitle: "Director of Product", appliedAt: "2026-06-17", stage: "interview", matchScore: 88, cv: { filename: "MLopez_PM.pdf", uploadedAt: "2026-06-17", sizeKb: 214 }, topSkills: ["Product Management", "Growth", "Analytics"], currentRole: "Group PM @ Sea", yearsExperience: 11 },
+  { id: "ea-13", name: "Ron Garcia", initials: "RG", email: "ron.garcia@auf.edu.ph", college: "College of Business & Accountancy", batch: 2016, city: "Makati", jobId: "job-kollab-3", jobTitle: "Director of Product", appliedAt: "2026-06-20", stage: "screening", matchScore: 79, cv: { filename: "RonGarcia_CV.pdf", uploadedAt: "2026-06-20", sizeKb: 188 }, topSkills: ["Product Ops", "B2B SaaS"], currentRole: "Senior PM @ Sprout", yearsExperience: 8 },
+  { id: "ea-14", name: "Ella Tan", initials: "ET", email: "ella.tan@auf.edu.ph", college: "College of Arts & Sciences", batch: 2015, city: "Manila", jobId: "job-kollab-3", jobTitle: "Director of Product", appliedAt: "2026-06-23", stage: "new", matchScore: 72, cv: { filename: "EllaTan_CV.pdf", uploadedAt: "2026-06-23", sizeKb: 176 }, topSkills: ["UX Research", "Strategy"], currentRole: "Product Lead @ Startup", yearsExperience: 9 },
+
+  // job-kollab-4 · Frontend Engineer
+  { id: "ea-15", name: "Noel Bautista", initials: "NB", email: "noel.bautista@auf.edu.ph", college: "College of Computer Studies", batch: 2024, city: "Angeles City", jobId: "job-kollab-4", jobTitle: "Frontend Engineer", appliedAt: "2026-06-26", stage: "new", matchScore: 66, cv: { filename: "NoelBautista_Junior_Dev.pdf", uploadedAt: "2026-06-26", sizeKb: 142 }, topSkills: ["JavaScript", "Next.js", "SQL"], currentRole: null, yearsExperience: 0 },
+  { id: "ea-16", name: "Kim Reyes", initials: "KR", email: "kim.reyes@auf.edu.ph", college: "College of Computer Studies", batch: 2023, city: "Manila", jobId: "job-kollab-4", jobTitle: "Frontend Engineer", appliedAt: "2026-06-24", stage: "screening", matchScore: 78, cv: { filename: "KimReyes_FE.pdf", uploadedAt: "2026-06-24", sizeKb: 165 }, topSkills: ["React", "TypeScript", "Tailwind"], currentRole: "Frontend Dev @ Agency", yearsExperience: 3 },
+  { id: "ea-17", name: "Sam Cruz", initials: "SC", email: "sam.cruz@auf.edu.ph", college: "College of Computer Studies", batch: 2022, city: "Cebu City", jobId: "job-kollab-4", jobTitle: "Frontend Engineer", appliedAt: "2026-06-22", stage: "interview", matchScore: 83, cv: { filename: "SamCruz_FE.pdf", uploadedAt: "2026-06-22", sizeKb: 178 }, topSkills: ["React", "Next.js", "GraphQL"], currentRole: "Frontend Engineer @ Sprout", yearsExperience: 4 },
+  { id: "ea-18", name: "Andrea Lim", initials: "AL", email: "andrea.lim@auf.edu.ph", college: "College of Computer Studies", batch: 2024, city: "Angeles City", jobId: "job-kollab-4", jobTitle: "Frontend Engineer", appliedAt: "2026-06-27", stage: "new", matchScore: 70, cv: { filename: "AndreaLim_CV.pdf", uploadedAt: "2026-06-27", sizeKb: 149 }, topSkills: ["JavaScript", "Vue", "CSS"], currentRole: null, yearsExperience: 1 },
+];
+
+export function employerApplicantsForJob(jobId: string): EmployerApplicant[] {
+  return EMPLOYER_APPLICANTS.filter((a) => a.jobId === jobId);
+}
+
+/** Applications history for the current employer (for analytics/reports). */
+export function currentEmployerHistory(): JobApplicationRecord[] {
+  const name = currentEmployer().name;
+  return JOB_APPLICATIONS.filter((r) => r.company === name);
+}

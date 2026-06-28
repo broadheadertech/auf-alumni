@@ -16,11 +16,9 @@ type NavItem = { href: string; label: string };
 
 const NAV_BY_ROLE: Record<SiteRole, NavItem[]> = {
   marketing: [
-    { href: "/directory", label: "Directory" },
     { href: "/profile/maria-santos", label: "Sample profile" },
   ],
   alumni: [
-    { href: "/directory", label: "Directory" },
     { href: "/feed", label: "Feed" },
     { href: "/events", label: "Events" },
     { href: "/jobs", label: "Jobs" },
@@ -31,8 +29,10 @@ const NAV_BY_ROLE: Record<SiteRole, NavItem[]> = {
   ],
   employer: [
     { href: "/employer/dashboard", label: "Dashboard" },
-    { href: "/employer/jobs", label: "Jobs" },
+    { href: "/employer/jobs", label: "Job Postings" },
     { href: "/employer/applicants", label: "Applicants" },
+    { href: "/employer/analytics", label: "Analytics" },
+    { href: "/employer/reports", label: "Reports" },
     { href: "/employer/billing", label: "Billing" },
   ],
   admin: [
@@ -41,7 +41,9 @@ const NAV_BY_ROLE: Record<SiteRole, NavItem[]> = {
     { href: "/admin/moderation/jobs", label: "Jobs" },
     { href: "/admin/employers", label: "Employers" },
     { href: "/admin/alumni", label: "Alumni" },
+    { href: "/admin/directory", label: "Directory" },
     { href: "/admin/alumni/approvals", label: "Approvals" },
+    { href: "/admin/events", label: "Events" },
     { href: "/admin/analytics/jobs", label: "Job analytics" },
     { href: "/admin/analytics", label: "Analytics" },
     { href: "/admin/audit", label: "Audit" },

@@ -118,12 +118,12 @@ export default function ConnectionsPage() {
             }
             description={
               tab === "connected"
-                ? "Start in the directory — send a connection request to someone you'd like to know."
+                ? "Find a mentor or join an event to start building your network."
                 : undefined
             }
             cta={
               tab === "connected"
-                ? { label: "Browse the directory", href: "/directory" }
+                ? { label: "Explore mentorship", href: "/mentorship" }
                 : undefined
             }
           />

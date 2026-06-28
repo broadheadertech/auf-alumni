@@ -218,7 +218,7 @@ function GreetingHero({ name }: { name: string | null }) {
               <Briefcase size={15} /> See matched jobs
             </Link>
             <Link
-              href="/directory"
+              href="/mentorship"
               className="auf-btn auf-btn-outline"
             >
               <Users size={15} /> Find mentors
@@ -513,7 +513,7 @@ function RightCardSuggested({ suggested }: { suggested: Suggested[] }) {
                   </div>
                 </div>
                 <Link
-                  href="/directory"
+                  href="/connections"
                   className="auf-btn auf-btn-outline auf-btn-sm"
                 >
                   Connect

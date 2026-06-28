@@ -412,7 +412,7 @@ export default async function CompanyPage({ params }: { params: Params }) {
               )}
               {company.alumniCount > company.alumniHere.length && (
                 <Link
-                  href={`/directory?company=${encodeURIComponent(company.name)}`}
+                  href="/signup"
                   className="brand-fg text-[13px] mt-4 inline-block hover:underline"
                 >
                   See all {company.alumniCount} →

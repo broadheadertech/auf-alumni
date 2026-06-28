@@ -38,8 +38,8 @@ export default async function ProfilePage({
   return (
     <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-10">
       <div className="mb-6 text-sm text-muted-foreground">
-        <Link href="/directory" className="hover:text-foreground transition-colors">
-          ← Back to directory
+        <Link href="/connections" className="hover:text-foreground transition-colors">
+          ← Back to network
         </Link>
       </div>
 

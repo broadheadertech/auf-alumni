@@ -15,7 +15,6 @@ import { cn } from "@/lib/utils";
 const LINKS: Array<[string, string]> = [
   ["/", "Home"],
   ["/jobs", "Jobs"],
-  ["/directory", "Alumni"],
   ["/for-employers", "For employers"],
   ["/about", "About"],
 ];

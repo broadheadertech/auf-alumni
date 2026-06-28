@@ -458,7 +458,7 @@ function MentorSpotlight({ mentors }: { mentors: PublicMentor[] }) {
               </div>
             ))}
           </div>
-          <Link href="/directory" className="auf-btn auf-btn-primary mt-8 inline-flex">
+          <Link href="/signup" className="auf-btn auf-btn-primary mt-8 inline-flex">
             Browse mentors →
           </Link>
         </div>

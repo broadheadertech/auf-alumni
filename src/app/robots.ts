@@ -16,8 +16,9 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/u/", "/directory"],
+        allow: ["/", "/u/"],
         disallow: [
+          "/directory",
           "/feed",
           "/connections",
           "/messages",

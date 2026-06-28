@@ -1,271 +1,397 @@
 "use client";
 
 /**
- * Employer applicant pipeline (Epic 13).
+ * Employer applicants — every candidate who applied to this employer's
+ * postings. Filter by posting, stage, college, and applied-date; search by
+ * name/skill; sort by recency or match. Each row expands to the applicant's
+ * detail (skills, experience, CV) and the employer can move them through the
+ * pipeline (stage change is local to this prototype).
  *
- * Pick one of your jobs → see Kanban-style stages → move applicants between
- * stages. Snapshot of the applicant's privacy-filtered profile is rendered;
- * it's the snapshot taken at apply-time, so later profile edits don't leak.
+ * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
  */
 
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
-import { api } from "@/lib/convex-api";
+import { ChevronDown, Download, FileText, Search } from "lucide-react";
+import {
+  APPLICATION_STAGES,
+  COLLEGES,
+  EMPLOYER_APPLICANTS,
+  STAGE_LABEL,
+  currentEmployer,
+  fmtDate,
+  type ApplicationStage,
+  type College,
+  type EmployerApplicant,
+} from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EmptyState } from "@/components/auf/EmptyState";
-
-const STAGES = [
-  { value: "new", label: "New" },
-  { value: "screening", label: "Screening" },
-  { value: "interview", label: "Interview" },
-  { value: "offered", label: "Offered" },
-  { value: "hired", label: "Hired" },
-  { value: "not-selected", label: "Not selected" },
-];
-
-type Application = {
-  _id: string;
-  applicantId: string;
-  coverNote?: string;
-  profileSnapshot: Record<string, unknown>;
-  stage: string;
-  referredBy?: string;
-  salaryExpectation?: {
-    min: number;
-    max: number;
-    currency: string;
-    period: string;
-  };
-  resumeUrl?: string | null;
-  resumeFilename?: string;
-  createdAt: number;
-};
-
-function formatSalary(s: NonNullable<Application["salaryExpectation"]>): string {
-  const c = s.currency || "PHP";
-  const p = s.period === "annual" ? "/yr" : "/mo";
-  return `${c} ${s.min.toLocaleString()} – ${s.max.toLocaleString()}${p}`;
-}
+import { Button } from "@/components/ui/button";
+import { StageBadge, StatTile } from "@/components/auf/AdminBits";
+import { cn } from "@/lib/utils";
 
 export default function EmployerApplicantsPage() {
-  type EmployerOrg = { _id: string; name: string };
-  const employersRaw = useQuery(api.employerOrgs.listMine);
-  const employers = (employersRaw ?? null) as EmployerOrg[] | null;
-  const [employerOrgId, setEmployerOrgId] = useState<string | null>(null);
-
-  /* eslint-disable */
-  useEffect(() => {
-    if (!employerOrgId && employers && employers.length > 0) {
-      setEmployerOrgId(employers[0]._id);
-    }
-  }, [employerOrgId, employers]);
-  /* eslint-enable */
-
-  const myJobs = useQuery(api.jobs.browse, { showUnmatched: true });
-  type Job = {
-    _id: string;
-    title: string;
-    employerOrgId: string;
-    status: string;
-    location?: string;
-  };
-  const jobs = ((myJobs ?? []) as Job[]).filter(
-    (j) => j.employerOrgId === employerOrgId,
+  return (
+    <Suspense fallback={<div className="p-10" />}>
+      <ApplicantsInner />
+    </Suspense>
   );
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+}
 
-  /* eslint-disable */
-  useEffect(() => {
-    if (!activeJobId && jobs.length > 0) {
-      setActiveJobId(jobs[0]._id);
-    }
-  }, [activeJobId, jobs]);
-  /* eslint-enable */
+function ApplicantsInner() {
+  const employer = currentEmployer();
+  const sp = useSearchParams();
+  const initialPosting = sp.get("posting") ?? "all";
 
-  const pipelineData = useQuery(
-    api.jobs.pipeline,
-    activeJobId ? { jobId: activeJobId as unknown as never } : "skip",
-  );
-  const moveApplication = useMutation(api.jobs.moveApplication);
-  const [busy, setBusy] = useState<string | null>(null);
+  // Stage overrides (employer moves candidates through the pipeline).
+  const [stageOverride, setStageOverride] = useState<Record<string, ApplicationStage>>({});
+  const [posting, setPosting] = useState<string>(initialPosting);
+  const [stages, setStages] = useState<ApplicationStage[]>([]);
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<"recent" | "match">("recent");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const onMove = async (appId: string, stage: string) => {
-    setBusy(appId);
-    try {
-      await moveApplication({
-        applicationId: appId as unknown as never,
-        stage,
-      });
-      toast.success(`Moved to ${stage}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
-    } finally {
-      setBusy(null);
-    }
+  const stageOf = (a: EmployerApplicant): ApplicationStage =>
+    stageOverride[a.id] ?? a.stage;
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return EMPLOYER_APPLICANTS.filter((a) => {
+      if (posting !== "all" && a.jobId !== posting) return false;
+      if (stages.length && !stages.includes(stageOf(a))) return false;
+      if (colleges.length && !colleges.includes(a.college)) return false;
+      if (from && a.appliedAt < from) return false;
+      if (to && a.appliedAt > to) return false;
+      if (q) {
+        const hay = [a.name, a.currentRole ?? "", ...a.topSkills]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    }).sort((a, b) =>
+      sort === "match"
+        ? b.matchScore - a.matchScore
+        : b.appliedAt.localeCompare(a.appliedAt),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posting, stages, colleges, from, to, search, sort, stageOverride]);
+
+  const totals = useMemo(() => {
+    const counts = Object.fromEntries(
+      APPLICATION_STAGES.map((s) => [s, 0]),
+    ) as Record<ApplicationStage, number>;
+    for (const a of EMPLOYER_APPLICANTS) counts[stageOf(a)] += 1;
+    return counts;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageOverride]);
+
+  const toggle = <T,>(arr: T[], v: T, set: (a: T[]) => void) =>
+    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+  const moveStage = (a: EmployerApplicant, next: ApplicationStage) => {
+    setStageOverride((m) => ({ ...m, [a.id]: next }));
+    toast.success(`${a.name} → ${STAGE_LABEL[next]}`);
   };
 
-  if (employersRaw === undefined) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (jobs.length === 0) {
-    return (
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
-        <EmptyState
-          message="No jobs yet"
-          description="Post a job and admin-approval first; applicants will land here."
-          cta={{ label: "Go to jobs", href: "/employer/jobs" }}
-        />
-      </div>
-    );
-  }
-
-  const applications = (pipelineData?.applications ?? []) as Application[];
+  const activeFilters =
+    (posting !== "all" ? 1 : 0) +
+    stages.length +
+    colleges.length +
+    (from ? 1 : 0) +
+    (to ? 1 : 0);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 sm:py-8">
+    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Applicants</h1>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Candidates who applied to {employer.name}&apos;s postings. Review,
+        filter, and move them through your pipeline.
+      </p>
 
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        {employers && employers.length > 1 && (
+      <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
+        {APPLICATION_STAGES.map((s) => (
+          <StatTile key={s} label={STAGE_LABEL[s]} value={totals[s]} />
+        ))}
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[230px_1fr]">
+        {/* Filters */}
+        <aside className="space-y-5">
           <div>
-            <Label htmlFor="org">Employer</Label>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              Search
+            </Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Name or skill…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              Posting
+            </Label>
             <select
-              id="org"
-              value={employerOrgId ?? ""}
-              onChange={(e) => {
-                setEmployerOrgId(e.target.value);
-                setActiveJobId(null);
-              }}
-              className="mt-1 block rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              value={posting}
+              onChange={(e) => setPosting(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
             >
-              {employers.map((e) => (
-                <option key={e._id} value={e._id}>
-                  {e.name}
+              <option value="all">All postings</option>
+              {employer.postings.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
                 </option>
               ))}
             </select>
           </div>
-        )}
-        <div>
-          <Label htmlFor="job">Job</Label>
-          <select
-            id="job"
-            value={activeJobId ?? ""}
-            onChange={(e) => setActiveJobId(e.target.value)}
-            className="mt-1 block rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-          >
-            {jobs.map((j) => (
-              <option key={j._id} value={j._id}>
-                {j.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
 
-      {pipelineData === undefined ? (
-        <Loader2 className="mt-8 h-6 w-6 animate-spin text-muted-foreground" />
-      ) : pipelineData === null ? (
-        <EmptyState
-          className="mt-8"
-          message="No pipeline data"
-          description="Only the posting employer or a moderator can view this job's pipeline."
-        />
-      ) : (
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
-          {STAGES.map((stage) => {
-            const items = applications.filter((a) => a.stage === stage.value);
-            return (
-              <section
-                key={stage.value}
-                className="rounded-lg border border-border bg-muted/30 p-3"
-              >
-                <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {stage.label} · {items.length}
-                </h2>
-                <div className="mt-2 space-y-2">
-                  {items.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">—</p>
-                  ) : (
-                    items.map((app) => {
-                      const snap = app.profileSnapshot;
-                      const displayName =
-                        (snap?.displayName as string) ?? "Applicant";
-                      const role = snap?.currentRole as string | undefined;
-                      const company = snap?.company as string | undefined;
-                      return (
-                        <Card key={app._id}>
-                          <CardContent className="space-y-1 p-3 text-xs">
-                            <p className="text-sm font-medium">{displayName}</p>
-                            {(role || company) && (
-                              <p className="text-muted-foreground">
-                                {[role, company].filter(Boolean).join(" · ")}
-                              </p>
-                            )}
-                            {app.coverNote && (
-                              <p className="line-clamp-3 text-muted-foreground">
-                                {app.coverNote}
-                              </p>
-                            )}
-                            <div className="flex flex-wrap items-center gap-1 pt-1">
-                              {app.referredBy && (
-                                <span className="text-[10px] uppercase tracking-wide text-(--color-success)">
-                                  Referred
-                                </span>
-                              )}
-                              {app.salaryExpectation && (
-                                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium">
-                                  Asking {formatSalary(app.salaryExpectation)}
-                                </span>
-                              )}
-                              {app.resumeUrl && (
-                                <a
-                                  href={app.resumeUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium hover:bg-(--brand-50) hover:text-(--brand-ink)"
-                                  title={app.resumeFilename ?? "Resume"}
-                                >
-                                  Resume ↗
-                                </a>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-1 pt-1">
-                              {STAGES.filter(
-                                (s) => s.value !== app.stage,
-                              ).map((s) => (
-                                <Button
-                                  key={s.value}
-                                  size="sm"
-                                  variant="outline"
-                                  disabled={busy === app._id}
-                                  onClick={() => onMove(app._id, s.value)}
-                                  className="h-6 px-2 text-[10px]"
-                                >
-                                  → {s.label}
-                                </Button>
-                              ))}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      )}
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              Stage
+            </Label>
+            <div className="flex flex-wrap gap-1.5">
+              {APPLICATION_STAGES.map((s) => {
+                const on = stages.includes(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => toggle(stages, s, setStages as (a: ApplicationStage[]) => void)}
+                    aria-pressed={on}
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                      on
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {STAGE_LABEL[s]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              College
+            </Label>
+            <div className="flex flex-col gap-1">
+              {COLLEGES.map((c) => {
+                const on = colleges.includes(c);
+                return (
+                  <label key={c} className="flex cursor-pointer items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => toggle(colleges, c, setColleges as (a: College[]) => void)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-border"
+                    />
+                    <span className={on ? "font-medium" : ""}>
+                      {c.replace("College of ", "")}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+              Applied between
+            </Label>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              />
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              />
+            </div>
+          </div>
+
+          {activeFilters > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-muted-foreground"
+              onClick={() => {
+                setPosting("all");
+                setStages([]);
+                setColleges([]);
+                setFrom("");
+                setTo("");
+              }}
+            >
+              Clear {activeFilters} filter{activeFilters === 1 ? "" : "s"}
+            </Button>
+          )}
+        </aside>
+
+        {/* List */}
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">
+              {rows.length} applicant{rows.length === 1 ? "" : "s"}
+            </span>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as "recent" | "match")}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+            >
+              <option value="recent">Most recent</option>
+              <option value="match">Best match</option>
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            {rows.length === 0 ? (
+              <Card>
+                <CardContent className="p-10 text-center text-sm text-muted-foreground">
+                  No applicants match these filters.
+                </CardContent>
+              </Card>
+            ) : (
+              rows.map((a) => (
+                <ApplicantRow
+                  key={a.id}
+                  applicant={a}
+                  stage={stageOf(a)}
+                  open={expanded === a.id}
+                  onToggle={() => setExpanded(expanded === a.id ? null : a.id)}
+                  onMove={(s) => moveStage(a, s)}
+                />
+              ))
+            )}
+          </div>
+        </section>
+      </div>
     </div>
+  );
+}
+
+function ApplicantRow({
+  applicant: a,
+  stage,
+  open,
+  onToggle,
+  onMove,
+}: {
+  applicant: EmployerApplicant;
+  stage: ApplicationStage;
+  open: boolean;
+  onToggle: () => void;
+  onMove: (s: ApplicationStage) => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-0">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+            {a.initials}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{a.name}</span>
+              <span className="text-xs text-muted-foreground">
+                Batch {a.batch} · {a.college.replace("College of ", "")}
+              </span>
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {a.jobTitle} · applied {fmtDate(a.appliedAt)}
+            </div>
+          </div>
+          <span className="hidden w-16 text-right text-xs tabular-nums text-muted-foreground sm:block">
+            {a.matchScore}% match
+          </span>
+          <StageBadge stage={stage} />
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </button>
+
+        {open && (
+          <div className="border-t border-border px-4 py-3">
+            <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+              <div className="space-y-2 text-sm">
+                <div>
+                  <span className="text-xs text-muted-foreground">Current role</span>
+                  <div>{a.currentRole ?? "—"} · {a.yearsExperience} yr exp</div>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Contact</span>
+                  <div>{a.email} · {a.city}</div>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground">Top skills</span>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {a.topSkills.map((s) => (
+                      <span
+                        key={s}
+                        className="rounded-full bg-muted px-2 py-0.5 text-xs"
+                      >
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start gap-2 sm:items-end">
+                {a.cv ? (
+                  <Button variant="outline" size="sm">
+                    <Download className="h-4 w-4" />
+                    {a.cv.filename}
+                  </Button>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <FileText className="h-4 w-4" />
+                    No CV uploaded
+                  </span>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Move to</span>
+                  <select
+                    value={stage}
+                    onChange={(e) => onMove(e.target.value as ApplicationStage)}
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  >
+                    {APPLICATION_STAGES.map((s) => (
+                      <option key={s} value={s}>
+                        {STAGE_LABEL[s]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

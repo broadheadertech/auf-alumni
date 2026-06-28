@@ -118,10 +118,10 @@ export default function VerifyPage() {
           {isApproved ? (
             <div className="mt-6 flex justify-center">
               <Link
-                href="/directory"
+                href="/feed"
                 className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
               >
-                Continue to directory →
+                Continue to your feed →
               </Link>
             </div>
           ) : (

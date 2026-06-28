@@ -28,7 +28,6 @@ import {
   MessageCircle,
   Plus,
   Settings,
-  Users,
   X,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
@@ -48,7 +47,6 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/feed", label: "Home", Icon: Home },
   { href: "/jobs", label: "Jobs", Icon: Briefcase, badge: 4 },
-  { href: "/directory", label: "Directory", Icon: Users },
   { href: "/mentorship", label: "Mentorship", Icon: GraduationCap },
   { href: "/academy", label: "Academy", Icon: BookOpen },
   { href: "/events", label: "Events", Icon: Calendar },
@@ -59,7 +57,6 @@ const NAV: NavItem[] = [
 const PAGE_TITLES: Record<string, string> = {
   "/feed": "Home",
   "/jobs": "Jobs",
-  "/directory": "Alumni Directory",
   "/mentorship": "Mentorship",
   "/events": "Events",
   "/messages": "Messages",

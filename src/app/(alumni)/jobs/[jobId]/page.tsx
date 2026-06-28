@@ -417,12 +417,6 @@ export default function JobDetailPage() {
               <h4 className="font-serif text-[15px] font-semibold">
                 {alumniHere} AUF alumni at {job.employerName}
               </h4>
-              <Link
-                href={`/directory?company=${encodeURIComponent(job.employerName)}`}
-                className="shrink-0 text-[12px] brand-fg hover:underline"
-              >
-                See all →
-              </Link>
             </div>
             {alumniAtCompany === undefined ? (
               <Loader2 className="mx-auto h-5 w-5 animate-spin ink-3" />

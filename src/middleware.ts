@@ -5,9 +5,10 @@ import {
 } from "@convex-dev/auth/nextjs/server";
 
 /**
- * Auth gating. The directory and profile routes remain public during the
- * prototype phase (they read from mock data, not Convex). Gating them moves
- * to a later epic when the directory wires to real Convex queries.
+ * Auth gating. The profile routes remain public during the prototype phase
+ * (they read from mock data, not Convex). The alumni directory is admin-only
+ * — it lives under /admin/* and is gated below; the alumnus-facing app has no
+ * directory (alumni roster is private).
  */
 const isProtectedRoute = createRouteMatcher([
   "/connections(.*)",
@@ -25,7 +26,7 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
     return nextjsMiddlewareRedirect(request, "/login");
   }
   if (isAuthRoute(request) && authenticated) {
-    return nextjsMiddlewareRedirect(request, "/directory");
+    return nextjsMiddlewareRedirect(request, "/feed");
   }
 });
 
