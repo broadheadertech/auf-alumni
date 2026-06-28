@@ -44,7 +44,6 @@ const NAV_BY_ROLE: Record<SiteRole, NavItem[]> = {
     { href: "/admin/directory", label: "Directory" },
     { href: "/admin/alumni/approvals", label: "Approvals" },
     { href: "/admin/events", label: "Events" },
-    { href: "/admin/analytics/jobs", label: "Job analytics" },
     { href: "/admin/analytics", label: "Analytics" },
     { href: "/admin/audit", label: "Audit" },
     { href: "/admin/compliance", label: "Compliance" },

@@ -92,7 +92,7 @@ export default function AdminDashboardPage() {
           label="Hire rate"
           value={`${(d.hireRate * 100).toFixed(1)}%`}
           sub={`${d.hires} hires · ${d.totalApps} applications`}
-          href="/admin/analytics/jobs"
+          href="/admin/analytics"
           accent="emerald"
         />
       </div>
