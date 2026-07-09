@@ -43,38 +43,53 @@ type DemoAccount = {
 
 const ACCOUNTS: DemoAccount[] = [
   {
+    key: "admin",
+    email: "tech@broadheader.com",
+    password: "@Broadheader_8080",
+    name: "Broadheader Admin",
+    roles: ["super-admin", "moderator", "verifier"],
+  },
+  {
     key: "alumna",
-    email: "alumna@demo.auf.local",
-    password: "DemoAlumna-2026-Pass",
-    name: "Lara Mendoza",
+    email: "bellojaezarjohn@broadheader.com",
+    password: "@Broadheader_8080",
+    name: "Jaezar John Bello",
     roles: ["alumnus"],
     alumnaProfile: {
-      slug: "demo-alumna-lara",
-      batch: 2021,
+      slug: "jaezar-bello",
+      batch: 2024,
       program: "BS Information Technology",
       degree: "Bachelor of Science",
-      currentRole: "Junior Frontend Developer",
-      company: "HealthLink PH",
+      currentRole: "IT Graduate",
+      company: undefined,
       city: "Angeles City",
       country: "Philippines",
-      bio: "Demo alumna account for stakeholder review. Junior frontend engineer looking to grow into a senior IC role.",
-      skills: ["React", "TypeScript", "Next.js", "Tailwind"],
-      openTo: ["Mentorship", "Job referrals", "Freelance"],
+      bio: "BS Information Technology graduate looking for a first software role. Comfortable across the web stack and eager to grow.",
+      skills: [
+        "JavaScript",
+        "TypeScript",
+        "React",
+        "Node.js",
+        "SQL",
+        "Git",
+        "HTML/CSS",
+      ],
+      openTo: ["Job referrals", "Mentorship"],
     },
   },
   {
     key: "employer",
     email: "employer@demo.auf.local",
-    password: "DemoEmployer-2026-Pass",
-    name: "Kumu Hiring",
+    password: "Demo1234",
+    name: "Broadheader Hiring",
     roles: ["partner-employer-admin"],
   },
   {
-    key: "admin",
-    email: "admin@demo.auf.local",
-    password: "DemoAdmin-2026-Pass",
-    name: "AUF Demo Admin",
-    roles: ["super-admin", "moderator", "verifier"],
+    key: "employer",
+    email: "employer@broadheader.com",
+    password: "@Broadheader_8080",
+    name: "Broadheader Recruiter",
+    roles: ["partner-employer-admin"],
   },
 ];
 
@@ -111,10 +126,14 @@ export const run = internalAction({
       });
     }
 
-    // Demo employer admins exactly one org (Kumu) so the picker is realistic.
+    // Give the employer an org + one published IT job.
+    await ctx.runMutation(internal.seedAccountsHelpers.seedEmployerOrgAndJob, {
+      employerEmail: "employer@demo.auf.local",
+    });
+    // Affiliate the Broadheader employer account with the same org.
     await ctx.runMutation(internal.seedAccountsHelpers.linkEmployerAdmin, {
-      userEmail: "employer@demo.auf.local",
-      orgSlug: "kumu",
+      userEmail: "employer@broadheader.com",
+      orgSlug: "broadheader",
     });
     return results;
   },

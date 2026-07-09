@@ -17,9 +17,11 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   CalendarPlus,
+  ChevronRight,
   Globe,
   GraduationCap,
   MapPin,
+  Plus,
   Search,
   Users,
   Video,
@@ -45,6 +47,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { StatTile } from "@/components/auf/AdminBits";
 import { cn } from "@/lib/utils";
 
@@ -57,6 +65,9 @@ export default function AdminEventsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("upcoming");
   const [audienceFilter, setAudienceFilter] = useState<AudienceKind | "all">("all");
   const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -71,11 +82,13 @@ export default function AdminEventsPage() {
       .filter((e) =>
         audienceFilter === "all" ? true : e.audience.kind === audienceFilter,
       )
+      .filter((e) => (from ? e.startsAt.slice(0, 10) >= from : true))
+      .filter((e) => (to ? e.startsAt.slice(0, 10) <= to : true))
       .filter((e) =>
         q ? (e.title + " " + e.location).toLowerCase().includes(q) : true,
       )
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  }, [events, statusFilter, audienceFilter, search]);
+  }, [events, statusFilter, audienceFilter, search, from, to]);
 
   const totals = useMemo(
     () => ({
@@ -92,14 +105,22 @@ export default function AdminEventsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <CalendarPlus className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">Events</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <CalendarPlus className="h-5 w-5 text-muted-foreground" />
+            <h1 className="text-2xl font-semibold tracking-tight">Events</h1>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create alumni events and target who they&apos;re sent to — everyone,
+            by college, or by year graduated.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Create event
+        </Button>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Create alumni events and target who they&apos;re sent to — everyone, by
-        college, or by year graduated.
-      </p>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatTile label="Total events" value={totals.total} />
@@ -107,81 +128,127 @@ export default function AdminEventsPage() {
         <StatTile label="Total RSVPs" value={totals.rsvps.toLocaleString()} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
-        <CreateEventForm onCreate={handleCreate} />
-
-        {/* List */}
-        <section>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(["upcoming", "past", "all"] as StatusFilter[]).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatusFilter(s)}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs capitalize transition-colors",
-                    statusFilter === s
-                      ? "border-foreground bg-foreground text-background"
-                      : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-              <select
-                value={audienceFilter}
-                onChange={(e) =>
-                  setAudienceFilter(e.target.value as AudienceKind | "all")
-                }
-                className="ml-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+      {/* Controls */}
+      <div className="mt-6 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(["upcoming", "past", "all"] as StatusFilter[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setStatusFilter(s)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs capitalize transition-colors",
+                  statusFilter === s
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
               >
-                <option value="all">Any audience</option>
-                <option value="everyone">Everyone</option>
-                <option value="college">By college</option>
-                <option value="batch">By year</option>
-              </select>
-            </div>
-            <div className="relative sm:w-56">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search events…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+                {s}
+              </button>
+            ))}
+            <select
+              value={audienceFilter}
+              onChange={(e) =>
+                setAudienceFilter(e.target.value as AudienceKind | "all")
+              }
+              className="ml-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            >
+              <option value="all">Any audience</option>
+              <option value="everyone">Everyone</option>
+              <option value="college">By college</option>
+              <option value="batch">By year</option>
+            </select>
           </div>
-
-          <div className="mt-4 space-y-3">
-            {visible.length === 0 ? (
-              <Card>
-                <CardContent className="p-10 text-center text-sm text-muted-foreground">
-                  No events match these filters.
-                </CardContent>
-              </Card>
-            ) : (
-              visible.map((e) => <EventRow key={e.id} event={e} />)
-            )}
+          <div className="relative sm:w-56">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search events…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
           </div>
-
-          <p className="mt-3 text-xs italic text-muted-foreground">
-            Showing {visible.length} of {events.length} events · demo data.
-            Looking for the Convex publish form?{" "}
-            <Link href="/admin/events/new" className="underline">
-              Advanced form
-            </Link>
-            .
-          </p>
-        </section>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+          <span className="text-muted-foreground">Event date</span>
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="From date"
+          />
+          <span className="text-muted-foreground">–</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="To date"
+          />
+          {(from || to) && (
+            <button
+              type="button"
+              onClick={() => {
+                setFrom("");
+                setTo("");
+              }}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="mt-4 space-y-3">
+        {visible.length === 0 ? (
+          <Card>
+            <CardContent className="p-10 text-center text-sm text-muted-foreground">
+              No events match these filters.
+            </CardContent>
+          </Card>
+        ) : (
+          visible.map((e) => <EventRow key={e.id} event={e} />)
+        )}
+      </div>
+
+      <p className="mt-3 text-xs italic text-muted-foreground">
+        Showing {visible.length} of {events.length} events · demo data. Looking
+        for the Convex publish form?{" "}
+        <Link href="/admin/events/new" className="underline">
+          Advanced form
+        </Link>
+        .
+      </p>
+
+      <Dialog open={createOpen} onOpenChange={(o) => !o && setCreateOpen(false)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Create event</DialogTitle>
+          </DialogHeader>
+          <CreateEventForm
+            onCreate={handleCreate}
+            onClose={() => setCreateOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 // --------------------------------------------------------------- create ---
 
-function CreateEventForm({ onCreate }: { onCreate: (e: AdminEvent) => void }) {
+function CreateEventForm({
+  onCreate,
+  onClose,
+}: {
+  onCreate: (e: AdminEvent) => void;
+  onClose: () => void;
+}) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startsAt, setStartsAt] = useState("");
@@ -250,6 +317,7 @@ function CreateEventForm({ onCreate }: { onCreate: (e: AdminEvent) => void }) {
       `Event created — sending to ~${reach.toLocaleString()} alumni (${describeAudience(audience)})`,
     );
     reset();
+    onClose();
   };
 
   const AUDIENCE_OPTIONS: { kind: AudienceKind; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
@@ -259,10 +327,7 @@ function CreateEventForm({ onCreate }: { onCreate: (e: AdminEvent) => void }) {
   ];
 
   return (
-    <Card className="h-fit lg:sticky lg:top-20">
-      <CardContent className="p-5">
-        <h2 className="text-sm font-medium">Create event</h2>
-        <form onSubmit={submit} className="mt-3 space-y-3">
+    <form onSubmit={submit} className="space-y-3">
           <div>
             <Label htmlFor="ev-title" className="text-xs">Title</Label>
             <Input
@@ -414,12 +479,10 @@ function CreateEventForm({ onCreate }: { onCreate: (e: AdminEvent) => void }) {
             </div>
           </fieldset>
 
-          <Button type="submit" className="w-full">
-            Create &amp; send
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+      <Button type="submit" className="w-full">
+        Create &amp; send
+      </Button>
+    </form>
   );
 }
 
@@ -429,13 +492,14 @@ function EventRow({ event }: { event: AdminEvent }) {
   const upcoming = isUpcoming(event);
   const reach = audienceReach(event.audience);
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-medium">{event.title}</h3>
-              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+    <Link href={`/admin/events/${event.id}`} className="group block">
+      <Card className="transition-shadow group-hover:ring-foreground/25">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-medium group-hover:underline">{event.title}</h3>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                 {EVENT_CATEGORY_LABEL[event.category]}
               </span>
               <span
@@ -467,15 +531,18 @@ function EventRow({ event }: { event: AdminEvent }) {
               </span>
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-sm font-semibold tabular-nums">
-              {event.rsvpYes.toLocaleString()}
-              <span className="text-xs font-normal text-muted-foreground"> going</span>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <div className="text-sm font-semibold tabular-nums">
+                {event.rsvpYes.toLocaleString()}
+                <span className="text-xs font-normal text-muted-foreground"> going</span>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {event.rsvpMaybe} maybe
+                {event.capacity ? ` · cap ${event.capacity}` : ""}
+              </div>
             </div>
-            <div className="text-[11px] text-muted-foreground">
-              {event.rsvpMaybe} maybe
-              {event.capacity ? ` · cap ${event.capacity}` : ""}
-            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           </div>
         </div>
 
@@ -506,8 +573,9 @@ function EventRow({ event }: { event: AdminEvent }) {
           <span className="ml-auto text-muted-foreground">
             Reach ~{reach.toLocaleString()}
           </span>
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

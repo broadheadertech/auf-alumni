@@ -1,108 +1,106 @@
 "use client";
 
 /**
- * Employer dashboard — at-a-glance view for the signed-in employer org
- * (Kollab AI in this prototype). KPIs, hiring-pipeline snapshot, posting
- * performance, and the most recent applicants, with quick links into the
- * deeper surfaces (postings, applicants, analytics, reports).
- *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Employer dashboard — live view for the signed-in employer org (Convex).
+ * KPIs, hiring-pipeline snapshot, posting performance, and recent applicants,
+ * all read from real jobs + applications.
  */
 
 import { useMemo } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  BarChart3,
-  Briefcase,
-  FileText,
-  Users,
-} from "lucide-react";
-import {
-  APPLICATION_STAGES,
-  EMPLOYER_APPLICANTS,
-  STAGE_LABEL,
-  contractState,
-  currentEmployer,
-  employerApplicantsForJob,
-  fmtDate,
-  type ApplicationStage,
-} from "@/lib/mock-admin";
+import { useQuery } from "convex/react";
+import { ArrowRight, BarChart3, Briefcase, FileText, Users } from "lucide-react";
+import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  ContractBadge,
-  PostingStatusBadge,
-  StageBadge,
-  StatTile,
-} from "@/components/auf/AdminBits";
+import { StatTile, StageBadge, JobStatusBadge } from "@/components/auf/employer-ui";
+import { STAGE_ORDER, STAGE_LABEL, fmtDate } from "@/lib/employer-format";
 import { cn } from "@/lib/utils";
 
 export default function EmployerDashboardPage() {
-  const employer = currentEmployer();
+  const orgs = useQuery(api.employerOrgs.listMine);
+  const jobs = useQuery(api.jobs.listMyOrgJobs);
+  const applicants = useQuery(api.jobs.myApplicants);
+
+  const loading =
+    orgs === undefined || jobs === undefined || applicants === undefined;
+
+  const org = orgs?.[0];
 
   const stats = useMemo(() => {
-    const apps = EMPLOYER_APPLICANTS;
-    const activePostings = employer.postings.filter(
-      (p) => p.status === "published",
-    ).length;
-    const inInterview = apps.filter((a) => a.stage === "interview").length;
-    const offered = apps.filter((a) => a.stage === "offered").length;
-    const hired = apps.filter((a) => a.stage === "hired").length;
-    const needsReview = apps.filter((a) => a.stage === "new").length;
+    const j = jobs ?? [];
+    const a = applicants ?? [];
     return {
-      activePostings,
-      totalApplicants: apps.length,
-      inInterview,
-      offered,
-      hired,
-      needsReview,
+      activePostings: j.filter((p) => p.status === "published").length,
+      totalApplicants: a.length,
+      needsReview: a.filter((x) => x.stage === "new").length,
+      inInterview: a.filter((x) => x.stage === "interview").length,
+      offered: a.filter((x) => x.stage === "offered").length,
+      hired: a.filter((x) => x.stage === "hired").length,
     };
-  }, [employer]);
+  }, [jobs, applicants]);
 
   const stageCounts = useMemo(() => {
-    const map = Object.fromEntries(
-      APPLICATION_STAGES.map((s) => [s, 0]),
-    ) as Record<ApplicationStage, number>;
-    for (const a of EMPLOYER_APPLICANTS) map[a.stage] += 1;
+    const map = Object.fromEntries(STAGE_ORDER.map((s) => [s, 0])) as Record<
+      string,
+      number
+    >;
+    for (const a of applicants ?? []) map[a.stage] = (map[a.stage] ?? 0) + 1;
     return map;
-  }, []);
+  }, [applicants]);
 
   const recent = useMemo(
-    () =>
-      [...EMPLOYER_APPLICANTS]
-        .sort((a, b) => b.appliedAt.localeCompare(a.appliedAt))
-        .slice(0, 5),
-    [],
+    () => [...(applicants ?? [])].slice(0, 5),
+    [applicants],
   );
 
   const maxStage = Math.max(1, ...Object.values(stageCounts));
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10 text-sm text-muted-foreground">
+        Loading dashboard…
+      </div>
+    );
+  }
+
+  if (!org) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16">
+        <Card>
+          <CardContent className="p-10 text-center">
+            <h1 className="text-lg font-semibold">No employer organisation</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your account isn&apos;t linked to an employer yet. Ask an AUF admin
+              to grant your organisation access.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-foreground text-base font-bold text-background">
-            {employer.initials}
+            {org.name.slice(0, 2).toUpperCase()}
           </span>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {employer.name}
-            </h1>
+            <h1 className="text-2xl font-semibold tracking-tight">{org.name}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <span>{employer.tier} partner</span>
-              <span>·</span>
-              <ContractBadge state={contractState(employer)} />
-              <span className="text-xs">
-                contract ends {fmtDate(employer.contractEnd)}
-              </span>
+              <span className="capitalize">{org.tier} partner</span>
+              {org.hqCity ? (
+                <>
+                  <span>·</span>
+                  <span>{org.hqCity}</span>
+                </>
+              ) : null}
             </div>
           </div>
         </div>
-        <Link
-          href="/employer/jobs"
-          className={buttonVariants({ size: "sm" })}
-        >
+        <Link href="/employer/jobs" className={buttonVariants({ size: "sm" })}>
           <Briefcase className="h-4 w-4" />
           Manage postings
         </Link>
@@ -132,7 +130,7 @@ export default function EmployerDashboardPage() {
               </Link>
             </div>
             <div className="mt-3 space-y-2">
-              {APPLICATION_STAGES.map((s) => (
+              {STAGE_ORDER.map((s) => (
                 <div key={s} className="flex items-center gap-3">
                   <span className="w-24 shrink-0 text-xs text-muted-foreground">
                     {STAGE_LABEL[s]}
@@ -143,9 +141,7 @@ export default function EmployerDashboardPage() {
                         "h-full rounded-full",
                         s === "hired" ? "bg-emerald-500" : "bg-foreground/30",
                       )}
-                      style={{
-                        width: `${(stageCounts[s] / maxStage) * 100}%`,
-                      }}
+                      style={{ width: `${(stageCounts[s] / maxStage) * 100}%` }}
                     />
                   </div>
                   <span className="w-6 text-right text-xs tabular-nums">
@@ -170,11 +166,12 @@ export default function EmployerDashboardPage() {
               </Link>
             </div>
             <div className="mt-3 space-y-2">
-              {employer.postings.map((p) => {
-                const count = employerApplicantsForJob(p.id).length;
-                return (
+              {jobs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No postings yet.</p>
+              ) : (
+                jobs.map((p) => (
                   <div
-                    key={p.id}
+                    key={p._id}
                     className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2"
                   >
                     <div className="min-w-0">
@@ -186,9 +183,9 @@ export default function EmployerDashboardPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <PostingStatusBadge status={p.status} />
+                      <JobStatusBadge status={p.status} />
                       <span className="text-sm tabular-nums">
-                        {count}
+                        {p.applicantCount}
                         <span className="text-xs text-muted-foreground">
                           {" "}
                           appl.
@@ -196,8 +193,8 @@ export default function EmployerDashboardPage() {
                       </span>
                     </div>
                   </div>
-                );
-              })}
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
@@ -215,25 +212,30 @@ export default function EmployerDashboardPage() {
               All applicants →
             </Link>
           </div>
-          <div className="mt-3 divide-y divide-border">
-            {recent.map((a) => (
-              <div key={a.id} className="flex items-center gap-3 py-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                  {a.initials}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{a.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">
-                    {a.jobTitle} · applied {fmtDate(a.appliedAt)}
+          {recent.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              No applications yet. They&apos;ll show here as alumni apply.
+            </p>
+          ) : (
+            <div className="mt-3 divide-y divide-border">
+              {recent.map((a) => (
+                <div key={a._id} className="flex items-center gap-3 py-2">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
+                    {a.snapshot?.initials ?? "—"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {a.snapshot?.displayName ?? "Applicant"}
+                    </div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {a.jobTitle} · applied {fmtDate(a.createdAt)}
+                    </div>
                   </div>
+                  <StageBadge stage={a.stage} />
                 </div>
-                <span className="hidden text-xs tabular-nums text-muted-foreground sm:block">
-                  {a.matchScore}% match
-                </span>
-                <StageBadge stage={a.stage} />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

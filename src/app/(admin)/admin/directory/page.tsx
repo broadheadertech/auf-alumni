@@ -17,7 +17,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { Search, X } from "lucide-react";
 import { api } from "@/lib/convex-api";
-import { ALUMNI, BATCHES, CITIES, PROGRAMS } from "@/lib/mock-alumni";
 import { OPEN_TO_KINDS, type OpenToKind } from "@/lib/schemas/shared";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,26 +31,34 @@ import { cn } from "@/lib/utils";
 
 const BASE = "/admin/directory";
 
+// Filter affordances for the directory. These are selectable options only —
+// the actual roster is driven entirely by Convex.
+const CURRENT_YEAR = 2026;
+const BATCHES = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - i);
+const PROGRAMS = [
+  "BS Information Technology",
+  "BS Computer Science",
+  "BS Business Administration",
+  "BS Accountancy",
+  "BS Nursing",
+  "BS Civil Engineering",
+  "BS Psychology",
+  "BS Education",
+];
+const CITIES = [
+  "Angeles City",
+  "San Fernando",
+  "Mabalacat",
+  "Manila",
+  "Makati",
+  "Quezon City",
+];
+
 function csvFromParam(v: string | null): string[] {
   return v ? v.split(",").filter(Boolean) : [];
 }
 function joinParam(arr: string[]): string | null {
   return arr.length > 0 ? arr.join(",") : null;
-}
-
-function mockToCards(): DirectoryCardData[] {
-  return ALUMNI.map((a) => ({
-    slug: a.slug,
-    displayName: a.name,
-    initials: a.initials,
-    batch: a.batch,
-    program: a.program,
-    currentRole: a.currentRole,
-    company: a.company,
-    city: a.city,
-    country: a.country,
-    openTo: a.openTo.map((t) => t.toLowerCase() as OpenToKind),
-  }));
 }
 
 export default function AdminDirectoryPage() {
@@ -135,41 +142,12 @@ export default function AdminDirectoryPage() {
       });
   }, [convexResult]);
 
-  const usingMock = convexCards.length === 0;
+  const loading = convexResult === undefined;
+  const allCards = convexCards;
 
-  const allCards = useMemo(() => {
-    if (!usingMock) return convexCards;
-    const q = query.trim().toLowerCase();
-    return mockToCards().filter((a) => {
-      if (batches.length > 0 && !batches.includes(a.batch)) return false;
-      if (programs.length > 0 && !programs.includes(a.program)) return false;
-      if (cities.length > 0 && !(a.city && cities.includes(a.city))) {
-        return false;
-      }
-      if (openTo.length > 0) {
-        const tagSet = new Set(a.openTo);
-        if (
-          !openTo.some((t) => tagSet.has(t.toLowerCase() as OpenToKind))
-        ) {
-          return false;
-        }
-      }
-      if (q) {
-        const hay = [a.displayName, a.currentRole, a.company, a.city, a.country]
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usingMock, convexCards, query, batchKey, programKey, cityKey, openToKey]);
-
-  const totalLabel = usingMock
-    ? `${allCards.length} of ${ALUMNI.length} alumni`
-    : counts
-      ? `${counts.matched} of ${counts.total} alumni`
-      : `${allCards.length} alumni`;
+  const totalLabel = counts
+    ? `${counts.matched} of ${counts.total} alumni`
+    : `${allCards.length} alumni`;
 
   const activeFilterCount =
     batches.length + programs.length + cities.length + openTo.length;
@@ -186,11 +164,6 @@ export default function AdminDirectoryPage() {
           Admin-only. The directory is private to alumni and is not exposed in
           the alumnus-facing app.
         </p>
-        {usingMock && (
-          <p className="mt-1 text-xs italic text-muted-foreground">
-            Demo data — real entries appear once alumni profiles land.
-          </p>
-        )}
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
@@ -284,7 +257,11 @@ export default function AdminDirectoryPage() {
             Showing {totalLabel}
           </div>
 
-          {allCards.length === 0 ? (
+          {loading ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              Loading directory…
+            </div>
+          ) : allCards.length === 0 ? (
             <EmptyState
               message="No alumni match these filters."
               description="Try widening your search."

@@ -194,13 +194,14 @@ export default function ResumeSettingsPage() {
       <div className="auf-card p-5 mt-4">
         <div className="flex items-center gap-2 mb-2">
           <Sparkles size={16} className="gold-fg" />
-          <h2 className="font-medium text-[15px]">Generate from my profile</h2>
+          <h2 className="font-medium text-[15px]">Generate AUF CV</h2>
         </div>
         <p className="text-[12.5px] ink-3 mb-3">
-          Opens a clean, print-styled resume built from your profile fields
-          (name, program, experience, education, skills). Save as PDF via
-          your browser&apos;s print dialog, then come back here to upload it
-          if you want to attach it to future applications.
+          Builds an AUF-branded CV from your profile — verified-alumnus seal,
+          your Alumni ID, and a security watermark. Choose which sections to
+          show (contact, summary, experience, education, skills,
+          certifications), then save as PDF via your browser&apos;s print
+          dialog and re-upload it here to attach to future applications.
         </p>
         <Link
           href="/resume/preview"

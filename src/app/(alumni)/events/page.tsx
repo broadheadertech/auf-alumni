@@ -7,9 +7,8 @@ import { toast } from "sonner";
 import {
   CalendarPlus,
   ExternalLink,
-  Loader2,
   MapPin,
-  Plus,
+  Search,
   Users,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
@@ -58,38 +57,25 @@ const MONTHS = [
   "DEC",
 ];
 
-function toLocalInputValue(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-const EMPTY_FORM = {
-  title: "",
-  description: "",
-  startsAt: "",
-  endsAt: "",
-  locationLabel: "",
-  onlineUrl: "",
-  capacity: "",
-};
-
 export default function EventsPage() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
   const [category, setCategory] = useState<"all" | EventCategory>("all");
+  const [query, setQuery] = useState("");
 
   const events = useQuery(api.events.listUpcoming, {
     scope: tab === "past" ? "past" : undefined,
     category: category === "all" ? undefined : category,
   });
   const rsvp = useMutation(api.events.rsvp);
-  const createEvent = useMutation(api.events.createEvent);
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [submitting, setSubmitting] = useState(false);
-
-  const list = (events ?? []) as EventRow[];
+  const all = (events ?? []) as EventRow[];
+  const list = query.trim()
+    ? all.filter((e) =>
+        (e.title + " " + e.description + " " + (e.locationLabel ?? ""))
+          .toLowerCase()
+          .includes(query.trim().toLowerCase()),
+      )
+    : all;
 
   const onRsvp = async (
     eventId: string,
@@ -112,63 +98,15 @@ export default function EventsPage() {
     }
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.title.trim() || !form.description.trim() || !form.startsAt) {
-      toast.error("Title, description, and start time are required");
-      return;
-    }
-    const startsAtMs = new Date(form.startsAt).getTime();
-    if (Number.isNaN(startsAtMs)) {
-      toast.error("Invalid start time");
-      return;
-    }
-    const endsAtMs = form.endsAt ? new Date(form.endsAt).getTime() : undefined;
-    if (endsAtMs != null && Number.isNaN(endsAtMs)) {
-      toast.error("Invalid end time");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await createEvent({
-        title: form.title.trim(),
-        description: form.description.trim(),
-        startsAt: startsAtMs,
-        endsAt: endsAtMs,
-        locationLabel: form.locationLabel.trim() || undefined,
-        onlineUrl: form.onlineUrl.trim() || undefined,
-        capacity: form.capacity ? Number(form.capacity) : undefined,
-      });
-      toast.success("Event created");
-      setForm(EMPTY_FORM);
-      setDialogOpen(false);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to create event",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-[28px] font-semibold leading-tight">
-            Events
-          </h1>
-          <p className="text-[13px] ink-3 mt-1">
-            Upcoming reunions, webinars, and meetups for AUF alumni.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setDialogOpen(true)}
-          className="auf-btn auf-btn-primary"
-        >
-          <Plus size={14} /> Create event
-        </button>
+      <div>
+        <h1 className="font-serif text-[28px] font-semibold leading-tight">
+          Events
+        </h1>
+        <p className="text-[13px] ink-3 mt-1">
+          Reunions, webinars, and meetups hosted by AUF for alumni.
+        </p>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -203,11 +141,27 @@ export default function EventsPage() {
         ))}
       </div>
 
+      <div className="relative mt-3 max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 ink-3" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search events…"
+          className="auf-input pl-9"
+        />
+      </div>
+
       <div className="mt-6 space-y-3">
         {events === undefined ? (
           <div className="auf-card p-6 text-[13px] ink-3">Loading…</div>
         ) : list.length === 0 ? (
-          category !== "all" ? (
+          query.trim() ? (
+            <EmptyState
+              icon={CalendarPlus}
+              message="No events match your search"
+              description="Try a different keyword or clear the search."
+            />
+          ) : category !== "all" ? (
             <EmptyState
               icon={CalendarPlus}
               message={
@@ -227,7 +181,7 @@ export default function EventsPage() {
             <EmptyState
               icon={CalendarPlus}
               message="No upcoming events"
-              description="Be the first to share a reunion, webinar, or meetup with fellow alumni."
+              description="Check back soon — AUF posts reunions, webinars, and meetups here."
             />
           )
         ) : (
@@ -241,16 +195,6 @@ export default function EventsPage() {
           ))
         )}
       </div>
-
-      {dialogOpen && (
-        <CreateEventDialog
-          form={form}
-          setForm={setForm}
-          onSubmit={onSubmit}
-          submitting={submitting}
-          onClose={() => setDialogOpen(false)}
-        />
-      )}
     </div>
   );
 }
@@ -393,161 +337,3 @@ function EventRowCard({
   );
 }
 
-function CreateEventDialog({
-  form,
-  setForm,
-  onSubmit,
-  submitting,
-  onClose,
-}: {
-  form: typeof EMPTY_FORM;
-  setForm: React.Dispatch<React.SetStateAction<typeof EMPTY_FORM>>;
-  onSubmit: (e: React.FormEvent) => void;
-  submitting: boolean;
-  onClose: () => void;
-}) {
-  const minStart = toLocalInputValue(Date.now() + 60 * 60 * 1000);
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="auf-card w-full max-w-[560px] max-h-[90vh] overflow-auto p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h2 className="font-serif text-[20px] font-semibold">
-          Create an event
-        </h2>
-        <p className="text-[13px] ink-3 mt-1">
-          Share a reunion, webinar, or meetup with the alumni community.
-        </p>
-        <form onSubmit={onSubmit} className="mt-5 space-y-3">
-          <Field label="Title">
-            <input
-              required
-              value={form.title}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, title: e.target.value }))
-              }
-              placeholder="Batch 2018 reunion brunch"
-              className="auf-input"
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              required
-              rows={4}
-              value={form.description}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, description: e.target.value }))
-              }
-              placeholder="What's the event about, who should come, and what to expect."
-              className="auf-input resize-none"
-            />
-          </Field>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Starts at">
-              <input
-                required
-                type="datetime-local"
-                min={minStart}
-                value={form.startsAt}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, startsAt: e.target.value }))
-                }
-                className="auf-input"
-              />
-            </Field>
-            <Field label="Ends at (optional)">
-              <input
-                type="datetime-local"
-                min={form.startsAt || minStart}
-                value={form.endsAt}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, endsAt: e.target.value }))
-                }
-                className="auf-input"
-              />
-            </Field>
-          </div>
-          <Field label="Location (optional)">
-            <input
-              value={form.locationLabel}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, locationLabel: e.target.value }))
-              }
-              placeholder="AUF Main Campus · Angeles City"
-              className="auf-input"
-            />
-          </Field>
-          <Field label="Online URL (optional)">
-            <input
-              type="url"
-              value={form.onlineUrl}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, onlineUrl: e.target.value }))
-              }
-              placeholder="https://meet.google.com/…"
-              className="auf-input"
-            />
-          </Field>
-          <Field label="Capacity (optional)">
-            <input
-              type="number"
-              min={1}
-              value={form.capacity}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, capacity: e.target.value }))
-              }
-              placeholder="50"
-              className="auf-input"
-            />
-          </Field>
-          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="auf-btn auf-btn-outline justify-center"
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="auf-btn auf-btn-primary justify-center"
-              disabled={submitting}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Creating…
-                </>
-              ) : (
-                <>
-                  <Plus size={14} /> Create event
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-[12.5px] font-medium ink-2 mb-1.5">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
-}

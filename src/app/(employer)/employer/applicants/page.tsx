@@ -1,36 +1,37 @@
 "use client";
 
 /**
- * Employer applicants — every candidate who applied to this employer's
- * postings. Filter by posting, stage, college, and applied-date; search by
- * name/skill; sort by recency or match. Each row expands to the applicant's
- * detail (skills, experience, CV) and the employer can move them through the
- * pipeline (stage change is local to this prototype).
- *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Employer applicants (Convex) — every candidate who applied to this employer's
+ * postings, read from real applications with the apply-time privacy-filtered
+ * profile snapshot. Filter by posting, stage, and applied-date; search by
+ * name/skill. Move candidates through the pipeline (persisted via Convex).
  */
 
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { ChevronDown, Download, FileText, Search } from "lucide-react";
-import {
-  APPLICATION_STAGES,
-  COLLEGES,
-  EMPLOYER_APPLICANTS,
-  STAGE_LABEL,
-  currentEmployer,
-  fmtDate,
-  type ApplicationStage,
-  type College,
-  type EmployerApplicant,
-} from "@/lib/mock-admin";
+import { ChevronDown, FileText, Search } from "lucide-react";
+import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { StageBadge, StatTile } from "@/components/auf/AdminBits";
+import { StageBadge, StatTile } from "@/components/auf/employer-ui";
+import { STAGE_ORDER, STAGE_LABEL, fmtDate } from "@/lib/employer-format";
 import { cn } from "@/lib/utils";
+
+type Applicant = {
+  _id: string;
+  jobId: string;
+  jobTitle: string;
+  stage: string;
+  coverNote?: string;
+  resumeFilename?: string;
+  createdAt: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  snapshot: any;
+};
 
 export default function EmployerApplicantsPage() {
   return (
@@ -41,68 +42,77 @@ export default function EmployerApplicantsPage() {
 }
 
 function ApplicantsInner() {
-  const employer = currentEmployer();
   const sp = useSearchParams();
   const initialPosting = sp.get("posting") ?? "all";
 
-  // Stage overrides (employer moves candidates through the pipeline).
-  const [stageOverride, setStageOverride] = useState<Record<string, ApplicationStage>>({});
+  const applicants = useQuery(api.jobs.myApplicants) as
+    | Applicant[]
+    | undefined;
+  const jobs = useQuery(api.jobs.listMyOrgJobs);
+  const moveApplication = useMutation(api.jobs.moveApplication);
+
   const [posting, setPosting] = useState<string>(initialPosting);
-  const [stages, setStages] = useState<ApplicationStage[]>([]);
-  const [colleges, setColleges] = useState<College[]>([]);
+  const [stages, setStages] = useState<string[]>([]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<"recent" | "match">("recent");
+  const [sort, setSort] = useState<"recent" | "name">("recent");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const stageOf = (a: EmployerApplicant): ApplicationStage =>
-    stageOverride[a.id] ?? a.stage;
-
   const rows = useMemo(() => {
+    const list = applicants ?? [];
     const q = search.trim().toLowerCase();
-    return EMPLOYER_APPLICANTS.filter((a) => {
-      if (posting !== "all" && a.jobId !== posting) return false;
-      if (stages.length && !stages.includes(stageOf(a))) return false;
-      if (colleges.length && !colleges.includes(a.college)) return false;
-      if (from && a.appliedAt < from) return false;
-      if (to && a.appliedAt > to) return false;
-      if (q) {
-        const hay = [a.name, a.currentRole ?? "", ...a.topSkills]
+    const fromMs = from ? new Date(from).getTime() : 0;
+    const toMs = to ? new Date(to).getTime() + 86_400_000 : Infinity;
+    return list
+      .filter((a) => (posting !== "all" ? a.jobId === posting : true))
+      .filter((a) => (stages.length ? stages.includes(a.stage) : true))
+      .filter((a) => a.createdAt >= fromMs && a.createdAt <= toMs)
+      .filter((a) => {
+        if (!q) return true;
+        const hay = [
+          a.snapshot?.displayName ?? "",
+          a.snapshot?.currentRole ?? "",
+          ...(a.snapshot?.skills ?? []),
+        ]
           .join(" ")
           .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    }).sort((a, b) =>
-      sort === "match"
-        ? b.matchScore - a.matchScore
-        : b.appliedAt.localeCompare(a.appliedAt),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [posting, stages, colleges, from, to, search, sort, stageOverride]);
+        return hay.includes(q);
+      })
+      .sort((a, b) =>
+        sort === "name"
+          ? (a.snapshot?.displayName ?? "").localeCompare(
+              b.snapshot?.displayName ?? "",
+            )
+          : b.createdAt - a.createdAt,
+      );
+  }, [applicants, posting, stages, from, to, search, sort]);
 
   const totals = useMemo(() => {
     const counts = Object.fromEntries(
-      APPLICATION_STAGES.map((s) => [s, 0]),
-    ) as Record<ApplicationStage, number>;
-    for (const a of EMPLOYER_APPLICANTS) counts[stageOf(a)] += 1;
+      STAGE_ORDER.map((s) => [s, 0]),
+    ) as Record<string, number>;
+    for (const a of applicants ?? []) counts[a.stage] = (counts[a.stage] ?? 0) + 1;
     return counts;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageOverride]);
+  }, [applicants]);
 
-  const toggle = <T,>(arr: T[], v: T, set: (a: T[]) => void) =>
+  const toggle = (arr: string[], v: string, set: (a: string[]) => void) =>
     set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
-  const moveStage = (a: EmployerApplicant, next: ApplicationStage) => {
-    setStageOverride((m) => ({ ...m, [a.id]: next }));
-    toast.success(`${a.name} → ${STAGE_LABEL[next]}`);
+  const moveStage = async (a: Applicant, next: string) => {
+    try {
+      await moveApplication({ applicationId: a._id as never, stage: next });
+      toast.success(
+        `${a.snapshot?.displayName ?? "Applicant"} → ${STAGE_LABEL[next]}`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to move");
+    }
   };
 
   const activeFilters =
     (posting !== "all" ? 1 : 0) +
     stages.length +
-    colleges.length +
     (from ? 1 : 0) +
     (to ? 1 : 0);
 
@@ -110,12 +120,12 @@ function ApplicantsInner() {
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Applicants</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Candidates who applied to {employer.name}&apos;s postings. Review,
-        filter, and move them through your pipeline.
+        Candidates who applied to your postings. Review, filter, and move them
+        through your pipeline.
       </p>
 
       <div className="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-6">
-        {APPLICATION_STAGES.map((s) => (
+        {STAGE_ORDER.map((s) => (
           <StatTile key={s} label={STAGE_LABEL[s]} value={totals[s]} />
         ))}
       </div>
@@ -148,8 +158,8 @@ function ApplicantsInner() {
               className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
             >
               <option value="all">All postings</option>
-              {employer.postings.map((p) => (
-                <option key={p.id} value={p.id}>
+              {(jobs ?? []).map((p) => (
+                <option key={p._id} value={p._id}>
                   {p.title}
                 </option>
               ))}
@@ -161,13 +171,13 @@ function ApplicantsInner() {
               Stage
             </Label>
             <div className="flex flex-wrap gap-1.5">
-              {APPLICATION_STAGES.map((s) => {
+              {STAGE_ORDER.map((s) => {
                 const on = stages.includes(s);
                 return (
                   <button
                     key={s}
                     type="button"
-                    onClick={() => toggle(stages, s, setStages as (a: ApplicationStage[]) => void)}
+                    onClick={() => toggle(stages, s, setStages)}
                     aria-pressed={on}
                     className={cn(
                       "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
@@ -178,30 +188,6 @@ function ApplicantsInner() {
                   >
                     {STAGE_LABEL[s]}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              College
-            </Label>
-            <div className="flex flex-col gap-1">
-              {COLLEGES.map((c) => {
-                const on = colleges.includes(c);
-                return (
-                  <label key={c} className="flex cursor-pointer items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => toggle(colleges, c, setColleges as (a: College[]) => void)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-border"
-                    />
-                    <span className={on ? "font-medium" : ""}>
-                      {c.replace("College of ", "")}
-                    </span>
-                  </label>
                 );
               })}
             </div>
@@ -235,7 +221,6 @@ function ApplicantsInner() {
               onClick={() => {
                 setPosting("all");
                 setStages([]);
-                setColleges([]);
                 setFrom("");
                 setTo("");
               }}
@@ -253,29 +238,38 @@ function ApplicantsInner() {
             </span>
             <select
               value={sort}
-              onChange={(e) => setSort(e.target.value as "recent" | "match")}
+              onChange={(e) => setSort(e.target.value as "recent" | "name")}
               className="rounded-md border border-border bg-background px-2 py-1 text-xs"
             >
               <option value="recent">Most recent</option>
-              <option value="match">Best match</option>
+              <option value="name">Name (A–Z)</option>
             </select>
           </div>
 
           <div className="space-y-2">
-            {rows.length === 0 ? (
+            {applicants === undefined ? (
               <Card>
                 <CardContent className="p-10 text-center text-sm text-muted-foreground">
-                  No applicants match these filters.
+                  Loading applicants…
+                </CardContent>
+              </Card>
+            ) : rows.length === 0 ? (
+              <Card>
+                <CardContent className="p-10 text-center text-sm text-muted-foreground">
+                  {(applicants ?? []).length === 0
+                    ? "No applications yet. They'll appear here as alumni apply to your postings."
+                    : "No applicants match these filters."}
                 </CardContent>
               </Card>
             ) : (
               rows.map((a) => (
                 <ApplicantRow
-                  key={a.id}
+                  key={a._id}
                   applicant={a}
-                  stage={stageOf(a)}
-                  open={expanded === a.id}
-                  onToggle={() => setExpanded(expanded === a.id ? null : a.id)}
+                  open={expanded === a._id}
+                  onToggle={() =>
+                    setExpanded(expanded === a._id ? null : a._id)
+                  }
                   onMove={(s) => moveStage(a, s)}
                 />
               ))
@@ -289,17 +283,17 @@ function ApplicantsInner() {
 
 function ApplicantRow({
   applicant: a,
-  stage,
   open,
   onToggle,
   onMove,
 }: {
-  applicant: EmployerApplicant;
-  stage: ApplicationStage;
+  applicant: Applicant;
   open: boolean;
   onToggle: () => void;
-  onMove: (s: ApplicationStage) => void;
+  onMove: (s: string) => void;
 }) {
+  const snap = a.snapshot ?? {};
+  const skills: string[] = snap.skills ?? [];
   return (
     <Card>
       <CardContent className="p-0">
@@ -309,23 +303,25 @@ function ApplicantRow({
           className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/30"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-            {a.initials}
+            {snap.initials ?? "—"}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{a.name}</span>
-              <span className="text-xs text-muted-foreground">
-                Batch {a.batch} · {a.college.replace("College of ", "")}
+              <span className="font-medium">
+                {snap.displayName ?? "Applicant"}
               </span>
+              {snap.batch ? (
+                <span className="text-xs text-muted-foreground">
+                  Batch {snap.batch}
+                  {snap.program ? ` · ${snap.program}` : ""}
+                </span>
+              ) : null}
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {a.jobTitle} · applied {fmtDate(a.appliedAt)}
+              {a.jobTitle} · applied {fmtDate(a.createdAt)}
             </div>
           </div>
-          <span className="hidden w-16 text-right text-xs tabular-nums text-muted-foreground sm:block">
-            {a.matchScore}% match
-          </span>
-          <StageBadge stage={stage} />
+          <StageBadge stage={a.stage} />
           <ChevronDown
             className={cn(
               "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
@@ -339,48 +335,62 @@ function ApplicantRow({
             <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="text-xs text-muted-foreground">Current role</span>
-                  <div>{a.currentRole ?? "—"} · {a.yearsExperience} yr exp</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Contact</span>
-                  <div>{a.email} · {a.city}</div>
-                </div>
-                <div>
-                  <span className="text-xs text-muted-foreground">Top skills</span>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {a.topSkills.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded-full bg-muted px-2 py-0.5 text-xs"
-                      >
-                        {s}
-                      </span>
-                    ))}
+                  <span className="text-xs text-muted-foreground">
+                    Current role
+                  </span>
+                  <div>
+                    {snap.currentRole ?? "—"}
+                    {snap.company ? ` · ${snap.company}` : ""}
                   </div>
                 </div>
+                {snap.city ? (
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      Location
+                    </span>
+                    <div>{snap.city}</div>
+                  </div>
+                ) : null}
+                {skills.length > 0 && (
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      Top skills
+                    </span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {skills.map((s) => (
+                        <span
+                          key={s}
+                          className="rounded-full bg-muted px-2 py-0.5 text-xs"
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {a.coverNote ? (
+                  <div>
+                    <span className="text-xs text-muted-foreground">
+                      Cover note
+                    </span>
+                    <div className="text-sm">{a.coverNote}</div>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-col items-start gap-2 sm:items-end">
-                {a.cv ? (
-                  <Button variant="outline" size="sm">
-                    <Download className="h-4 w-4" />
-                    {a.cv.filename}
-                  </Button>
-                ) : (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <FileText className="h-4 w-4" />
-                    No CV uploaded
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <FileText className="h-4 w-4" />
+                  {a.resumeFilename ?? "No CV uploaded"}
+                </span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Move to</span>
                   <select
-                    value={stage}
-                    onChange={(e) => onMove(e.target.value as ApplicationStage)}
+                    value={a.stage}
+                    onChange={(e) => onMove(e.target.value)}
                     className="rounded-md border border-border bg-background px-2 py-1 text-xs"
                   >
-                    {APPLICATION_STAGES.map((s) => (
+                    {STAGE_ORDER.map((s) => (
                       <option key={s} value={s}>
                         {STAGE_LABEL[s]}
                       </option>

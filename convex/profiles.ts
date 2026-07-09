@@ -367,6 +367,8 @@ export const createOrUpdateMyProfile = mutation({
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
+    openToWork: v.optional(v.boolean()),
+    openToWorkNote: v.optional(v.string()),
     experience: v.array(
       v.object({
         role: v.string(),
@@ -429,6 +431,9 @@ export const createOrUpdateMyProfile = mutation({
         bio: args.bio,
         skills: args.skills,
         openTo: args.openTo,
+        openToWork: args.openToWork ?? false,
+        openToWorkNote: args.openToWorkNote,
+        openToWorkUpdatedAt: now,
         experience: args.experience,
         education: args.education,
         privacyTiers: args.privacyTiers,
@@ -457,6 +462,9 @@ export const createOrUpdateMyProfile = mutation({
       bio: args.bio,
       skills: args.skills,
       openTo: args.openTo,
+      openToWork: args.openToWork ?? false,
+      openToWorkNote: args.openToWorkNote,
+      openToWorkUpdatedAt: now,
       experience: args.experience,
       education: args.education,
       privacyTiers: args.privacyTiers,

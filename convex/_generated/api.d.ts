@@ -10,15 +10,20 @@
 
 import type * as academy from "../academy.js";
 import type * as actions_email from "../actions/email.js";
+import type * as actions_sendCardIssued from "../actions/sendCardIssued.js";
 import type * as actions_sendConnectionEmail from "../actions/sendConnectionEmail.js";
 import type * as actions_sendDigestEmail from "../actions/sendDigestEmail.js";
+import type * as actions_sendEventInvite from "../actions/sendEventInvite.js";
 import type * as actions_sendVerificationEmail from "../actions/sendVerificationEmail.js";
+import type * as addJob from "../addJob.js";
 import type * as admin from "../admin.js";
+import type * as adminAlumni from "../adminAlumni.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as authReset from "../authReset.js";
 import type * as authResetHelpers from "../authResetHelpers.js";
 import type * as billing from "../billing.js";
+import type * as clearDemo from "../clearDemo.js";
 import type * as companies from "../companies.js";
 import type * as compliance from "../compliance.js";
 import type * as connections from "../connections.js";
@@ -35,6 +40,7 @@ import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
 import type * as helpers_registryStub from "../helpers/registryStub.js";
 import type * as http from "../http.js";
+import type * as idCards from "../idCards.js";
 import type * as jobs from "../jobs.js";
 import type * as mentorship from "../mentorship.js";
 import type * as messaging from "../messaging.js";
@@ -57,15 +63,20 @@ import type {
 declare const fullApi: ApiFromModules<{
   academy: typeof academy;
   "actions/email": typeof actions_email;
+  "actions/sendCardIssued": typeof actions_sendCardIssued;
   "actions/sendConnectionEmail": typeof actions_sendConnectionEmail;
   "actions/sendDigestEmail": typeof actions_sendDigestEmail;
+  "actions/sendEventInvite": typeof actions_sendEventInvite;
   "actions/sendVerificationEmail": typeof actions_sendVerificationEmail;
+  addJob: typeof addJob;
   admin: typeof admin;
+  adminAlumni: typeof adminAlumni;
   analytics: typeof analytics;
   auth: typeof auth;
   authReset: typeof authReset;
   authResetHelpers: typeof authResetHelpers;
   billing: typeof billing;
+  clearDemo: typeof clearDemo;
   companies: typeof companies;
   compliance: typeof compliance;
   connections: typeof connections;
@@ -82,6 +93,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/registry": typeof helpers_registry;
   "helpers/registryStub": typeof helpers_registryStub;
   http: typeof http;
+  idCards: typeof idCards;
   jobs: typeof jobs;
   mentorship: typeof mentorship;
   messaging: typeof messaging;

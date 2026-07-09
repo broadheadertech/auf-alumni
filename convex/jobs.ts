@@ -361,6 +361,117 @@ export const apply = mutation({
   },
 });
 
+/**
+ * Resolve the employer orgs the signed-in user may manage:
+ *   - super-admin / moderator → all orgs
+ *   - partner/verified employer-admin → orgs where they're on adminUserIds
+ *   - everyone else → []
+ */
+async function resolveMyOrgs(ctx: QueryCtx, userId: Id<"users">) {
+  const user = await ctx.db.get(userId);
+  if (!user) return [];
+  const roles = new Set(user.roles ?? []);
+  const isAdmin = roles.has("super-admin") || roles.has("moderator");
+  const isEmployer =
+    roles.has("partner-employer-admin") ||
+    roles.has("verified-employer-admin");
+  if (!isAdmin && !isEmployer) return [];
+  const orgs = await ctx.db.query("employerOrgs").collect();
+  return isAdmin
+    ? orgs
+    : orgs.filter((o) => (o.adminUserIds ?? []).includes(userId));
+}
+
+/**
+ * Employer-facing: every job across the orgs the viewer manages, any status,
+ * with live applicant + hire counts. Powers the employer Jobs list + dashboard.
+ */
+export const listMyOrgJobs = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const orgs = await resolveMyOrgs(ctx, userId);
+    const out = [];
+    for (const org of orgs) {
+      const jobs = await ctx.db
+        .query("jobs")
+        .withIndex("by_employer_time", (q) => q.eq("employerOrgId", org._id))
+        .order("desc")
+        .collect();
+      for (const j of jobs) {
+        const apps = await ctx.db
+          .query("applications")
+          .withIndex("by_job_stage", (q) => q.eq("jobId", j._id))
+          .collect();
+        out.push({
+          _id: j._id,
+          title: j.title,
+          location: j.location,
+          employmentType: j.employmentType,
+          status: j.status,
+          statusReason: j.statusReason,
+          salaryMin: j.salaryMin,
+          salaryMax: j.salaryMax,
+          salaryCurrency: j.salaryCurrency,
+          targetingPrograms: j.targetingPrograms,
+          targetingSkills: j.targetingSkills,
+          createdAt: j.createdAt,
+          publishedAt: j.publishedAt,
+          employerOrgId: org._id,
+          employerName: org.name,
+          applicantCount: apps.length,
+          hiredCount: apps.filter((a) => a.stage === "hired").length,
+        });
+      }
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    return out;
+  },
+});
+
+/**
+ * Employer-facing: all applications across the viewer's org jobs, joined with
+ * the job title and the apply-time privacy-filtered profile snapshot.
+ */
+export const myApplicants = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const orgs = await resolveMyOrgs(ctx, userId);
+    const out = [];
+    for (const org of orgs) {
+      const jobs = await ctx.db
+        .query("jobs")
+        .withIndex("by_employer_time", (q) => q.eq("employerOrgId", org._id))
+        .collect();
+      for (const j of jobs) {
+        const apps = await ctx.db
+          .query("applications")
+          .withIndex("by_job_stage", (q) => q.eq("jobId", j._id))
+          .collect();
+        for (const a of apps) {
+          out.push({
+            _id: a._id,
+            jobId: j._id,
+            jobTitle: j.title,
+            employerName: org.name,
+            stage: a.stage,
+            coverNote: a.coverNote,
+            salaryExpectation: a.salaryExpectation,
+            resumeFilename: a.resumeFilename,
+            snapshot: a.profileSnapshot,
+            createdAt: a.createdAt,
+          });
+        }
+      }
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    return out;
+  },
+});
+
 export const pipeline = query({
   args: { jobId: v.id("jobs") },
   handler: async (ctx, { jobId }) => {

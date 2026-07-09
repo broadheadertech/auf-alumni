@@ -1,34 +1,30 @@
 "use client";
 
 /**
- * Employer job postings — the signed-in employer's listings with status,
- * applicant counts, and a stage breakdown per posting. Filter by status,
- * search, and post a new role (added to the local list for the prototype;
- * new posts would enter the admin moderation queue when wired to Convex).
- *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Employer job postings (Convex). The signed-in employer's real listings with
+ * status, live applicant counts, and a stage breakdown per posting. Post a new
+ * role → it's created in Convex as `pending-moderation` and enters the admin
+ * review queue before going live to alumni.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Plus, Search, Users } from "lucide-react";
-import {
-  APPLICATION_STAGES,
-  STAGE_LABEL,
-  currentEmployer,
-  employerApplicantsForJob,
-  fmtDate,
-  type ApplicationStage,
-  type EmployerPosting,
-  type PostingStatus,
-} from "@/lib/mock-admin";
+import { Plus, Search, Users, X } from "lucide-react";
+import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { PostingStatusBadge, StatTile } from "@/components/auf/AdminBits";
+import { JobStatusBadge, StatTile } from "@/components/auf/employer-ui";
+import {
+  STAGE_ORDER,
+  STAGE_LABEL,
+  fmtDate,
+  salaryLabel,
+} from "@/lib/employer-format";
 import {
   Dialog,
   DialogContent,
@@ -38,40 +34,92 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | PostingStatus;
+type StatusFilter =
+  | "all"
+  | "published"
+  | "pending-moderation"
+  | "suspended"
+  | "closed";
+type SortKey = "recent" | "oldest" | "applicants";
+
+const EMP_TYPES: { value: string; label: string }[] = [
+  { value: "full-time", label: "Full-time" },
+  { value: "part-time", label: "Part-time" },
+  { value: "contract", label: "Contract" },
+  { value: "internship", label: "Internship" },
+];
 
 export default function EmployerJobsPage() {
-  const employer = currentEmployer();
-  const [extra, setExtra] = useState<EmployerPosting[]>([]);
+  const orgs = useQuery(api.employerOrgs.listMine);
+  const jobs = useQuery(api.jobs.listMyOrgJobs);
+  const applicants = useQuery(api.jobs.myApplicants);
+
   const [status, setStatus] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [empType, setEmpType] = useState("all");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [sort, setSort] = useState<SortKey>("recent");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const all = useMemo(
-    () => [...extra, ...employer.postings],
-    [extra, employer],
-  );
+  // stage breakdown per job
+  const stagesByJob = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {};
+    for (const a of applicants ?? []) {
+      (m[a.jobId] ??= {})[a.stage] = (m[a.jobId]?.[a.stage] ?? 0) + 1;
+    }
+    return m;
+  }, [applicants]);
+
+  const all = useMemo(() => jobs ?? [], [jobs]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const fromMs = from ? new Date(from).getTime() : 0;
+    const toMs = to ? new Date(to).getTime() + 86_400_000 : Infinity;
     return all
       .filter((p) => (status === "all" ? true : p.status === status))
+      .filter((p) => (empType === "all" ? true : p.employmentType === empType))
+      .filter((p) => p.createdAt >= fromMs && p.createdAt <= toMs)
       .filter((p) =>
         q ? (p.title + " " + p.location).toLowerCase().includes(q) : true,
-      );
-  }, [all, status, search]);
+      )
+      .sort((a, b) => {
+        switch (sort) {
+          case "oldest":
+            return a.createdAt - b.createdAt;
+          case "applicants":
+            return b.applicantCount - a.applicantCount;
+          case "recent":
+          default:
+            return b.createdAt - a.createdAt;
+        }
+      });
+  }, [all, status, empType, from, to, search, sort]);
+
+  const activeFilters =
+    (status !== "all" ? 1 : 0) +
+    (empType !== "all" ? 1 : 0) +
+    (from ? 1 : 0) +
+    (to ? 1 : 0);
+  const clearFilters = () => {
+    setStatus("all");
+    setEmpType("all");
+    setFrom("");
+    setTo("");
+    setSearch("");
+  };
 
   const totals = useMemo(() => {
     const published = all.filter((p) => p.status === "published").length;
-    const applicants = all.reduce(
-      (s, p) => s + employerApplicantsForJob(p.id).length,
-      0,
-    );
-    const pending = all.filter((p) => p.status === "pending-moderation").length;
-    return { postings: all.length, published, applicants, pending };
+    const pending = all.filter(
+      (p) => p.status === "pending-moderation",
+    ).length;
+    const applicantCount = all.reduce((s, p) => s + p.applicantCount, 0);
+    return { postings: all.length, published, applicants: applicantCount, pending };
   }, [all]);
 
-  const addPosting = (p: EmployerPosting) => setExtra((cur) => [p, ...cur]);
+  const org = orgs?.[0];
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
@@ -83,7 +131,11 @@ export default function EmployerJobsPage() {
             school before it goes live.
           </p>
         </div>
-        <Button size="sm" onClick={() => setDialogOpen(true)}>
+        <Button
+          size="sm"
+          onClick={() => setDialogOpen(true)}
+          disabled={!org}
+        >
           <Plus className="h-4 w-4" />
           Post a job
         </Button>
@@ -97,10 +149,18 @@ export default function EmployerJobsPage() {
       </div>
 
       {/* Controls */}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(["all", "published", "pending-moderation", "closed", "draft"] as StatusFilter[]).map(
-            (s) => (
+      <div className="mt-6 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                "all",
+                "published",
+                "pending-moderation",
+                "suspended",
+                "closed",
+              ] as StatusFilter[]
+            ).map((s) => (
               <button
                 key={s}
                 type="button"
@@ -118,51 +178,130 @@ export default function EmployerJobsPage() {
                     ? "Pending"
                     : s.charAt(0).toUpperCase() + s.slice(1)}
               </button>
-            ),
-          )}
+            ))}
+          </div>
+          <div className="relative sm:w-56">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search postings…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
-        <div className="relative sm:w-56">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search postings…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
+          <span className="text-muted-foreground">Posted</span>
+          <input
+            type="date"
+            value={from}
+            max={to || undefined}
+            onChange={(e) => setFrom(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="Posted from"
           />
+          <span className="text-muted-foreground">–</span>
+          <input
+            type="date"
+            value={to}
+            min={from || undefined}
+            onChange={(e) => setTo(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="Posted to"
+          />
+          <span className="mx-1 h-4 w-px bg-border" />
+          <select
+            value={empType}
+            onChange={(e) => setEmpType(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="Employment type"
+          >
+            <option value="all">Any type</option>
+            {EMP_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+            aria-label="Sort"
+          >
+            <option value="recent">Newest posted</option>
+            <option value="oldest">Oldest posted</option>
+            <option value="applicants">Most applicants</option>
+          </select>
+          {activeFilters > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
         </div>
       </div>
 
       <div className="mt-4 space-y-3">
-        {visible.length === 0 ? (
+        {jobs === undefined ? (
           <Card>
             <CardContent className="p-10 text-center text-sm text-muted-foreground">
-              No postings match these filters.
+              Loading postings…
+            </CardContent>
+          </Card>
+        ) : visible.length === 0 ? (
+          <Card>
+            <CardContent className="p-10 text-center text-sm text-muted-foreground">
+              {all.length === 0
+                ? "No postings yet. Click “Post a job” to create your first listing."
+                : "No postings match these filters."}
             </CardContent>
           </Card>
         ) : (
-          visible.map((p) => <PostingCard key={p.id} posting={p} />)
+          visible.map((p) => (
+            <PostingCard
+              key={p._id}
+              posting={p}
+              stageCounts={stagesByJob[p._id] ?? {}}
+            />
+          ))
         )}
       </div>
 
-      <PostJobDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onCreate={addPosting}
-      />
+      {org ? (
+        <PostJobDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          employerOrgId={org._id}
+        />
+      ) : null}
     </div>
   );
 }
 
-function PostingCard({ posting }: { posting: EmployerPosting }) {
-  const applicants = employerApplicantsForJob(posting.id);
-  const stageCounts = useMemo(() => {
-    const map = Object.fromEntries(
-      APPLICATION_STAGES.map((s) => [s, 0]),
-    ) as Record<ApplicationStage, number>;
-    for (const a of applicants) map[a.stage] += 1;
-    return map;
-  }, [applicants]);
-
+function PostingCard({
+  posting,
+  stageCounts,
+}: {
+  posting: {
+    _id: string;
+    title: string;
+    location: string;
+    employmentType: string;
+    status: string;
+    salaryMin?: number;
+    salaryMax?: number;
+    salaryCurrency?: string;
+    createdAt: number;
+    publishedAt?: number;
+    applicantCount: number;
+  };
+  stageCounts: Record<string, number>;
+}) {
   return (
     <Card>
       <CardContent className="p-4">
@@ -170,27 +309,36 @@ function PostingCard({ posting }: { posting: EmployerPosting }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-medium">{posting.title}</h2>
-              <PostingStatusBadge status={posting.status} />
+              <JobStatusBadge status={posting.status} />
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {posting.location} · {posting.employmentType} · {posting.salaryLabel}
+              {posting.location} · {posting.employmentType} ·{" "}
+              {salaryLabel(
+                posting.salaryMin,
+                posting.salaryMax,
+                posting.salaryCurrency,
+              )}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              Posted {fmtDate(posting.postedAt)} · closes {fmtDate(posting.closesAt)}
+              Posted {fmtDate(posting.createdAt)}
+              {posting.publishedAt
+                ? ` · published ${fmtDate(posting.publishedAt)}`
+                : ""}
             </div>
           </div>
           <Link
-            href={`/employer/applicants?posting=${posting.id}`}
+            href={`/employer/applicants?posting=${posting._id}`}
             className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-muted"
           >
             <Users className="h-3.5 w-3.5" />
-            {applicants.length} applicant{applicants.length === 1 ? "" : "s"} →
+            {posting.applicantCount} applicant
+            {posting.applicantCount === 1 ? "" : "s"} →
           </Link>
         </div>
 
-        {applicants.length > 0 && (
+        {posting.applicantCount > 0 && (
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-2 text-xs">
-            {APPLICATION_STAGES.filter((s) => stageCounts[s] > 0).map((s) => (
+            {STAGE_ORDER.filter((s) => (stageCounts[s] ?? 0) > 0).map((s) => (
               <span key={s} className="text-muted-foreground">
                 <span className="font-medium text-foreground tabular-nums">
                   {stageCounts[s]}
@@ -208,40 +356,50 @@ function PostingCard({ posting }: { posting: EmployerPosting }) {
 function PostJobDialog({
   open,
   onClose,
-  onCreate,
+  employerOrgId,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (p: EmployerPosting) => void;
+  employerOrgId: string;
 }) {
+  const createJob = useMutation(api.jobs.createJob);
   const [title, setTitle] = useState("");
   const [location, setLocation] = useState("");
-  const [salary, setSalary] = useState("");
+  const [employmentType, setEmploymentType] = useState("full-time");
+  const [salaryMin, setSalaryMin] = useState("");
+  const [salaryMax, setSalaryMax] = useState("");
   const [description, setDescription] = useState("");
-  const seq = useRef(0);
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
-    if (!title.trim() || !location.trim()) {
-      toast.error("Title and location are required");
+  const submit = async () => {
+    if (!title.trim() || !location.trim() || !description.trim()) {
+      toast.error("Title, location, and description are required");
       return;
     }
-    onCreate({
-      id: `job-new-${seq.current++}`,
-      title: title.trim(),
-      location: location.trim(),
-      employmentType: "Full-time",
-      status: "pending-moderation",
-      postedAt: "2026-06-28",
-      closesAt: "2026-08-15",
-      salaryLabel: salary.trim() || "Negotiable",
-      applicants: [],
-    });
-    toast.success("Job submitted — awaiting admin moderation");
-    setTitle("");
-    setLocation("");
-    setSalary("");
-    setDescription("");
-    onClose();
+    setSubmitting(true);
+    try {
+      await createJob({
+        employerOrgId: employerOrgId as never,
+        title: title.trim(),
+        description: description.trim(),
+        location: location.trim(),
+        employmentType,
+        salaryMin: salaryMin ? Number(salaryMin) : undefined,
+        salaryMax: salaryMax ? Number(salaryMax) : undefined,
+        salaryCurrency: "PHP",
+      });
+      toast.success("Job submitted — awaiting admin moderation");
+      setTitle("");
+      setLocation("");
+      setSalaryMin("");
+      setSalaryMax("");
+      setDescription("");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to post job");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -252,7 +410,9 @@ function PostJobDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label htmlFor="pj-title" className="text-xs">Job title</Label>
+            <Label htmlFor="pj-title" className="text-xs">
+              Job title
+            </Label>
             <Input
               id="pj-title"
               value={title}
@@ -262,7 +422,9 @@ function PostJobDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="pj-loc" className="text-xs">Location</Label>
+              <Label htmlFor="pj-loc" className="text-xs">
+                Location
+              </Label>
               <Input
                 id="pj-loc"
                 value={location}
@@ -271,17 +433,53 @@ function PostJobDialog({
               />
             </div>
             <div>
-              <Label htmlFor="pj-sal" className="text-xs">Salary</Label>
+              <Label htmlFor="pj-type" className="text-xs">
+                Employment type
+              </Label>
+              <select
+                id="pj-type"
+                value={employmentType}
+                onChange={(e) => setEmploymentType(e.target.value)}
+                className="mt-0.5 h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+              >
+                {EMP_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="pj-min" className="text-xs">
+                Salary min (₱/mo)
+              </Label>
               <Input
-                id="pj-sal"
-                value={salary}
-                onChange={(e) => setSalary(e.target.value)}
-                placeholder="₱90k–₱130k / mo"
+                id="pj-min"
+                type="number"
+                value={salaryMin}
+                onChange={(e) => setSalaryMin(e.target.value)}
+                placeholder="30000"
+              />
+            </div>
+            <div>
+              <Label htmlFor="pj-max" className="text-xs">
+                Salary max (₱/mo)
+              </Label>
+              <Input
+                id="pj-max"
+                type="number"
+                value={salaryMax}
+                onChange={(e) => setSalaryMax(e.target.value)}
+                placeholder="45000"
               />
             </div>
           </div>
           <div>
-            <Label htmlFor="pj-desc" className="text-xs">Description</Label>
+            <Label htmlFor="pj-desc" className="text-xs">
+              Description
+            </Label>
             <Textarea
               id="pj-desc"
               rows={3}
@@ -296,12 +494,12 @@ function PostJobDialog({
           </p>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button onClick={submit}>
+          <Button onClick={submit} disabled={submitting}>
             <Plus className="h-4 w-4" />
-            Submit for review
+            {submitting ? "Submitting…" : "Submit for review"}
           </Button>
         </DialogFooter>
       </DialogContent>

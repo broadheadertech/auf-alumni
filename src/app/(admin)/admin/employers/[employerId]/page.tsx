@@ -7,9 +7,10 @@
  * filterable by stage + posting and sortable by recency / match score.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   ChevronDown,
@@ -17,6 +18,8 @@ import {
   ExternalLink,
   FileText,
   Search,
+  Trash2,
+  Upload,
 } from "lucide-react";
 import {
   APPLICATION_STAGES,
@@ -35,6 +38,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { AccountStatusCard } from "@/components/auf/AccountStatusCard";
+import {
+  DOC_STAMP,
+  removeEmployerDoc,
+  setEmployerDoc,
+  useEmployerDocs,
+  type EmployerDocKind,
+  type LocalDoc,
+} from "@/lib/employer-docs";
 import {
   ContractBadge,
   PostingStatusBadge,
@@ -48,6 +60,7 @@ export default function EmployerDetailPage() {
   const params = useParams<{ employerId: string }>();
   const employer = getEmployerById(params.employerId);
 
+  const localDocs = useEmployerDocs(employer?.id ?? "");
   const [stages, setStages] = useState<ApplicationStage[]>([]);
   const [postingId, setPostingId] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -159,11 +172,27 @@ export default function EmployerDetailPage() {
           <CardContent className="p-4">
             <h2 className="text-sm font-medium">Documents</h2>
             <div className="mt-2 space-y-2">
-              <DocRow label="MOA" doc={employer.moa} />
-              <DocRow label="NDA" doc={employer.nda} />
+              <DocSlot
+                employerId={employer.id}
+                kind="moa"
+                label="MOA"
+                doc={localDocs.moa ?? employer.moa}
+                isLocal={!!localDocs.moa}
+              />
+              <DocSlot
+                employerId={employer.id}
+                kind="nda"
+                label="NDA"
+                doc={localDocs.nda ?? employer.nda}
+                isLocal={!!localDocs.nda}
+              />
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="mt-4">
+        <AccountStatusCard id={employer.id} name={employer.name} kind="employer" />
       </div>
 
       {/* Postings + applicants */}
@@ -359,34 +388,107 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DocRow({ label, doc }: { label: string; doc: UploadedDoc | null }) {
-  if (!doc) {
-    return (
-      <div className="flex items-center justify-between gap-3 rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-        <span className="flex items-center gap-2">
-          <FileText className="h-4 w-4" />
-          {label}
-        </span>
-        <span className="text-xs italic">Not uploaded</span>
-      </div>
-    );
-  }
+function DocSlot({
+  employerId,
+  kind,
+  label,
+  doc,
+  isLocal,
+}: {
+  employerId: string;
+  kind: EmployerDocKind;
+  label: string;
+  doc: UploadedDoc | LocalDoc | null;
+  isLocal: boolean;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!/\.(pdf|doc|docx)$/i.test(f.name)) {
+      toast.error("MOA / NDA must be a PDF, DOC, or DOCX");
+      return;
+    }
+    setEmployerDoc(employerId, kind, {
+      filename: f.name,
+      sizeKb: Math.max(1, Math.round(f.size / 1024)),
+      uploadedAt: DOC_STAMP,
+    });
+    toast.success(`${label} uploaded`);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
-      <span className="flex min-w-0 items-center gap-2">
-        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">
-            {label} · {doc.filename}
+    <div
+      className={cn(
+        "rounded-md border px-3 py-2",
+        doc ? "border-border" : "border-dashed border-border",
+      )}
+    >
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.doc,.docx"
+        className="hidden"
+        onChange={onFile}
+      />
+      {doc ? (
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-2">
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium">
+                {label} · {doc.filename}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {doc.sizeKb} KB · uploaded {fmtDate(doc.uploadedAt)}
+                {isLocal ? " · new" : ""}
+              </span>
+            </span>
           </span>
-          <span className="text-xs text-muted-foreground">
-            {doc.sizeKb} KB · uploaded {fmtDate(doc.uploadedAt)}
+          <div className="flex shrink-0 items-center gap-1">
+            <Button variant="ghost" size="icon-sm" aria-label={`Download ${label}`}>
+              <Download className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Replace ${label}`}
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
+            {isLocal && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${label}`}
+                onClick={() => {
+                  removeEmployerDoc(employerId, kind);
+                  toast.success(`${label} removed`);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+          <span className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            {label}
           </span>
-        </span>
-      </span>
-      <Button variant="ghost" size="icon-sm" aria-label={`Download ${label}`}>
-        <Download className="h-4 w-4" />
-      </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" /> Upload
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

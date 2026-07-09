@@ -1804,3 +1804,124 @@ export function currentEmployerHistory(): JobApplicationRecord[] {
   const name = currentEmployer().name;
   return JOB_APPLICATIONS.filter((r) => r.company === name);
 }
+
+// ------------------------------------------------ admin job-post detail ---
+
+/**
+ * Normalized applicant view for the admin job-posting detail. Uses the richer
+ * EMPLOYER_APPLICANTS set when a posting has one (Kollab AI), otherwise the
+ * posting's own seed applicants. Kept as the single source so the job list
+ * count and the detail always agree.
+ */
+export type JobApplicantView = {
+  key: string;
+  name: string;
+  initials: string;
+  college: College;
+  batch: number;
+  appliedAt: string;
+  stage: ApplicationStage;
+  matchScore: number;
+  hasCv: boolean;
+  cvFilename?: string;
+  currentRole?: string | null;
+  topSkills?: string[];
+  alumnaId?: string;
+};
+
+export function jobApplicants(posting: EmployerPosting): JobApplicantView[] {
+  const rich = employerApplicantsForJob(posting.id);
+  if (rich.length > 0) {
+    return rich.map((a) => ({
+      key: a.id,
+      name: a.name,
+      initials: a.initials,
+      college: a.college,
+      batch: a.batch,
+      appliedAt: a.appliedAt,
+      stage: a.stage,
+      matchScore: a.matchScore,
+      hasCv: !!a.cv,
+      cvFilename: a.cv?.filename,
+      currentRole: a.currentRole,
+      topSkills: a.topSkills,
+    }));
+  }
+  return posting.applicants.map((a) => ({
+    key: a.applicationId,
+    name: a.name,
+    initials: a.initials,
+    college: a.college,
+    batch: a.batch,
+    appliedAt: a.appliedAt,
+    stage: a.stage,
+    matchScore: a.matchScore,
+    hasCv: true,
+    alumnaId: a.alumnaId,
+  }));
+}
+
+/**
+ * "Reviewed" = the applicant moved past the initial "new" stage, i.e. someone
+ * has looked at their CV/profile. Used for the "CVs reviewed" summary.
+ */
+export function reviewedCount(applicants: JobApplicantView[]): number {
+  return applicants.filter((a) => a.stage !== "new").length;
+}
+
+/** Whole days a posting has been live, relative to the dataset "today". */
+export function daysSincePosted(iso: string): number {
+  return Math.max(0, -daysUntil(iso));
+}
+
+/** Find a posting + its employer by posting id (across all employers). */
+export function getPostingById(
+  postingId: string,
+): { posting: EmployerPosting; employer: AdminEmployer } | undefined {
+  for (const employer of EMPLOYERS) {
+    const posting = employer.postings.find((p) => p.id === postingId);
+    if (posting) return { posting, employer };
+  }
+  return undefined;
+}
+
+// ------------------------------------------------------ event detail ---
+
+export function getEventById(id: string): AdminEvent | undefined {
+  return EVENTS.find((e) => e.id === id);
+}
+
+export type EventStats = {
+  reach: number;
+  emailsSent: number;
+  going: number;
+  maybe: number;
+  declined: number;
+  responded: number;
+  noResponse: number;
+  responseRate: number; // 0–1
+};
+
+/**
+ * Attendance + invitation analytics for an event. "declined" is derived
+ * deterministically for the demo; emailsSent = the targeted audience reach.
+ */
+export function eventStats(e: AdminEvent): EventStats {
+  const reach = audienceReach(e.audience);
+  const going = e.rsvpYes;
+  const maybe = e.rsvpMaybe;
+  const declined = Math.round(e.rsvpMaybe * 0.5);
+  const responded = going + maybe + declined;
+  const emailsSent = reach;
+  const noResponse = Math.max(0, emailsSent - responded);
+  return {
+    reach,
+    emailsSent,
+    going,
+    maybe,
+    declined,
+    responded,
+    noResponse,
+    responseRate: emailsSent ? responded / emailsSent : 0,
+  };
+}

@@ -40,6 +40,91 @@ export const linkEmployerAdmin = internalMutation({
   },
 });
 
+/**
+ * Ensure the employer has an org and one published IT job (for the demo).
+ * Idempotent — reuses the org by slug and skips the job if it already exists.
+ */
+export const seedEmployerOrgAndJob = internalMutation({
+  args: { employerEmail: v.string() },
+  handler: async (ctx, { employerEmail }): Promise<{ ok: boolean; reason?: string }> => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", employerEmail))
+      .unique();
+    if (!user) return { ok: false, reason: "employer-user-not-found" };
+
+    const now = Date.now();
+    const slug = "broadheader";
+
+    let org = await ctx.db
+      .query("employerOrgs")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!org) {
+      const orgId = await ctx.db.insert("employerOrgs", {
+        name: "Broadheader",
+        slug,
+        tier: "partner",
+        websiteUrl: "https://broadheader.com",
+        hqCity: "Angeles City",
+        planTier: "partner",
+        jobPostsUsed: 0,
+        adminUserIds: [user._id],
+        createdAt: now,
+        updatedAt: now,
+      });
+      org = await ctx.db.get(orgId);
+    } else {
+      const admins = new Set(org.adminUserIds ?? []);
+      if (!admins.has(user._id)) {
+        await ctx.db.patch(org._id, {
+          adminUserIds: [...admins, user._id],
+          updatedAt: now,
+        });
+      }
+    }
+    if (!org) return { ok: false, reason: "org-create-failed" };
+
+    // Idempotency: skip if this org already has a job.
+    const existingJob = await ctx.db
+      .query("jobs")
+      .withIndex("by_employer_time", (q) => q.eq("employerOrgId", org!._id))
+      .first();
+    if (existingJob) return { ok: true };
+
+    await ctx.db.insert("jobs", {
+      employerOrgId: org._id,
+      title: "Junior Software Developer (IT Fresh Grad)",
+      description:
+        "We're hiring a Junior Software Developer to join our engineering team. " +
+        "Great first role for a BS Information Technology graduate. You'll build " +
+        "and maintain web features with React, TypeScript, and Node.js, write " +
+        "clean code, and learn from senior engineers.\n\n" +
+        "What we're looking for:\n" +
+        "• BS Information Technology (or related) graduate\n" +
+        "• Familiar with JavaScript/TypeScript, React, and REST APIs\n" +
+        "• Basic SQL and Git\n" +
+        "• Eager to learn, good communicator\n\n" +
+        "Fresh graduates are welcome to apply.",
+      location: "Angeles City · Hybrid",
+      employmentType: "full-time",
+      salaryMin: 30000,
+      salaryMax: 45000,
+      salaryCurrency: "PHP",
+      targetingPrograms: ["BS Information Technology"],
+      targetingSkills: ["JavaScript", "TypeScript", "React", "Node.js", "SQL"],
+      aufOnly: true,
+      status: "published",
+      createdBy: user._id,
+      createdAt: now,
+      publishedAt: now,
+    });
+
+    await ctx.db.patch(org._id, { jobPostsUsed: (org.jobPostsUsed ?? 0) + 1 });
+    return { ok: true };
+  },
+});
+
 export const upsertDemoAccount = internalMutation({
   args: {
     email: v.string(),

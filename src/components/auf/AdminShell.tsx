@@ -26,6 +26,7 @@ import {
   Scale,
   ScrollText,
   ShieldCheck,
+  Stamp,
   UserCog,
   Users,
   X,
@@ -55,13 +56,14 @@ const GROUPS: NavGroup[] = [
       { href: "/admin/alumni", label: "Alumni", Icon: Users },
       { href: "/admin/alumni/approvals", label: "Approvals", Icon: ShieldCheck },
       { href: "/admin/directory", label: "Directory", Icon: Contact },
+      { href: "/admin/cv-template", label: "CV template", Icon: Stamp },
     ],
   },
   {
     label: "Marketplace",
     items: [
       { href: "/admin/employers", label: "Employers", Icon: Building2 },
-      { href: "/admin/moderation/jobs", label: "Job moderation", Icon: ClipboardCheck },
+      { href: "/admin/jobs", label: "Job postings", Icon: ClipboardCheck },
       { href: "/admin/analytics", label: "Analytics", Icon: BarChart3 },
     ],
   },

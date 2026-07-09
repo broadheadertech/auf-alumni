@@ -581,4 +581,30 @@ export default defineSchema({
   })
     .index("by_token", ["token"])
     .index("by_user", ["userId"]),
+
+  // ---------- RFID alumni ID cards ----------
+  // Physical, non-programmable cards: only a salted HASH of the fixed UID is
+  // stored (never the raw number), plus a salted PIN hash the alumna sets
+  // herself. `alumnaId` is the roster key (opaque string).
+  idCards: defineTable({
+    alumnaId: v.string(),
+    uidHash: v.optional(v.string()),
+    uidSalt: v.optional(v.string()),
+    pinHash: v.optional(v.string()),
+    pinSalt: v.optional(v.string()),
+    status: v.string(), // "issued" | "active" | "lost"
+    boundAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index("by_alumna", ["alumnaId"]),
+
+  // Single-use "set your PIN" tokens (30-min TTL). Emailed to the alumna.
+  cardActivations: defineTable({
+    token: v.string(),
+    alumnaId: v.string(),
+    alumnaName: v.string(),
+    email: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    usedAt: v.optional(v.number()),
+  }).index("by_token", ["token"]),
 });

@@ -3,58 +3,105 @@
 /**
  * Alumni roster — every registered alumna with their employment signals.
  *
- * Shows hired / open-to-work status, what roles they're applying to, CV
- * availability, EQ composite, top skills, and certifications count. Filterable
- * by work status, college, batch, company-applied-to, and open-to-work; full
- * text search; sortable columns (name, batch, EQ, # applications, registered).
- * Each row links to the per-alumna drill-down.
- *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Live Convex data (api.adminAlumni.listRoster): hired / open-to-work status,
+ * what roles they're applying to (joined from real applications), CV
+ * availability, top skills, and application counts. Filterable by work status,
+ * college (derived from program), batch, company-applied-to, and open-to-work;
+ * full-text search; sortable columns. Each row links to the per-alumna
+ * drill-down.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "convex/react";
 import {
   ArrowUpDown,
   ChevronRight,
   FileCheck2,
   FileX2,
+  Loader2,
   Search,
   ShieldCheck,
 } from "lucide-react";
-import {
-  ALUMNAE,
-  BATCHES,
-  COLLEGES,
-  COMPANIES,
-  PENDING_ALUMNI,
-  WORK_STATUSES,
-  type AdminAlumna,
-  type College,
-  type WorkStatus,
-} from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+import { WORK_STATUSES, type WorkStatus } from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StatTile, WorkStatusBadge } from "@/components/auf/AdminBits";
+import { ACCOUNT_STATUS_LABEL, useAccountStatusMap } from "@/lib/account-status";
 import { cn } from "@/lib/utils";
 
-type SortKey = "name" | "batch" | "eq" | "applications" | "registered";
+type RosterApplication = {
+  applicationId: string;
+  jobTitle: string;
+  company: string;
+  stage: string;
+};
+
+type Alumna = {
+  id: string;
+  slug: string;
+  name: string;
+  initials: string;
+  batch: number;
+  program: string;
+  college: string;
+  city: string;
+  currentRole: string | null;
+  currentCompany: string | null;
+  openToWork: boolean;
+  hired: boolean;
+  workStatus: WorkStatus;
+  skills: string[];
+  cv: boolean;
+  verifiedAt: number | null;
+  registeredAt: number;
+  applications: RosterApplication[];
+};
+
+type SortKey = "name" | "batch" | "applications" | "registered";
 
 export default function AdminAlumniPage() {
+  const data = useQuery(api.adminAlumni.listRoster);
+  const acctStatus = useAccountStatusMap();
+
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<WorkStatus[]>([]);
-  const [colleges, setColleges] = useState<College[]>([]);
+  const [colleges, setColleges] = useState<string[]>([]);
   const [batches, setBatches] = useState<number[]>([]);
   const [company, setCompany] = useState<string>("all");
   const [openOnly, setOpenOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>("registered");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
 
+  const alumni = useMemo(
+    () => (data?.alumni ?? []) as Alumna[],
+    [data],
+  );
+  const pendingCount = data?.pendingCount ?? 0;
+
+  // Filter option lists, derived from the live roster.
+  const collegeOptions = useMemo(
+    () => Array.from(new Set(alumni.map((a) => a.college))).sort(),
+    [alumni],
+  );
+  const batchOptions = useMemo(
+    () => Array.from(new Set(alumni.map((a) => a.batch))).sort((x, y) => y - x),
+    [alumni],
+  );
+  const companyOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(alumni.flatMap((a) => a.applications.map((ap) => ap.company))),
+      ).sort(),
+    [alumni],
+  );
+
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = ALUMNAE.filter((a) => {
+    const list = alumni.filter((a) => {
       if (statuses.length && !statuses.includes(a.workStatus)) return false;
       if (colleges.length && !colleges.includes(a.college)) return false;
       if (batches.length && !batches.includes(a.batch)) return false;
@@ -68,7 +115,7 @@ export default function AdminAlumniPage() {
           a.currentRole ?? "",
           a.currentCompany ?? "",
           a.city,
-          ...a.skills.map((s) => s.name),
+          ...a.skills,
           ...a.applications.map((ap) => ap.jobTitle),
         ]
           .join(" ")
@@ -78,18 +125,16 @@ export default function AdminAlumniPage() {
       return true;
     });
 
-    const val = (a: AdminAlumna): number | string => {
+    const val = (a: Alumna): number | string => {
       switch (sort) {
         case "name":
           return a.name.toLowerCase();
         case "batch":
           return a.batch;
-        case "eq":
-          return a.eqScore;
         case "applications":
           return a.applications.length;
         case "registered":
-          return new Date(a.registeredAt).getTime();
+          return a.registeredAt;
       }
     };
     return [...list].sort((a, b) => {
@@ -101,7 +146,7 @@ export default function AdminAlumniPage() {
           : (va as number) - (vb as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [search, statuses, colleges, batches, company, openOnly, sort, dir]);
+  }, [alumni, search, statuses, colleges, batches, company, openOnly, sort, dir]);
 
   const setSortKey = (key: SortKey) => {
     if (sort === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -116,12 +161,12 @@ export default function AdminAlumniPage() {
 
   const totals = useMemo(
     () => ({
-      total: ALUMNAE.length,
-      open: ALUMNAE.filter((a) => a.openToWork).length,
-      hired: ALUMNAE.filter((a) => a.hired).length,
-      applying: ALUMNAE.filter((a) => a.applications.length > 0).length,
+      total: alumni.length,
+      open: alumni.filter((a) => a.openToWork).length,
+      hired: alumni.filter((a) => a.hired).length,
+      applying: alumni.filter((a) => a.applications.length > 0).length,
     }),
-    [],
+    [alumni],
   );
 
   const activeFilters =
@@ -139,6 +184,8 @@ export default function AdminAlumniPage() {
     setOpenOnly(false);
   };
 
+  const loading = data === undefined;
+
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Alumni</h1>
@@ -147,7 +194,7 @@ export default function AdminAlumniPage() {
         profile assessment.
       </p>
 
-      {PENDING_ALUMNI.length > 0 && (
+      {pendingCount > 0 && (
         <Link
           href="/admin/alumni/approvals"
           className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm transition-colors hover:bg-amber-500/10"
@@ -155,8 +202,8 @@ export default function AdminAlumniPage() {
           <span className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-amber-600" />
             <span className="font-medium">
-              {PENDING_ALUMNI.length} alumnus registration
-              {PENDING_ALUMNI.length === 1 ? "" : "s"} awaiting approval
+              {pendingCount} alumnus registration
+              {pendingCount === 1 ? "" : "s"} awaiting approval
             </span>
           </span>
           <span className="text-xs text-muted-foreground">Review queue →</span>
@@ -207,12 +254,14 @@ export default function AdminAlumniPage() {
             onToggle={(v) => toggle(statuses, v, setStatuses as (a: WorkStatus[]) => void)}
           />
 
-          <CheckGroup
-            label="College"
-            options={COLLEGES.map((c) => ({ value: c, label: c }))}
-            active={colleges}
-            onToggle={(v) => toggle(colleges, v, setColleges as (a: College[]) => void)}
-          />
+          {collegeOptions.length > 0 && (
+            <CheckGroup
+              label="College"
+              options={collegeOptions.map((c) => ({ value: c, label: c }))}
+              active={colleges}
+              onToggle={(v) => toggle(colleges, v, setColleges as (a: string[]) => void)}
+            />
+          )}
 
           <div>
             <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
@@ -224,7 +273,7 @@ export default function AdminAlumniPage() {
               className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
             >
               <option value="all">Any company</option>
-              {COMPANIES.map((c) => (
+              {companyOptions.map((c) => (
                 <option key={c} value={c}>
                   {c}
                 </option>
@@ -232,32 +281,34 @@ export default function AdminAlumniPage() {
             </select>
           </div>
 
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Batch
-            </Label>
-            <div className="flex flex-wrap gap-1.5">
-              {BATCHES.map((b) => {
-                const on = batches.includes(b);
-                return (
-                  <button
-                    key={b}
-                    type="button"
-                    onClick={() => toggle(batches, b, setBatches as (a: number[]) => void)}
-                    aria-pressed={on}
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                      on
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {b}
-                  </button>
-                );
-              })}
+          {batchOptions.length > 0 && (
+            <div>
+              <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
+                Batch
+              </Label>
+              <div className="flex flex-wrap gap-1.5">
+                {batchOptions.map((b) => {
+                  const on = batches.includes(b);
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => toggle(batches, b, setBatches as (a: number[]) => void)}
+                      aria-pressed={on}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                        on
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {b}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {activeFilters > 0 && (
             <Button
@@ -283,17 +334,24 @@ export default function AdminAlumniPage() {
                       <Th label="Batch" sortKey="batch" {...{ sort, dir, setSortKey }} />
                       <th className="px-3 py-2 text-left font-medium">Status</th>
                       <th className="px-3 py-2 text-left font-medium">Applying to</th>
-                      <Th label="EQ" sortKey="eq" align="right" {...{ sort, dir, setSortKey }} />
                       <th className="px-3 py-2 text-center font-medium">CV</th>
                       <Th label="Apps" sortKey="applications" align="right" {...{ sort, dir, setSortKey }} />
                       <th className="px-3 py-2" />
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.length === 0 ? (
+                    {loading ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
-                          No alumni match these filters.
+                        <td colSpan={7} className="p-10 text-center text-muted-foreground">
+                          <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                        </td>
+                      </tr>
+                    ) : rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                          {alumni.length === 0
+                            ? "No alumni registered yet."
+                            : "No alumni match these filters."}
                         </td>
                       </tr>
                     ) : (
@@ -329,7 +387,21 @@ export default function AdminAlumniPage() {
                             {a.batch}
                           </td>
                           <td className="px-3 py-3">
-                            <WorkStatusBadge status={a.workStatus} />
+                            <div className="flex flex-col items-start gap-1">
+                              {acctStatus[a.id] && (
+                                <span
+                                  className={cn(
+                                    "inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium",
+                                    acctStatus[a.id].kind === "rejected"
+                                      ? "bg-destructive/10 text-destructive"
+                                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                  )}
+                                >
+                                  {ACCOUNT_STATUS_LABEL[acctStatus[a.id].kind]}
+                                </span>
+                              )}
+                              <WorkStatusBadge status={a.workStatus} />
+                            </div>
                           </td>
                           <td className="px-3 py-3">
                             {a.applications.length === 0 ? (
@@ -351,9 +423,6 @@ export default function AdminAlumniPage() {
                                 )}
                               </div>
                             )}
-                          </td>
-                          <td className="px-3 py-3 text-right tabular-nums">
-                            {a.eqScore}
                           </td>
                           <td className="px-3 py-3 text-center">
                             {a.cv ? (
@@ -382,10 +451,12 @@ export default function AdminAlumniPage() {
               </div>
             </CardContent>
           </Card>
-          <p className="mt-3 text-xs italic text-muted-foreground">
-            Showing {rows.length} of {ALUMNAE.length} alumni · sorted by{" "}
-            {sort} ({dir}) · demo data for stakeholder review.
-          </p>
+          {!loading && (
+            <p className="mt-3 text-xs italic text-muted-foreground">
+              Showing {rows.length} of {alumni.length} alumni · sorted by {sort}{" "}
+              ({dir}).
+            </p>
+          )}
         </section>
       </div>
     </div>

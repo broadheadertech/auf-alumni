@@ -4,11 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Briefcase, Loader2, MapPin } from "lucide-react";
+import { Briefcase, Loader2, MapPin, Search, X } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +48,26 @@ function formatSalary(min?: number, max?: number, ccy?: string): string | null {
   return `${c} ${(min ?? max)!.toLocaleString()}+`;
 }
 
+const TYPE_OPTIONS = [
+  { value: "full-time", label: "Full-time" },
+  { value: "part-time", label: "Part-time" },
+  { value: "contract", label: "Contract" },
+  { value: "internship", label: "Internship" },
+];
+const MODE_OPTIONS = [
+  { value: "Remote", label: "Remote" },
+  { value: "Hybrid", label: "Hybrid" },
+  { value: "Onsite", label: "Onsite" },
+];
+
+/** Infer work mode from a free-text location string. */
+function workMode(location: string): string {
+  const l = location.toLowerCase();
+  if (l.includes("remote")) return "Remote";
+  if (l.includes("hybrid")) return "Hybrid";
+  return "Onsite";
+}
+
 export default function JobsBoardPage() {
   const [showUnmatched, setShowUnmatched] = useState(false);
   const jobs = useQuery(api.jobs.browse, { showUnmatched });
@@ -72,7 +94,58 @@ export default function JobsBoardPage() {
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [dialogJobId, setDialogJobId] = useState<string | null>(null);
 
+  // Client-side filters (on top of the matched/unmatched Convex query).
+  const [query, setQuery] = useState("");
+  const [types, setTypes] = useState<string[]>([]);
+  const [modes, setModes] = useState<string[]>([]);
+  const [minSalary, setMinSalary] = useState("");
+  const [company, setCompany] = useState("all");
+  const [sort, setSort] = useState<"recent" | "salary">("recent");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
   const list = (jobs ?? []) as Job[];
+
+  const companies = Array.from(new Set(list.map((j) => j.employerName))).sort();
+
+  const toggle = (arr: string[], v: string, set: (a: string[]) => void) =>
+    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+
+  const filtered = list
+    .filter((j) => {
+      if (types.length && !types.includes(j.employmentType)) return false;
+      if (modes.length && !modes.includes(workMode(j.location))) return false;
+      if (company !== "all" && j.employerName !== company) return false;
+      if (minSalary) {
+        const cap = j.salaryMax ?? j.salaryMin;
+        if (cap != null && cap < Number(minSalary)) return false;
+      }
+      if (query.trim()) {
+        const hay = [j.title, j.employerName, j.description, j.location]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(query.trim().toLowerCase())) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (sort === "salary") {
+        return (b.salaryMax ?? b.salaryMin ?? 0) - (a.salaryMax ?? a.salaryMin ?? 0);
+      }
+      return (b.publishedAt ?? 0) - (a.publishedAt ?? 0);
+    });
+
+  const selected =
+    filtered.find((j) => j._id === selectedId) ?? filtered[0] ?? null;
+
+  const activeFilters =
+    types.length + modes.length + (minSalary ? 1 : 0) + (company !== "all" ? 1 : 0);
+  const clearFilters = () => {
+    setQuery("");
+    setTypes([]);
+    setModes([]);
+    setMinSalary("");
+    setCompany("all");
+  };
 
   const resetApplyForm = () => {
     setCoverNote("");
@@ -157,86 +230,203 @@ export default function JobsBoardPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Roles posted by verified employers, filtered to match your profile.
-          </p>
-        </div>
-        <label className="inline-flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={showUnmatched}
-            onChange={(e) => setShowUnmatched(e.target.checked)}
-            className="h-4 w-4 rounded border-border"
-          />
-          Show all jobs (not just matches)
-        </label>
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Roles posted by verified employers. Filter to find your fit.
+        </p>
       </div>
 
-      <div className="mt-6 space-y-3">
-        {jobs === undefined ? (
-          <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-        ) : list.length === 0 ? (
-          <EmptyState
-            message={showUnmatched ? "No jobs published yet" : "No matched jobs right now"}
-            description={
-              showUnmatched
-                ? "Once employers start posting, opportunities will appear here."
-                : "Toggle 'Show all jobs' to see roles outside your profile match."
-            }
+      {/* Filter bar */}
+      <div className="mt-4 space-y-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search title, company, keyword…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as "recent" | "salary")}
+            className="rounded-md border border-border bg-background px-2.5 py-2 text-sm"
+          >
+            <option value="recent">Most recent</option>
+            <option value="salary">Salary (high to low)</option>
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          {TYPE_OPTIONS.map((o) => (
+            <FilterChip
+              key={o.value}
+              label={o.label}
+              on={types.includes(o.value)}
+              onClick={() => toggle(types, o.value, setTypes)}
+            />
+          ))}
+          <span className="mx-1 h-4 w-px bg-border" />
+          {MODE_OPTIONS.map((o) => (
+            <FilterChip
+              key={o.value}
+              label={o.label}
+              on={modes.includes(o.value)}
+              onClick={() => toggle(modes, o.value, setModes)}
+            />
+          ))}
+          <span className="mx-1 h-4 w-px bg-border" />
+          <input
+            type="number"
+            min={0}
+            placeholder="Min salary"
+            value={minSalary}
+            onChange={(e) => setMinSalary(e.target.value)}
+            className="h-7 w-28 rounded-md border border-border bg-background px-2 text-xs"
           />
-        ) : (
-          list.map((j) => {
-            const salary = formatSalary(j.salaryMin, j.salaryMax, j.salaryCurrency);
-            return (
-              <Card key={j._id}>
-                <CardContent className="space-y-2 p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h2 className="text-lg font-semibold">{j.title}</h2>
-                      <p className="text-sm text-muted-foreground">
+          <select
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs"
+          >
+            <option value="all">Any company</option>
+            {companies.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+          <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={showUnmatched}
+              onChange={(e) => setShowUnmatched(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border"
+            />
+            <span className={showUnmatched ? "font-medium" : "text-muted-foreground"}>
+              All jobs
+            </span>
+          </label>
+          {(query || activeFilters > 0) && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-3 mb-2 text-sm text-muted-foreground">
+        {jobs === undefined
+          ? "Loading…"
+          : `${filtered.length} job${filtered.length === 1 ? "" : "s"}`}
+      </div>
+
+      {/* Two-pane feed */}
+      {jobs === undefined ? (
+        <Loader2 className="mx-auto mt-10 h-6 w-6 animate-spin text-muted-foreground" />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          message={
+            list.length === 0
+              ? showUnmatched
+                ? "No jobs published yet"
+                : "No matched jobs right now"
+              : "No jobs match your filters"
+          }
+          description={
+            list.length === 0
+              ? showUnmatched
+                ? "Once employers start posting, opportunities will appear here."
+                : "Toggle 'All jobs' to see roles outside your profile match."
+              : "Try widening your search or clearing filters."
+          }
+        />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
+          {/* List */}
+          <div className="space-y-2">
+            {filtered.map((j) => {
+              const salary = formatSalary(j.salaryMin, j.salaryMax, j.salaryCurrency);
+              const isSel = selected?._id === j._id;
+              return (
+                <button
+                  key={j._id}
+                  type="button"
+                  onClick={() => setSelectedId(j._id)}
+                  className={cn(
+                    "w-full rounded-lg border bg-card p-4 text-left transition-colors",
+                    isSel
+                      ? "border-foreground ring-1 ring-foreground/20"
+                      : "border-border hover:border-foreground/30",
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-bold">
+                      {initialsOf(j.employerName)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{j.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">
                         {j.employerName} ·{" "}
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                        <span className="rounded bg-muted px-1 py-0.5 text-[10px]">
                           {j.employerTier}
                         </span>
-                      </p>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                        <span className="inline-flex items-center gap-0.5">
+                          <MapPin className="h-3 w-3" />
+                          {j.location}
+                        </span>
+                        <span>· {j.employmentType}</span>
+                      </div>
+                      {salary && (
+                        <div className="mt-1 text-xs font-medium">{salary}</div>
+                      )}
                     </div>
-                    {salary && (
-                      <span className="text-sm font-medium">{salary}</span>
-                    )}
                   </div>
-                  <p className="line-clamp-3 text-sm">{j.description}</p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {j.location}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <Briefcase className="h-3.5 w-3.5" />
-                      {j.employmentType}
-                    </span>
-                  </div>
-                  <div className="pt-1">
-                    <Button
-                      size="sm"
-                      disabled={busyJobId === j._id}
-                      onClick={() => {
-                        setDialogJobId(j._id);
-                        setCoverNote("");
-                      }}
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
-      </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Detail pane */}
+          {selected && (
+            <div className="hidden lg:block">
+              <div className="sticky top-20">
+                <JobDetail
+                  job={selected}
+                  busy={busyJobId === selected._id}
+                  onApply={() => {
+                    setDialogJobId(selected._id);
+                    setCoverNote("");
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Mobile detail (below list) */}
+          {selected && (
+            <div className="lg:hidden">
+              <JobDetail
+                job={selected}
+                busy={busyJobId === selected._id}
+                onApply={() => {
+                  setDialogJobId(selected._id);
+                  setCoverNote("");
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       <AlertDialog
         open={dialogJobId != null}
@@ -440,5 +630,128 @@ export default function JobsBoardPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function initialsOf(name: string): string {
+  const w = name.trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return "?";
+  if (w.length === 1) return w[0].slice(0, 2).toUpperCase();
+  return (w[0][0] + w[1][0]).toUpperCase();
+}
+
+function FilterChip({
+  label,
+  on,
+  onClick,
+}: {
+  label: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "rounded-full border px-2.5 py-0.5 transition-colors",
+        on
+          ? "border-foreground bg-foreground text-background"
+          : "border-border text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function JobDetail({
+  job,
+  busy,
+  onApply,
+}: {
+  job: Job;
+  busy: boolean;
+  onApply: () => void;
+}) {
+  const salary = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency);
+  const tags = [
+    ...(job.targetingSkills ?? []),
+    ...(job.targetingPrograms ?? []),
+  ];
+  return (
+    <Card>
+      <CardContent className="p-5 sm:p-6">
+        <div className="flex items-start gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted text-sm font-bold">
+            {initialsOf(job.employerName)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-semibold leading-tight">{job.title}</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {job.employerName} ·{" "}
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                {job.employerTier}
+              </span>
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
+            <MapPin className="h-3.5 w-3.5" />
+            {job.location}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1">
+            <Briefcase className="h-3.5 w-3.5" />
+            {job.employmentType}
+          </span>
+          {salary && (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-1 font-medium text-emerald-700 dark:text-emerald-300">
+              {salary}
+            </span>
+          )}
+          {job.publishedAt && (
+            <span className="rounded-full bg-muted px-2 py-1 text-muted-foreground">
+              Posted{" "}
+              {new Date(job.publishedAt).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              })}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-4">
+          <Button disabled={busy} onClick={onApply}>
+            Apply now
+          </Button>
+        </div>
+
+        <div className="mt-5 border-t border-border pt-4">
+          <h3 className="text-sm font-medium">About the role</h3>
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+            {job.description}
+          </p>
+        </div>
+
+        {tags.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium">Looking for</h3>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {tags.map((t) => (
+                <span
+                  key={t}
+                  className="rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

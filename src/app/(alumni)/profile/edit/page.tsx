@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Plus, X, Upload, Loader2 } from "lucide-react";
+import {
+  CheckCircle2,
+  Loader2,
+  Plus,
+  ShieldCheck,
+  Upload,
+  X,
+} from "lucide-react";
 import { api } from "@/lib/convex-api";
 import {
   DEGREES,
@@ -64,6 +71,8 @@ type FormState = {
   bio: string;
   skills: string[];
   openTo: OpenToKind[];
+  openToWork: boolean;
+  openToWorkNote: string;
   experience: { role: string; company: string; years: string }[];
   education: {
     degree: string;
@@ -86,6 +95,19 @@ const DEFAULT_TIERS: Record<string, PrivacyTier> = {
   education: "alumni",
 };
 
+const SECTIONS: { id: string; label: string }[] = [
+  { id: "opentowork", label: "Open to work" },
+  { id: "photo", label: "Photo" },
+  { id: "identity", label: "Identity" },
+  { id: "work", label: "Work" },
+  { id: "about", label: "About" },
+  { id: "opento", label: "Open to" },
+  { id: "skills", label: "Skills" },
+  { id: "experience", label: "Experience" },
+  { id: "education", label: "Education" },
+  { id: "privacy", label: "Privacy" },
+];
+
 const EMPTY: FormState = {
   displayName: "",
   batch: CURRENT_YEAR,
@@ -98,6 +120,8 @@ const EMPTY: FormState = {
   bio: "",
   skills: [],
   openTo: [],
+  openToWork: false,
+  openToWorkNote: "",
   experience: [],
   education: [],
   privacyTiers: DEFAULT_TIERS,
@@ -122,6 +146,7 @@ export default function ProfileEditPage() {
   const [uploading, setUploading] = useState(false);
   const [viewerPreview, setViewerPreview] = useState<PreviewViewer>("self");
   const [hydratedId, setHydratedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("photo");
 
   // Hydrate the form from the existing profile exactly once per profile-id.
   // Guard with `hydratedId` so re-renders from the query subscription don't
@@ -145,6 +170,8 @@ export default function ProfileEditPage() {
       bio: existing.bio ?? "",
       skills: existing.skills ?? [],
       openTo: (existing.openTo ?? []) as OpenToKind[],
+      openToWork: existing.openToWork ?? false,
+      openToWorkNote: existing.openToWorkNote ?? "",
       experience: existing.experience ?? [],
       education: existing.education ?? [],
       privacyTiers: {
@@ -250,6 +277,10 @@ export default function ProfileEditPage() {
         bio: state.bio.trim() || undefined,
         skills: state.skills,
         openTo: state.openTo,
+        openToWork: state.openToWork,
+        openToWorkNote: state.openToWork
+          ? state.openToWorkNote.trim() || undefined
+          : undefined,
         experience: state.experience,
         education: state.education,
         privacyTiers: state.privacyTiers,
@@ -272,6 +303,35 @@ export default function ProfileEditPage() {
     [isPreviewMode, viewerPreview, state.privacyTiers],
   );
 
+  const initials =
+    state.displayName
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((p) => p.charAt(0).toUpperCase())
+      .join("") || "?";
+
+  const completeness = useMemo(() => {
+    const checks = [
+      { anchor: "photo", label: "Add a profile photo", done: !!photoUrl },
+      { anchor: "work", label: "Add your current role", done: !!state.currentRole.trim() },
+      { anchor: "work", label: "Add your company", done: !!state.company.trim() },
+      { anchor: "work", label: "Add your location", done: !!(state.city.trim() || state.country.trim()) },
+      { anchor: "about", label: "Write your summary", done: state.bio.trim().length >= 40 },
+      { anchor: "skills", label: "Add 3+ skills", done: state.skills.length >= 3 },
+      { anchor: "experience", label: "Add work experience", done: state.experience.length > 0 },
+      { anchor: "education", label: "Add education", done: state.education.length > 0 },
+      { anchor: "opento", label: "Set what you're open to", done: state.openTo.length > 0 },
+    ];
+    const done = checks.filter((c) => c.done).length;
+    return {
+      checks,
+      done,
+      total: checks.length,
+      pct: Math.round((done / checks.length) * 100),
+    };
+  }, [photoUrl, state]);
+
   return (
     <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-10">
       <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -285,6 +345,116 @@ export default function ProfileEditPage() {
           value={viewerPreview}
           onChange={setViewerPreview}
         />
+      </div>
+
+      {/* Hero — cover, avatar w/ completeness ring, identity below */}
+      <Card className="overflow-hidden p-0">
+        <div
+          className="h-24 sm:h-28"
+          style={{
+            background:
+              "linear-gradient(120deg, var(--brand-deep) 0%, var(--brand) 100%)",
+          }}
+        />
+        <CardContent className="px-6 pb-5">
+          <div className="-mt-12 flex items-start justify-between gap-4">
+            <CompletenessRing pct={completeness.pct} size={104} stroke={4}>
+              <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-muted text-2xl font-semibold text-foreground ring-4 ring-card">
+                {photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
+              </div>
+            </CompletenessRing>
+            <span className="mt-14 hidden shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-700 sm:inline-flex dark:text-emerald-300">
+              <ShieldCheck className="h-3.5 w-3.5" /> Verified Alumna
+            </span>
+          </div>
+
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-serif text-[22px] font-semibold leading-tight">
+                {state.displayName || "Your name"}
+              </h2>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 sm:hidden dark:text-emerald-300">
+                <ShieldCheck className="h-3 w-3" /> Verified
+              </span>
+              {state.openToWork && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+                  Open to work
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-[15px] text-foreground/90">
+              {[state.currentRole, state.company].filter(Boolean).join(" · ") ||
+                "Add your current role"}
+            </p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
+              {state.program} · Class of {state.batch}
+              {state.city || state.country
+                ? " · " + [state.city, state.country].filter(Boolean).join(", ")
+                : ""}
+            </p>
+            {state.openTo.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {state.openTo.map((k) => (
+                  <OpenToTag key={k} kind={k} variant="subtle" />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Strength summary line */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border pt-3 text-xs">
+            <span className="font-medium">Profile strength</span>
+            <span className="font-semibold tabular-nums">{completeness.pct}%</span>
+            {completeness.done < completeness.total ? (
+              <>
+                <span className="text-muted-foreground">
+                  · {completeness.total - completeness.done} to finish:
+                </span>
+                {completeness.checks
+                  .filter((c) => !c.done)
+                  .slice(0, 4)
+                  .map((c) => (
+                    <button
+                      key={c.label}
+                      type="button"
+                      onClick={() => setActiveTab(c.anchor)}
+                      className="brand-fg underline-offset-2 hover:underline"
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" /> All set — nice profile.
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section tabs — switch panels instead of scrolling */}
+      <div className="my-4 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1">
+        {SECTIONS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setActiveTab(s.id)}
+            className={cn(
+              "shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              activeTab === s.id
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {isPreviewMode && (
@@ -303,8 +473,62 @@ export default function ProfileEditPage() {
 
       <form onSubmit={onSubmit} className="space-y-6">
         <fieldset disabled={isPreviewMode} className="space-y-6">
+          {/* Open to work banner */}
+          <Card
+            id="opentowork"
+            className={cn(
+              state.openToWork && "ring-emerald-500/40",
+              activeTab !== "opentowork" && "hidden",
+            )}
+          >
+            <CardContent className="p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold">Open to work</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Turn this on to signal you&apos;re looking. Shows an
+                    &ldquo;Open to work&rdquo; banner on your profile and
+                    surfaces you to recruiters and in the directory.
+                  </p>
+                </div>
+                <label className="inline-flex shrink-0 cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={state.openToWork}
+                    onChange={(e) =>
+                      setState((s) => ({ ...s, openToWork: e.target.checked }))
+                    }
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  <span className="text-sm font-medium">
+                    {state.openToWork ? "On" : "Off"}
+                  </span>
+                </label>
+              </div>
+              {state.openToWork && (
+                <div className="mt-4">
+                  <Label htmlFor="otwNote">
+                    What you&apos;re looking for (optional)
+                  </Label>
+                  <Input
+                    id="otwNote"
+                    value={state.openToWorkNote}
+                    maxLength={140}
+                    onChange={(e) =>
+                      setState((s) => ({
+                        ...s,
+                        openToWorkNote: e.target.value,
+                      }))
+                    }
+                    placeholder="e.g. Frontend / product roles · remote-friendly · PH or SG"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Photo */}
-          <Card>
+          <Card id="photo" className={cn(activeTab !== "photo" && "hidden")}>
             <CardContent className="p-6">
               <h2 className="font-semibold">Photo</h2>
               <div className="mt-4 flex items-center gap-4">
@@ -356,7 +580,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Identity */}
-          <Card>
+          <Card id="identity" className={cn(activeTab !== "identity" && "hidden")}>
             <CardContent className="space-y-4 p-6">
               <h2 className="font-semibold">Identity</h2>
               <div>
@@ -443,7 +667,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Work + location */}
-          <Card>
+          <Card id="work" className={cn(activeTab !== "work" && "hidden")}>
             <CardContent className="space-y-4 p-6">
               <h2 className="font-semibold">Where you are now</h2>
               <FieldWithPrivacy
@@ -508,7 +732,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Bio */}
-          <Card>
+          <Card id="about" className={cn(activeTab !== "about" && "hidden")}>
             <CardContent className="space-y-2 p-6">
               <FieldWithPrivacy
                 label="About"
@@ -531,7 +755,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Open to */}
-          <Card>
+          <Card id="opento" className={cn(activeTab !== "opento" && "hidden")}>
             <CardContent className="space-y-3 p-6">
               <h2 className="font-semibold">Open to</h2>
               <p className="text-xs text-muted-foreground">
@@ -561,7 +785,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Skills */}
-          <Card>
+          <Card id="skills" className={cn(activeTab !== "skills" && "hidden")}>
             <CardContent className="space-y-2 p-6">
               <FieldWithPrivacy
                 label="Skills"
@@ -609,7 +833,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Experience */}
-          <Card>
+          <Card id="experience" className={cn(activeTab !== "experience" && "hidden")}>
             <CardContent className="space-y-3 p-6">
               <FieldWithPrivacy
                 label="Experience"
@@ -692,7 +916,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Education */}
-          <Card>
+          <Card id="education" className={cn(activeTab !== "education" && "hidden")}>
             <CardContent className="space-y-3 p-6">
               <FieldWithPrivacy
                 label="Education"
@@ -793,7 +1017,7 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* SEO opt-out */}
-          <Card>
+          <Card id="privacy" className={cn(activeTab !== "privacy" && "hidden")}>
             <CardContent className="flex items-start justify-between gap-3 p-6">
               <div>
                 <h2 className="font-semibold">Search engines</h2>
@@ -824,6 +1048,46 @@ export default function ProfileEditPage() {
           </div>
         </fieldset>
       </form>
+    </div>
+  );
+}
+
+function CompletenessRing({
+  pct,
+  size,
+  stroke,
+  children,
+}: {
+  pct: number;
+  size: number;
+  stroke: number;
+  children: React.ReactNode;
+}) {
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const offset = circumference * (1 - clamped / 100);
+  const color = clamped >= 80 ? "#10b981" : clamped >= 50 ? "#0ea5e9" : "#f59e0b";
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="absolute inset-0 -rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="transition-all"
+        />
+      </svg>
+      <div className="absolute" style={{ inset: stroke + 3 }}>
+        {children}
+      </div>
     </div>
   );
 }

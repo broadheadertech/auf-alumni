@@ -26,7 +26,6 @@ import {
   LogOut,
   Menu,
   MessageCircle,
-  Plus,
   Settings,
   X,
 } from "lucide-react";
@@ -294,15 +293,6 @@ function TopBar({
           aria-label="Messages"
         >
           <MessageCircle size={18} />
-        </Link>
-        <div className="w-px h-6 bg-[var(--border-soft)] hidden sm:block" />
-        <Link
-          href="/employer/jobs"
-          className="auf-btn auf-btn-primary auf-btn-sm"
-          aria-label="Post a job"
-        >
-          <Plus size={14} />
-          <span className="hidden md:inline">Post a job</span>
         </Link>
       </div>
     </header>
