@@ -51,6 +51,7 @@ import type * as seed from "../seed.js";
 import type * as seedAccounts from "../seedAccounts.js";
 import type * as seedAccountsHelpers from "../seedAccountsHelpers.js";
 import type * as social from "../social.js";
+import type * as taxonomy from "../taxonomy.js";
 import type * as users from "../users.js";
 import type * as verification from "../verification.js";
 
@@ -104,6 +105,7 @@ declare const fullApi: ApiFromModules<{
   seedAccounts: typeof seedAccounts;
   seedAccountsHelpers: typeof seedAccountsHelpers;
   social: typeof social;
+  taxonomy: typeof taxonomy;
   users: typeof users;
   verification: typeof verification;
 }>;

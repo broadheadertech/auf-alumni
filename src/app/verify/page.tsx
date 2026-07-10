@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Loader2, Upload, CheckCircle, AlertTriangle, Clock } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { PROGRAMS } from "@/lib/schemas/shared";
+import { useProgramOptions } from "@/lib/use-program-options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -33,6 +36,7 @@ export default function VerifyPage() {
   const submitManual = useMutation(api.verification.submitManual);
   const updateSubmission = useMutation(api.verification.updateSubmission);
   const generateUploadUrl = useMutation(api.verification.generateUploadUrl);
+  const programOptions = useProgramOptions();
 
   const [claimedName, setClaimedName] = useState("");
   const [claimedBatch, setClaimedBatch] = useState<number>(CURRENT_YEAR);
@@ -170,16 +174,32 @@ export default function VerifyPage() {
                       <Label htmlFor="claimedProgram">Program</Label>
                       <Select
                         value={claimedProgram}
-                        onValueChange={(v) => setClaimedProgram(v ?? PROGRAMS[0])}
+                        onValueChange={(v) =>
+                          setClaimedProgram(v ?? claimedProgram)
+                        }
                       >
                         <SelectTrigger id="claimedProgram">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {PROGRAMS.map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
+                          {claimedProgram &&
+                            !programOptions.all.includes(claimedProgram) && (
+                              <SelectGroup>
+                                <SelectLabel>Current</SelectLabel>
+                                <SelectItem value={claimedProgram}>
+                                  {claimedProgram}
+                                </SelectItem>
+                              </SelectGroup>
+                            )}
+                          {programOptions.groups.map((g) => (
+                            <SelectGroup key={g.college}>
+                              <SelectLabel>{g.college}</SelectLabel>
+                              {g.programs.map((p) => (
+                                <SelectItem key={p} value={p}>
+                                  {p}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
                           ))}
                         </SelectContent>
                       </Select>

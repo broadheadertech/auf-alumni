@@ -27,10 +27,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useProgramOptions } from "@/lib/use-program-options";
 import {
   PrivacyTierIcon,
   type PrivacyTier as PrivacyTierType,
@@ -139,6 +142,7 @@ export default function ProfileEditPage() {
   const saveProfile = useMutation(api.profiles.createOrUpdateMyProfile);
   const uploadUrl = useMutation(api.profiles.generatePhotoUploadUrl);
   const setPhoto = useMutation(api.profiles.setPhoto);
+  const programOptions = useProgramOptions();
 
   const [state, setState] = useState<FormState>(EMPTY);
   const [skillInput, setSkillInput] = useState("");
@@ -627,17 +631,31 @@ export default function ProfileEditPage() {
                   <Select
                     value={state.program}
                     onValueChange={(v) =>
-                      setState((s) => ({ ...s, program: v ?? PROGRAMS[0] }))
+                      setState((s) => ({ ...s, program: v ?? s.program }))
                     }
                   >
                     <SelectTrigger id="program">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PROGRAMS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {p}
-                        </SelectItem>
+                      {state.program &&
+                        !programOptions.all.includes(state.program) && (
+                          <SelectGroup>
+                            <SelectLabel>Current</SelectLabel>
+                            <SelectItem value={state.program}>
+                              {state.program}
+                            </SelectItem>
+                          </SelectGroup>
+                        )}
+                      {programOptions.groups.map((g) => (
+                        <SelectGroup key={g.college}>
+                          <SelectLabel>{g.college}</SelectLabel>
+                          {g.programs.map((p) => (
+                            <SelectItem key={p} value={p}>
+                              {p}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
                       ))}
                     </SelectContent>
                   </Select>

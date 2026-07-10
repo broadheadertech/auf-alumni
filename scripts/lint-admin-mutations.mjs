@@ -21,6 +21,7 @@ const filesToScan = [
   "convex/admin.ts",
   "convex/moderation.ts",
   "convex/verification.ts",
+  "convex/taxonomy.ts",
 ];
 
 const violations = [];

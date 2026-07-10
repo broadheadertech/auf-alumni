@@ -25,6 +25,7 @@ import {
   Menu,
   Scale,
   ScrollText,
+  Settings2,
   ShieldCheck,
   Stamp,
   UserCog,
@@ -78,6 +79,12 @@ const GROUPS: NavGroup[] = [
       { href: "/admin/compliance", label: "Compliance", Icon: Scale },
       { href: "/admin/reports", label: "Reports", Icon: FileText },
       { href: "/admin/users", label: "Users", Icon: UserCog },
+    ],
+  },
+  {
+    label: "Configuration",
+    items: [
+      { href: "/admin/settings", label: "Colleges & programs", Icon: Settings2 },
     ],
   },
 ];

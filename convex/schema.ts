@@ -112,6 +112,33 @@ export default defineSchema({
     .index("by_batch_program", ["batch", "program"])
     .index("by_alumni_id", ["alumniId"]),
 
+  // ---------- academic taxonomy (admin-managed reference data) ----------
+  // Colleges and their courses/programs, managed from the admin settings page
+  // so the lists alumni pick from stay current without a code change. Programs
+  // are stored on profiles as free strings (by name); these tables are the
+  // canonical source that powers every picker/filter and the program→college
+  // classification.
+  colleges: defineTable({
+    name: v.string(),
+    shortName: v.optional(v.string()),
+    sortOrder: v.number(),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_sort", ["sortOrder"]),
+
+  programs: defineTable({
+    name: v.string(),
+    collegeId: v.id("colleges"),
+    degree: v.optional(v.string()), // "Undergraduate" | "Graduate"
+    sortOrder: v.number(),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_college", ["collegeId"])
+    .index("by_sort", ["sortOrder"]),
+
   // ---------- verificationSubmissions (Epic 2 Stories 2.3, 2.4) ----------
   verificationSubmissions: defineTable({
     userId: v.id("users"),

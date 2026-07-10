@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Degree, OpenToKind, PrivacyTier, Program } from "./shared";
+import { Degree, OpenToKind, PrivacyTier } from "./shared";
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -33,7 +33,9 @@ export const ProfileSchema = z
       .int()
       .min(1960, "Batch year out of range")
       .max(CURRENT_YEAR, "Batch year cannot be in the future"),
-    program: Program,
+    // Program is admin-managed (see convex/taxonomy.ts) — validate as a
+    // non-empty string rather than a fixed enum so newly-added programs pass.
+    program: z.string().trim().min(1).max(120),
     degree: Degree,
     currentRole: z.string().max(200).optional(),
     company: z.string().max(200).optional(),
