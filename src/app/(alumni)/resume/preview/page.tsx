@@ -19,6 +19,8 @@ import { useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
   Download,
+  FileUp,
+  Loader2,
   MapPin,
   Mail,
   Pencil,
@@ -28,6 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
+import { extractResumeText } from "@/lib/extract-resume-text";
 import {
   CV_ACCENTS,
   CV_SECTIONS,
@@ -106,9 +109,15 @@ function mapProfileToCv(p: NonNullable<ConvexProfile>, me: MeSnapshot): CvData {
   };
 }
 
+type SavedResume =
+  | { filename: string; uploadedAt: number | null; url: string | null }
+  | null
+  | undefined;
+
 export default function ResumePreviewPage() {
   const profile = useQuery(api.profiles.getMyAlumniCard) as ConvexProfile;
   const me = useQuery(api.users.getMe) as MeSnapshot;
+  const savedResume = useQuery(api.profiles.getMyProfileResume) as SavedResume;
 
   // Admin-provided official template (hydrated from storage after mount).
   const [tpl, setTpl] = useState<CvTemplateConfig>(DEFAULT_CV_TEMPLATE);
@@ -130,6 +139,7 @@ export default function ResumePreviewPage() {
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<CvData>(DEMO_CV);
+  const [importing, setImporting] = useState(false);
 
   const cv: CvData = editing ? draft : (override ?? base);
   const usingDemo =
@@ -150,6 +160,32 @@ export default function ResumePreviewPage() {
     setOverride(null);
     setEditing(false);
     toast.message("Reverted to your profile details");
+  };
+
+  // Seed the CV from the alumna's uploaded CV file: fetch it, extract the raw
+  // text (no field auto-mapping), drop it into the editable summary, and open
+  // the editor so they can organize it into the proper sections before saving.
+  const onImportFromCv = async () => {
+    if (!savedResume?.url) {
+      toast.error("No uploaded CV found — add one in Resume settings first.");
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch(savedResume.url);
+      if (!res.ok) throw new Error("Couldn't fetch your uploaded CV");
+      const buf = await res.arrayBuffer();
+      const { text } = await extractResumeText(buf, savedResume.filename);
+      setDraft({ ...(override ?? base), summary: text });
+      setEditing(true);
+      toast.success(
+        `Imported text from ${savedResume.filename} — organize it into the sections below, then Save details.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "CV import failed");
+    } finally {
+      setImporting(false);
+    }
   };
 
   // Per-alumna choices for OPTIONAL sections (default on).
@@ -209,6 +245,22 @@ export default function ResumePreviewPage() {
               </>
             ) : (
               <>
+                {savedResume?.url && (
+                  <button
+                    type="button"
+                    onClick={onImportFromCv}
+                    disabled={importing}
+                    className="auf-btn auf-btn-outline auf-btn-sm"
+                    title={`Read text from ${savedResume.filename} into your CV`}
+                  >
+                    {importing ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <FileUp size={13} />
+                    )}
+                    Import from my uploaded CV
+                  </button>
+                )}
                 <button type="button" onClick={startEdit} className="auf-btn auf-btn-outline auf-btn-sm">
                   <Pencil size={13} /> Edit details
                 </button>

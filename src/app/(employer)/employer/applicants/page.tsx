@@ -11,7 +11,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { ChevronDown, FileText, Search } from "lucide-react";
+import { Check, ChevronDown, FileCheck2, FileText, Search } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ type Applicant = {
   stage: string;
   coverNote?: string;
   resumeFilename?: string;
+  reviewedAt?: number;
   createdAt: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   snapshot: any;
@@ -50,6 +51,7 @@ function ApplicantsInner() {
     | undefined;
   const jobs = useQuery(api.jobs.listMyOrgJobs);
   const moveApplication = useMutation(api.jobs.moveApplication);
+  const setReviewed = useMutation(api.jobs.setReviewed);
 
   const [posting, setPosting] = useState<string>(initialPosting);
   const [stages, setStages] = useState<string[]>([]);
@@ -107,6 +109,20 @@ function ApplicantsInner() {
       );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to move");
+    }
+  };
+
+  const toggleReviewed = async (a: Applicant) => {
+    const next = !a.reviewedAt;
+    try {
+      await setReviewed({ applicationId: a._id as never, reviewed: next });
+      toast.success(
+        next
+          ? `Marked ${a.snapshot?.displayName ?? "applicant"}'s CV reviewed`
+          : "Review mark cleared",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
     }
   };
 
@@ -235,6 +251,11 @@ function ApplicantsInner() {
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm text-muted-foreground">
               {rows.length} applicant{rows.length === 1 ? "" : "s"}
+              <span className="ml-2 inline-flex items-center gap-1 text-xs">
+                <FileCheck2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                {rows.filter((a) => a.reviewedAt).length} CV
+                {rows.filter((a) => a.reviewedAt).length === 1 ? "" : "s"} reviewed
+              </span>
             </span>
             <select
               value={sort}
@@ -271,6 +292,7 @@ function ApplicantsInner() {
                     setExpanded(expanded === a._id ? null : a._id)
                   }
                   onMove={(s) => moveStage(a, s)}
+                  onToggleReviewed={() => toggleReviewed(a)}
                 />
               ))
             )}
@@ -286,14 +308,17 @@ function ApplicantRow({
   open,
   onToggle,
   onMove,
+  onToggleReviewed,
 }: {
   applicant: Applicant;
   open: boolean;
   onToggle: () => void;
   onMove: (s: string) => void;
+  onToggleReviewed: () => void;
 }) {
   const snap = a.snapshot ?? {};
   const skills: string[] = snap.skills ?? [];
+  const reviewed = Boolean(a.reviewedAt);
   return (
     <Card>
       <CardContent className="p-0">
@@ -321,6 +346,12 @@ function ApplicantRow({
               {a.jobTitle} · applied {fmtDate(a.createdAt)}
             </div>
           </div>
+          {reviewed && (
+            <FileCheck2
+              className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+              aria-label="CV reviewed"
+            />
+          )}
           <StageBadge stage={a.stage} />
           <ChevronDown
             className={cn(
@@ -383,6 +414,23 @@ function ApplicantRow({
                   <FileText className="h-4 w-4" />
                   {a.resumeFilename ?? "No CV uploaded"}
                 </span>
+                <Button
+                  size="sm"
+                  variant={reviewed ? "secondary" : "outline"}
+                  onClick={onToggleReviewed}
+                >
+                  {reviewed ? (
+                    <>
+                      <FileCheck2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      Reviewed
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Mark reviewed
+                    </>
+                  )}
+                </Button>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-muted-foreground">Move to</span>
                   <select

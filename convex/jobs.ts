@@ -462,12 +462,51 @@ export const myApplicants = query({
             salaryExpectation: a.salaryExpectation,
             resumeFilename: a.resumeFilename,
             snapshot: a.profileSnapshot,
+            reviewedAt: a.reviewedAt,
             createdAt: a.createdAt,
           });
         }
       }
     }
     out.sort((a, b) => b.createdAt - a.createdAt);
+    return out;
+  },
+});
+
+/**
+ * Alumna-facing: my own job applications, joined with job title + employer name,
+ * showing the current pipeline stage and whether the employer has reviewed my
+ * CV. Powers the "My job applications" tracker.
+ */
+export const myApplications = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", userId))
+      .order("desc")
+      .collect();
+    const out = [];
+    for (const a of apps) {
+      const job = await ctx.db.get(a.jobId);
+      if (!job) continue;
+      const org = await ctx.db.get(job.employerOrgId);
+      out.push({
+        _id: a._id,
+        jobId: a.jobId,
+        jobTitle: job.title,
+        jobLocation: job.location,
+        jobStatus: job.status,
+        employerName: org?.name ?? "—",
+        stage: a.stage,
+        reviewedAt: a.reviewedAt ?? null,
+        resumeFilename: a.resumeFilename,
+        createdAt: a.createdAt,
+        updatedAt: a.updatedAt,
+      });
+    }
     return out;
   },
 });
@@ -500,6 +539,7 @@ export const pipeline = query({
           profileSnapshot: a.profileSnapshot,
           stage: a.stage,
           referredBy: a.referredBy,
+          reviewedAt: a.reviewedAt,
           salaryExpectation: a.salaryExpectation,
           resumeFilename: a.resumeFilename,
           resumeUrl: a.resumeStorageId
@@ -588,6 +628,48 @@ export const moveApplication = mutation({
       }
     }
     return { ok: true };
+  },
+});
+
+/**
+ * Employer-triggered "CV reviewed" marker. Explicit action — the employer marks
+ * an applicant's CV as reviewed (or clears it). Kept separate from `stage` so
+ * analytics count actual reviews, not stage side-effects. Owner-only.
+ */
+// @no-audit-required: employer self-service review marker. Non-destructive, no PII change.
+export const setReviewed = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    reviewed: v.boolean(),
+  },
+  handler: async (ctx, { applicationId, reviewed }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    const app = await ctx.db.get(applicationId);
+    if (!app) {
+      throw new ConvexError({
+        code: "not-found",
+        message: "Application not found",
+      });
+    }
+    const job = await ctx.db.get(app.jobId);
+    if (!job || job.createdBy !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the posting employer can review this application",
+      });
+    }
+    await ctx.db.patch(applicationId, {
+      reviewedAt: reviewed ? Date.now() : undefined,
+      reviewedBy: reviewed ? userId : undefined,
+      updatedAt: Date.now(),
+    });
+    return { ok: true, reviewed };
   },
 });
 

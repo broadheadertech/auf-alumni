@@ -202,6 +202,18 @@ export default function ResumeSettingsPage() {
           show (contact, summary, experience, education, skills,
           certifications), then save as PDF via your browser&apos;s print
           dialog and re-upload it here to attach to future applications.
+          {resume && (
+            <>
+              {" "}
+              You can also{" "}
+              <span className="font-medium ink-2">
+                Import from my uploaded CV
+              </span>{" "}
+              in the preview to read the text from{" "}
+              <span className="font-medium ink-2">{resume.filename}</span> and
+              use it as the basis of your AUF CV.
+            </>
+          )}
         </p>
         <Link
           href="/resume/preview"

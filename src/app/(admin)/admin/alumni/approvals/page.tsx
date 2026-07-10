@@ -63,6 +63,8 @@ export default function AlumniApprovalsPage() {
   const [decided, setDecided] = useState<Record<string, "approved" | "rejected" | "info">>({});
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [sort, setSort] = useState<"oldest" | "newest">("oldest");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
@@ -86,12 +88,18 @@ export default function AlumniApprovalsPage() {
               .includes(q)
           : true,
       )
+      .filter((p) => {
+        const day = p.submittedAt.slice(0, 10); // YYYY-MM-DD
+        if (fromDate && day < fromDate) return false;
+        if (toDate && day > toDate) return false;
+        return true;
+      })
       .sort((a, b) =>
         sort === "oldest"
           ? a.submittedAt.localeCompare(b.submittedAt)
           : b.submittedAt.localeCompare(a.submittedAt),
       );
-  }, [decided, filter, search, sort]);
+  }, [decided, filter, search, fromDate, toDate, sort]);
 
   const active =
     pending.find((p) => p.id === activeId) ?? pending[0] ?? null;
@@ -195,6 +203,39 @@ export default function AlumniApprovalsPage() {
             <option value="oldest">Oldest first</option>
             <option value="newest">Newest first</option>
           </select>
+          <div className="ml-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="hidden sm:inline">Submitted</span>
+            <input
+              type="date"
+              aria-label="Submitted from"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+            />
+            <span>–</span>
+            <input
+              type="date"
+              aria-label="Submitted to"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+            />
+            {(fromDate || toDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromDate("");
+                  setToDate("");
+                }}
+                className="rounded px-1.5 py-1 hover:text-foreground"
+                aria-label="Clear date filter"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
         <div className="relative sm:w-64">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

@@ -25,6 +25,8 @@ const categoryValidator = v.union(
   v.literal("reunion"),
   v.literal("webinar"),
   v.literal("meetup"),
+  v.literal("by-program"),
+  v.literal("online-meeting"),
   v.literal("other"),
 );
 
@@ -131,6 +133,20 @@ export const publishEvent = mutation({
         message: "End time must be after start time",
       });
     }
+    // Online meetings must ship with a working join link for that date.
+    if (args.category === "online-meeting" && !args.onlineUrl?.trim()) {
+      throw new ConvexError({
+        code: "validation",
+        message: "An online meeting needs a join link",
+      });
+    }
+    // A By Program event must target at least one program (course).
+    if (args.category === "by-program" && !args.audiencePrograms?.length) {
+      throw new ConvexError({
+        code: "validation",
+        message: "Select at least one program for a By Program event",
+      });
+    }
     // Guard against attaching a non-image (or unrelated) stored blob as the
     // cover: verify the storage metadata before insert.
     if (args.coverImageStorageId) {
@@ -234,7 +250,13 @@ export const listUpcoming = query({
       description: string;
       startsAt: number;
       endsAt?: number;
-      category?: "reunion" | "webinar" | "meetup" | "other";
+      category?:
+        | "reunion"
+        | "webinar"
+        | "meetup"
+        | "by-program"
+        | "online-meeting"
+        | "other";
       locationLabel?: string;
       onlineUrl?: string;
       capacity?: number;
@@ -345,6 +367,13 @@ export const createEvent = mutation({
       throw new ConvexError({
         code: "validation",
         message: "End time must be after start time",
+      });
+    }
+    // Online meetings must ship with a working join link for that date.
+    if (args.category === "online-meeting" && !args.onlineUrl?.trim()) {
+      throw new ConvexError({
+        code: "validation",
+        message: "An online meeting needs a join link",
       });
     }
     validateAgenda(args.agenda);

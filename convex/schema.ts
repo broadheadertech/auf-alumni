@@ -208,6 +208,11 @@ export default defineSchema({
     profileSnapshot: v.any(), // privacy-filtered snapshot at submission time
     stage: v.string(), // "new" | "screening" | "interview" | "offered" | "hired" | "not-selected"
     referredBy: v.optional(v.id("users")),
+    // Explicit, employer-triggered "CV reviewed" marker. Independent of stage —
+    // an employer marks the CV reviewed by a deliberate action, and analytics
+    // count reviews from this field rather than inferring from stage movement.
+    reviewedAt: v.optional(v.number()),
+    reviewedBy: v.optional(v.id("users")),
     // Optional applicant-disclosed salary expectation. Captured at apply
     // time; visible to the posting employer + moderators only.
     salaryExpectation: v.optional(
@@ -322,6 +327,8 @@ export default defineSchema({
         v.literal("reunion"),
         v.literal("webinar"),
         v.literal("meetup"),
+        v.literal("by-program"),
+        v.literal("online-meeting"),
         v.literal("other"),
       ),
     ),

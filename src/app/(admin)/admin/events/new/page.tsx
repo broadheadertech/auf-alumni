@@ -23,8 +23,12 @@ const EVENT_CATEGORIES = [
   { value: "reunion", label: "Reunion" },
   { value: "webinar", label: "Webinar" },
   { value: "meetup", label: "Meetup" },
+  { value: "by-program", label: "By Program" },
+  { value: "online-meeting", label: "Meeting Online" },
   { value: "other", label: "Other" },
 ] as const;
+
+type EventCategory = (typeof EVENT_CATEGORIES)[number]["value"];
 
 const CATEGORY_NONE = "none";
 
@@ -104,6 +108,14 @@ export default function NewEventPage() {
       toast.error("Title, description, and start time are required");
       return;
     }
+    if (category === "online-meeting" && !onlineUrl.trim()) {
+      toast.error("A Meeting Online event needs a join link");
+      return;
+    }
+    if (category === "by-program" && audiencePrograms.length === 0) {
+      toast.error("Select at least one program for a By Program event");
+      return;
+    }
     // Drop agenda rows without a title before submit (a row with only
     // time/description is incomplete and must not be sent).
     const agendaItems = agenda
@@ -135,7 +147,7 @@ export default function NewEventPage() {
         category:
           category === CATEGORY_NONE
             ? undefined
-            : (category as "reunion" | "webinar" | "meetup" | "other"),
+            : (category as EventCategory),
         agenda: agendaItems.length ? agendaItems : undefined,
       });
       toast.success("Event published");
@@ -204,13 +216,29 @@ export default function NewEventPage() {
               />
             </div>
             <div>
-              <Label htmlFor="onlineUrl">Online link (optional)</Label>
+              <Label htmlFor="onlineUrl">
+                {category === "online-meeting"
+                  ? "Join link (required)"
+                  : "Online link (optional)"}
+              </Label>
               <Input
                 id="onlineUrl"
                 type="url"
+                placeholder={
+                  category === "online-meeting"
+                    ? "https://meet.google.com/… — where attendees join"
+                    : undefined
+                }
                 value={onlineUrl}
                 onChange={(e) => setOnlineUrl(e.target.value)}
+                required={category === "online-meeting"}
+                aria-required={category === "online-meeting"}
               />
+              {category === "online-meeting" && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Attendees will use this link to join on the event date.
+                </p>
+              )}
             </div>
 
             <div>
@@ -365,7 +393,14 @@ export default function NewEventPage() {
                 </div>
               </div>
               <div>
-                <Label className="text-xs">Programs</Label>
+                <Label className="text-xs">
+                  Programs
+                  {category === "by-program" && (
+                    <span className="ml-1 text-muted-foreground">
+                      (required — pick the course(s) this event is for)
+                    </span>
+                  )}
+                </Label>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {PROGRAMS.map((p) => {
                     const active = audiencePrograms.includes(p);

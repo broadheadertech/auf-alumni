@@ -14,7 +14,13 @@ import {
 import { api } from "@/lib/convex-api";
 import { EmptyState } from "@/components/auf/EmptyState";
 
-type EventCategory = "reunion" | "webinar" | "meetup" | "other";
+type EventCategory =
+  | "reunion"
+  | "webinar"
+  | "meetup"
+  | "by-program"
+  | "online-meeting"
+  | "other";
 
 type EventRow = {
   _id: string;
@@ -37,6 +43,8 @@ const CATEGORY_LABELS: Record<EventCategory, string> = {
   reunion: "Reunion",
   webinar: "Webinar",
   meetup: "Meetup",
+  "by-program": "By Program",
+  "online-meeting": "Meeting Online",
   other: "Other",
 };
 

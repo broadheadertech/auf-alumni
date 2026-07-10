@@ -231,11 +231,20 @@ export default function JobsBoardPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Roles posted by verified employers. Filter to find your fit.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Jobs</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Roles posted by verified employers. Filter to find your fit.
+          </p>
+        </div>
+        <Link
+          href="/jobs/applications"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+        >
+          <Briefcase className="h-4 w-4" />
+          My applications
+        </Link>
       </div>
 
       {/* Filter bar */}

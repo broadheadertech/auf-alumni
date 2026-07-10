@@ -44,7 +44,13 @@ type EventDetail = {
   capacity?: number;
   cancelledAt?: number;
   coverImageUrl: string | null;
-  category?: "reunion" | "webinar" | "meetup" | "other";
+  category?:
+    | "reunion"
+    | "webinar"
+    | "meetup"
+    | "by-program"
+    | "online-meeting"
+    | "other";
   agenda?: AgendaItem[];
   organizer: { displayName: string; slug: string } | null;
   batchGoingCount: number;
@@ -59,6 +65,8 @@ const CATEGORY_LABELS: Record<NonNullable<EventDetail["category"]>, string> = {
   reunion: "Reunion",
   webinar: "Webinar",
   meetup: "Meetup",
+  "by-program": "By Program",
+  "online-meeting": "Meeting Online",
   other: "Other",
 };
 
