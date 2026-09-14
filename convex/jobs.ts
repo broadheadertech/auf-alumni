@@ -11,7 +11,12 @@ import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy } from "./helpers/privacy";
@@ -48,17 +53,84 @@ function jobMatches(
   return true;
 }
 
+/** Trim, drop empties, cap each entry to 300 chars and the list to 30 items. */
+function cleanBullets(list: string[] | undefined): string[] | undefined {
+  if (!list) return undefined;
+  const cleaned = list
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.slice(0, 300))
+    .slice(0, 30);
+  return cleaned.length ? cleaned : undefined;
+}
+
+const JOB_SKILLS_MAX = 15;
+const JOB_SKILL_NAME_MAX = 60;
+
+/**
+ * Validate + normalise a job's required skills. Trims (collapsing inner
+ * whitespace), drops empties, dedupes case-insensitively, enforces ≤ 15 skills
+ * and ≤ 60 chars each. Free-text skills are allowed (the admin-managed
+ * referenceItems "skill" list is suggestions), but when a skill matches a
+ * canonical list item case-insensitively the canonical casing is stored.
+ */
+async function cleanJobSkills(
+  ctx: MutationCtx,
+  raw: string[] | undefined,
+): Promise<string[] | undefined> {
+  if (!raw) return undefined;
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const s of raw) {
+    const value = s.trim().replace(/\s+/g, " ");
+    if (!value) continue;
+    if (value.length > JOB_SKILL_NAME_MAX) {
+      throw new ConvexError({
+        code: "validation",
+        message: `Each skill must be ${JOB_SKILL_NAME_MAX} characters or fewer`,
+      });
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  if (unique.length > JOB_SKILLS_MAX) {
+    throw new ConvexError({
+      code: "validation",
+      message: `Add at most ${JOB_SKILLS_MAX} skills`,
+    });
+  }
+  if (unique.length === 0) return undefined;
+
+  const canonical = new Map<string, string>();
+  const rows = await ctx.db
+    .query("referenceItems")
+    .withIndex("by_kind_sort", (q) => q.eq("kind", "skill"))
+    .collect();
+  for (const r of rows) {
+    if (r.archivedAt == null) canonical.set(r.name.toLowerCase(), r.name);
+  }
+  return unique.map((s) => canonical.get(s.toLowerCase()) ?? s);
+}
+
 // @no-audit-required: user (employer-admin) self-service post creation; admin moderation IS audited.
 export const createJob = mutation({
   args: {
     employerOrgId: v.id("employerOrgs"),
     title: v.string(),
     description: v.string(),
+    responsibilities: v.optional(v.array(v.string())),
+    requirements: v.optional(v.array(v.string())),
+    benefits: v.optional(v.array(v.string())),
     location: v.string(),
+    workMode: v.optional(v.string()),
     employmentType: v.string(),
+    experienceLevel: v.optional(v.string()),
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    skills: v.optional(v.array(v.string())),
     targetingBatches: v.optional(v.array(v.number())),
     targetingPrograms: v.optional(v.array(v.string())),
     targetingSkills: v.optional(v.array(v.string())),
@@ -105,20 +177,30 @@ export const createJob = mutation({
       });
     }
 
+    const skills = await cleanJobSkills(ctx, args.skills);
+
     const now = Date.now();
     const id = await ctx.db.insert("jobs", {
       employerOrgId: args.employerOrgId,
       title: args.title.trim(),
       description: args.description.trim(),
+      responsibilities: cleanBullets(args.responsibilities),
+      requirements: cleanBullets(args.requirements),
+      benefits: cleanBullets(args.benefits),
       location: args.location.trim(),
+      workMode: args.workMode?.trim() || undefined,
       employmentType: args.employmentType,
+      experienceLevel: args.experienceLevel?.trim() || undefined,
       salaryMin: args.salaryMin,
       salaryMax: args.salaryMax,
       salaryCurrency: args.salaryCurrency ?? "PHP",
-      targetingBatches: args.targetingBatches,
-      targetingPrograms: args.targetingPrograms,
-      targetingSkills: args.targetingSkills,
-      targetingCity: args.targetingCity,
+      skills,
+      targetingBatches: args.targetingBatches?.length
+        ? args.targetingBatches
+        : undefined,
+      targetingPrograms: cleanBullets(args.targetingPrograms),
+      targetingSkills: cleanBullets(args.targetingSkills),
+      targetingCity: args.targetingCity?.trim() || undefined,
       aufOnly: true, // partner-tier locks this on; v1 default
       status: "pending-moderation",
       createdBy: userId,
@@ -229,6 +311,7 @@ export const browse = query({
     const out = [];
     for (const j of filtered) {
       const org = await ctx.db.get(j.employerOrgId);
+      if (org?.suspendedAt) continue; // deactivated / rejected employer
       out.push({
         ...j,
         employerName: org?.name ?? "—",
@@ -236,6 +319,31 @@ export const browse = query({
       });
     }
     return out;
+  },
+});
+
+/**
+ * Lightweight count of jobs available (matched) to the signed-in alumna, for
+ * the Jobs nav badge. Mirrors `browse`'s default (matched + published) but
+ * returns only the number — no employer joins.
+ */
+export const myAvailableCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return 0;
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    const jobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_published")
+      .order("desc")
+      .take(100);
+    return jobs.filter(
+      (j) => j.status === "published" && jobMatches(j, profile),
+    ).length;
   },
 });
 
@@ -414,6 +522,7 @@ export const listMyOrgJobs = query({
           salaryMin: j.salaryMin,
           salaryMax: j.salaryMax,
           salaryCurrency: j.salaryCurrency,
+          skills: j.skills,
           targetingPrograms: j.targetingPrograms,
           targetingSkills: j.targetingSkills,
           createdAt: j.createdAt,
@@ -454,6 +563,7 @@ export const myApplicants = query({
         for (const a of apps) {
           out.push({
             _id: a._id,
+            applicantId: a.applicantId,
             jobId: j._id,
             jobTitle: j.title,
             employerName: org.name,
@@ -606,9 +716,13 @@ export const moveApplication = mutation({
         message: "Only the posting employer can move this application",
       });
     }
+    const now = Date.now();
     await ctx.db.patch(applicationId, {
       stage,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      stageChangedAt: stage !== app.stage ? now : app.stageChangedAt,
+      // Keep the first hire time; clear it if the hire is undone.
+      hiredAt: stage === "hired" ? (app.hiredAt ?? now) : undefined,
     });
 
     // Referral attribution: mark hired

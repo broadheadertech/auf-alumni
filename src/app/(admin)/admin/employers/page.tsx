@@ -3,40 +3,37 @@
 /**
  * Employer roster — the admin's first view (Alumni Relations control room).
  *
- * Shows every partner employer with the fields the office asked for: name,
- * description, contract window, uploaded MOA/NDA, number of postings, and
- * number of applicants. Search + tier/contract filters + sortable columns.
- * Each row links to the per-employer drill-down (postings → applicants).
+ * Shows every employer organisation with the fields the office asked for:
+ * name, description, contract window, uploaded MOA/NDA, number of postings,
+ * and number of applicants. Standard FilterPanel (search, tier, contract,
+ * industry, HQ city, documents; URL-backed and persisted for the session) +
+ * sortable columns. Each row links to the per-employer drill-down
+ * (postings → applicants).
  *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Live data: convex/adminData.ts `employers` (employerOrgs · jobs ·
+ * applications). "Add employer" calls adminEmployers.onboardEmployer and
+ * uploads any attached MOA / NDA to Convex storage.
  */
 
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
+import type { FunctionReturnType } from "convex/server";
 import { toast } from "sonner";
 import {
   ArrowUpDown,
   CheckCircle2,
   ChevronRight,
   FileText,
+  Loader2,
   Plus,
-  Search,
   Upload,
   XCircle,
 } from "lucide-react";
-import {
-  EMPLOYERS,
-  EMPLOYER_TIERS,
-  applicantCount,
-  contractState,
-  fmtDate,
-  hiredCount,
-  postingCount,
-  daysUntil,
-  type AdminEmployer,
-  type EmployerTier,
-  type ContractState,
-} from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+import { useAsOf } from "@/lib/use-as-of";
+import { EMPLOYER_TIERS, fmtDate, type EmployerTier } from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,13 +51,14 @@ import {
   StatTile,
   TierBadge,
 } from "@/components/auf/AdminBits";
-import { ACCOUNT_STATUS_LABEL, useAccountStatusMap } from "@/lib/account-status";
-import {
-  DOC_STAMP,
-  setEmployerDoc,
-  useEmployerDocsMap,
-} from "@/lib/employer-docs";
+import { ACCOUNT_STATUS_LABEL, ACCOUNT_STATUS_TONE } from "@/lib/account-status";
+import { useUrlFilters } from "@/lib/use-url-filters";
+import { useLookupOptions } from "@/lib/use-lookup-options";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { cn } from "@/lib/utils";
+
+type EmployerView = FunctionReturnType<typeof api.adminData.employers>[number];
+type ContractFilter = EmployerView["contractState"];
 
 type SortKey =
   | "name"
@@ -69,34 +67,57 @@ type SortKey =
   | "hired"
   | "contractEnd";
 
-const CONTRACT_FILTERS: { value: ContractState; label: string }[] = [
+const CONTRACT_FILTERS: { value: ContractFilter; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "expiring", label: "Expiring ≤45d" },
   { value: "expired", label: "Expired" },
+  { value: "none", label: "No contract on file" },
 ];
 
+const FILTER_KEYS = ["q", "tier", "contract", "industry", "city", "docs"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
+const applicantsOf = (e: EmployerView) =>
+  e.postings.reduce((sum, p) => sum + p.applicants.length, 0);
+const hiredOf = (e: EmployerView) =>
+  e.postings.reduce(
+    (sum, p) => sum + p.applicants.filter((a) => a.stage === "hired").length,
+    0,
+  );
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ConvexError) {
+    const data = err.data as { message?: string } | string;
+    return typeof data === "string" ? data : data?.message ?? fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
 export default function AdminEmployersPage() {
-  const statuses = useAccountStatusMap();
-  const docsMap = useEmployerDocsMap();
-  const [extra, setExtra] = useState<AdminEmployer[]>([]);
+  const asOf = useAsOf();
+  const employers = useQuery(api.adminData.employers, { asOf });
+  const loading = employers === undefined;
+  const allEmployers = useMemo(() => employers ?? [], [employers]);
   const [addOpen, setAddOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [tiers, setTiers] = useState<EmployerTier[]>([]);
-  const [contracts, setContracts] = useState<ContractState[]>([]);
+  const { values, set, reset, restored } = useUrlFilters("admin-employers", FILTER_KEYS);
+  const areas = useLookupOptions("area");
   const [sort, setSort] = useState<SortKey>("applicants");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
 
-  const allEmployers = useMemo(() => [...extra, ...EMPLOYERS], [extra]);
-
-  const toggle = <T,>(arr: T[], v: T, set: (a: T[]) => void) =>
-    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = values.q.trim().toLowerCase();
     let list = allEmployers.filter((e) => {
-      if (tiers.length && !tiers.includes(e.tier)) return false;
-      if (contracts.length && !contracts.includes(contractState(e)))
-        return false;
+      if (values.tier && e.tier !== values.tier) return false;
+      if (values.contract && e.contractState !== values.contract) return false;
+      if (values.industry && e.industry !== values.industry) return false;
+      if (values.city && e.hqCity !== values.city) return false;
+      if (values.docs) {
+        const moa = !!e.moa;
+        const nda = !!e.nda;
+        if (values.docs === "complete" && !(moa && nda)) return false;
+        if (values.docs === "missing-moa" && moa) return false;
+        if (values.docs === "missing-nda" && nda) return false;
+      }
       if (q) {
         const hay = [e.name, e.description, e.industry, e.hqCity]
           .join(" ")
@@ -106,18 +127,19 @@ export default function AdminEmployersPage() {
       return true;
     });
 
-    const val = (e: AdminEmployer): number | string => {
+    const val = (e: EmployerView): number | string => {
       switch (sort) {
         case "name":
           return e.name.toLowerCase();
         case "postings":
-          return postingCount(e);
+          return e.postings.length;
         case "applicants":
-          return applicantCount(e);
+          return applicantsOf(e);
         case "hired":
-          return hiredCount(e);
+          return hiredOf(e);
         case "contractEnd":
-          return daysUntil(e.contractEnd);
+          // No contract on file sorts after every dated contract.
+          return e.contractEnd ?? "9999-12-31";
       }
     };
     list = [...list].sort((a, b) => {
@@ -127,7 +149,7 @@ export default function AdminEmployersPage() {
       return dir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [allEmployers, search, tiers, contracts, sort, dir]);
+  }, [allEmployers, values, sort, dir]);
 
   const setSortKey = (key: SortKey) => {
     if (sort === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -140,14 +162,85 @@ export default function AdminEmployersPage() {
   const totals = useMemo(
     () => ({
       employers: allEmployers.length,
-      postings: allEmployers.reduce((s, e) => s + postingCount(e), 0),
-      applicants: allEmployers.reduce((s, e) => s + applicantCount(e), 0),
-      hires: allEmployers.reduce((s, e) => s + hiredCount(e), 0),
+      postings: allEmployers.reduce(
+        (s, e) => s + e.postings.filter((p) => p.status === "published").length,
+        0,
+      ),
+      applicants: allEmployers.reduce((s, e) => s + applicantsOf(e), 0),
+      hires: allEmployers.reduce((s, e) => s + hiredOf(e), 0),
     }),
     [allEmployers],
   );
 
-  const activeFilters = tiers.length + contracts.length;
+  const industryOptions = useMemo(
+    () =>
+      Array.from(new Set(allEmployers.map((e) => e.industry)))
+        .filter(Boolean)
+        .sort(),
+    [allEmployers],
+  );
+
+  // HQ city: the admin-managed areas list first, then any city present in the
+  // employer records that isn't in it.
+  const cityOptions = useMemo(() => {
+    const known = new Set(areas.options.map((a) => a.name));
+    const extraCities = Array.from(new Set(allEmployers.map((e) => e.hqCity)))
+      .filter((c) => c && !known.has(c))
+      .sort();
+    return [
+      ...areas.options.map((a) => ({ value: a.name, label: a.name, group: a.group })),
+      ...extraCities.map((c) => ({
+        value: c,
+        label: c,
+        group: known.size ? "Other" : undefined,
+      })),
+    ];
+  }, [areas.options, allEmployers]);
+
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Search name, industry, city…" },
+    {
+      type: "select",
+      key: "tier",
+      label: "Tier",
+      allLabel: "All tiers",
+      options: EMPLOYER_TIERS.map((t) => ({ value: t, label: t })),
+    },
+    {
+      type: "select",
+      key: "contract",
+      label: "Contract status",
+      allLabel: "Any contract status",
+      options: CONTRACT_FILTERS,
+    },
+    {
+      type: "select",
+      key: "industry",
+      label: "Industry",
+      allLabel: "All industries",
+      options: industryOptions.map((i) => ({ value: i, label: i })),
+    },
+    {
+      type: "select",
+      key: "city",
+      label: "HQ city",
+      allLabel: "All cities",
+      options: cityOptions,
+    },
+    {
+      type: "select",
+      key: "docs",
+      label: "Documents",
+      allLabel: "Any documents",
+      options: [
+        { value: "complete", label: "MOA and NDA on file" },
+        { value: "missing-moa", label: "Missing MOA" },
+        { value: "missing-nda", label: "Missing NDA" },
+      ],
+    },
+  ];
+
+  const tile = (n: number) => (loading ? "—" : n);
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
@@ -166,52 +259,22 @@ export default function AdminEmployersPage() {
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Employers" value={totals.employers} />
-        <StatTile label="Active postings" value={totals.postings} />
-        <StatTile label="Total applicants" value={totals.applicants} />
-        <StatTile label="Hires via AUF" value={totals.hires} />
+        <StatTile label="Employers" value={tile(totals.employers)} />
+        <StatTile label="Active postings" value={tile(totals.postings)} />
+        <StatTile label="Total applicants" value={tile(totals.applicants)} />
+        <StatTile label="Hires via AUF" value={tile(totals.hires)} />
       </div>
 
-      {/* Controls */}
-      <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-start">
-        <div className="relative lg:w-80">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search name, industry, city…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <FilterChips
-            label="Tier"
-            options={EMPLOYER_TIERS.map((t) => ({ value: t, label: t }))}
-            active={tiers}
-            onToggle={(v) => toggle(tiers, v as EmployerTier, setTiers as (a: EmployerTier[]) => void)}
-          />
-          <FilterChips
-            label="Contract"
-            options={CONTRACT_FILTERS}
-            active={contracts}
-            onToggle={(v) =>
-              toggle(contracts, v as ContractState, setContracts as (a: ContractState[]) => void)
-            }
-          />
-          {activeFilters > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setTiers([]);
-                setContracts([]);
-              }}
-            >
-              Clear
-            </Button>
-          )}
-        </div>
-      </div>
+      {/* Filters */}
+      <FilterPanel
+        layout="bar"
+        className="mt-6"
+        fields={fields}
+        values={values}
+        onChange={(k, v) => set(k as FilterKey, v)}
+        onReset={reset}
+        restored={restored}
+      />
 
       {/* Table */}
       <Card className="mt-4">
@@ -221,7 +284,7 @@ export default function AdminEmployersPage() {
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <Th label="Employer" sortKey="name" {...{ sort, dir, setSortKey }} />
-                  <th className="px-3 py-2 text-left font-medium">Contract</th>
+                  <Th label="Contract" sortKey="contractEnd" {...{ sort, dir, setSortKey }} />
                   <th className="px-3 py-2 text-left font-medium">Documents</th>
                   <Th label="Postings" sortKey="postings" align="right" {...{ sort, dir, setSortKey }} />
                   <Th label="Applicants" sortKey="applicants" align="right" {...{ sort, dir, setSortKey }} />
@@ -230,10 +293,30 @@ export default function AdminEmployersPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {loading ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                      No employers match these filters.
+                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                      Loading employers…
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                      {allEmployers.length === 0 ? (
+                        "No employers onboarded yet."
+                      ) : (
+                        <>
+                          No employers match these filters.{" "}
+                          <button
+                            type="button"
+                            onClick={reset}
+                            className="font-medium text-foreground underline-offset-4 hover:underline"
+                          >
+                            Reset filters
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ) : (
@@ -253,46 +336,51 @@ export default function AdminEmployersPage() {
                                 {e.name}
                               </span>
                               <TierBadge tier={e.tier} />
-                              {statuses[e.id] && (
+                              {e.accountStatus && (
                                 <span
                                   className={cn(
                                     "inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium",
-                                    statuses[e.id].kind === "rejected"
-                                      ? "bg-destructive/10 text-destructive"
-                                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                    ACCOUNT_STATUS_TONE[e.accountStatus.kind],
                                   )}
                                 >
-                                  {ACCOUNT_STATUS_LABEL[statuses[e.id].kind]}
+                                  {ACCOUNT_STATUS_LABEL[e.accountStatus.kind]}
                                 </span>
                               )}
                             </span>
-                            <span className="mt-0.5 line-clamp-1 block max-w-md text-xs text-muted-foreground">
-                              {e.description}
-                            </span>
-                            <span className="text-[11px] text-muted-foreground/80">
-                              {e.industry} · {e.hqCity}
-                            </span>
+                            {e.description && (
+                              <span className="mt-0.5 line-clamp-1 block max-w-md text-xs text-muted-foreground">
+                                {e.description}
+                              </span>
+                            )}
+                            {(e.industry || e.hqCity) && (
+                              <span className="text-[11px] text-muted-foreground/80">
+                                {[e.industry, e.hqCity].filter(Boolean).join(" · ")}
+                              </span>
+                            )}
                           </span>
                         </Link>
                       </td>
                       <td className="px-3 py-3">
-                        <ContractBadge state={contractState(e)} />
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {fmtDate(e.contractStart)} – {fmtDate(e.contractEnd)}
-                        </div>
+                        <ContractBadge state={e.contractState} />
+                        {(e.contractStart || e.contractEnd) && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {e.contractStart ? fmtDate(e.contractStart) : "—"} –{" "}
+                            {e.contractEnd ? fmtDate(e.contractEnd) : "—"}
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-3">
-                        <DocPill label="MOA" present={!!(docsMap[e.id]?.moa ?? e.moa)} />
-                        <DocPill label="NDA" present={!!(docsMap[e.id]?.nda ?? e.nda)} />
+                        <DocPill label="MOA" present={!!e.moa} />
+                        <DocPill label="NDA" present={!!e.nda} />
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
-                        {postingCount(e)}
+                        {e.postings.length}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
-                        {applicantCount(e)}
+                        {applicantsOf(e)}
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
-                        {hiredCount(e)}
+                        {hiredOf(e)}
                       </td>
                       <td className="px-3 py-3 text-right">
                         <Link
@@ -312,50 +400,52 @@ export default function AdminEmployersPage() {
         </CardContent>
       </Card>
 
-      <p className="mt-3 text-xs italic text-muted-foreground">
-        Showing {rows.length} of {allEmployers.length} employers · demo data for
-        stakeholder review.
-      </p>
+      {!loading && (
+        <p className="mt-3 text-xs italic text-muted-foreground">
+          Showing {rows.length} of {allEmployers.length} employers.
+        </p>
+      )}
 
       <AddEmployerDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
-        onCreate={(e) => setExtra((prev) => [e, ...prev])}
+        industryOptions={industryOptions}
       />
     </div>
   );
 }
 
-function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "??";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[1][0]).toUpperCase();
-}
-function slugify(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
+const TIER_VALUE: Record<EmployerTier, "partner" | "verified" | "unverified"> = {
+  Partner: "partner",
+  Verified: "verified",
+  Unverified: "unverified",
+};
 
 function AddEmployerDialog({
   open,
   onClose,
-  onCreate,
+  industryOptions,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (e: AdminEmployer) => void;
+  /** Industries already used by employerOrgs — suggested so labels stay consistent. */
+  industryOptions: string[];
 }) {
+  const onboard = useMutation(api.adminEmployers.onboardEmployer);
+  const uploadUrl = useMutation(api.adminEmployers.generateDocumentUploadUrl);
+  const setDocument = useMutation(api.adminEmployers.setEmployerDocument);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [industry, setIndustry] = useState("");
   const [hqCity, setHqCity] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [tier, setTier] = useState<EmployerTier>("Unverified");
-  const [contractStart, setContractStart] = useState("2026-06-28");
-  const [contractEnd, setContractEnd] = useState("2027-06-28");
+  const [contractStart, setContractStart] = useState("");
+  const [contractEnd, setContractEnd] = useState("");
   const [moaFile, setMoaFile] = useState<File | null>(null);
   const [ndaFile, setNdaFile] = useState<File | null>(null);
-  const seq = useRef(0);
+  const [busy, setBusy] = useState(false);
   const moaRef = useRef<HTMLInputElement>(null);
   const ndaRef = useRef<HTMLInputElement>(null);
 
@@ -366,63 +456,88 @@ function AddEmployerDialog({
     setHqCity("");
     setWebsiteUrl("");
     setTier("Unverified");
-    setContractStart("2026-06-28");
-    setContractEnd("2027-06-28");
+    setContractStart("");
+    setContractEnd("");
     setMoaFile(null);
     setNdaFile(null);
     if (moaRef.current) moaRef.current.value = "";
     if (ndaRef.current) ndaRef.current.value = "";
   };
 
-  const submit = () => {
+  const attach = async (
+    employerOrgId: string,
+    kind: "moa" | "nda",
+    file: File,
+  ) => {
+    const url = await uploadUrl({});
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!res.ok) throw new Error(`${kind.toUpperCase()} upload failed`);
+    const { storageId } = (await res.json()) as { storageId: string };
+    await setDocument({
+      employerOrgId: employerOrgId as never,
+      kind,
+      filename: file.name,
+      sizeKb: Math.max(1, Math.round(file.size / 1024)),
+      storageId: storageId as never,
+    });
+  };
+
+  const submit = async () => {
     if (!name.trim()) {
       toast.error("Organisation name is required");
       return;
     }
-    if (contractEnd < contractStart) {
+    if (contractStart && contractEnd && contractEnd < contractStart) {
       toast.error("Contract end must be after the start");
       return;
     }
-    const id = `emp-new-${seq.current++}`;
-    const employer: AdminEmployer = {
-      id,
-      slug: slugify(name) || id,
-      name: name.trim(),
-      initials: initialsOf(name),
-      description: description.trim() || "No description provided yet.",
-      industry: industry.trim() || "—",
-      hqCity: hqCity.trim() || "—",
-      websiteUrl: websiteUrl.trim() || "#",
-      tier,
-      contractStart,
-      contractEnd,
-      moa: null,
-      nda: null,
-      onboardedAt: "2026-06-28",
-      postings: [],
-    };
-    onCreate(employer);
-    if (moaFile) {
-      setEmployerDoc(id, "moa", {
-        filename: moaFile.name,
-        sizeKb: Math.max(1, Math.round(moaFile.size / 1024)),
-        uploadedAt: DOC_STAMP,
+    setBusy(true);
+    try {
+      const created = await onboard({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        industry: industry.trim() || undefined,
+        hqCity: hqCity.trim() || undefined,
+        websiteUrl: websiteUrl.trim() || undefined,
+        tier: TIER_VALUE[tier],
+        contractStart: contractStart || undefined,
+        contractEnd: contractEnd || undefined,
       });
+      if (!created) throw new Error("Could not add employer");
+      const { employerOrgId } = created;
+      const uploads: [("moa" | "nda"), File][] = [];
+      if (moaFile) uploads.push(["moa", moaFile]);
+      if (ndaFile) uploads.push(["nda", ndaFile]);
+      const failed: string[] = [];
+      for (const [kind, file] of uploads) {
+        try {
+          await attach(employerOrgId, kind, file);
+        } catch {
+          failed.push(kind.toUpperCase());
+        }
+      }
+      if (failed.length) {
+        toast.warning(`${name.trim()} onboarded`, {
+          description: `${failed.join(" and ")} could not be uploaded — add it from the employer's page.`,
+        });
+      } else {
+        toast.success(`${name.trim()} onboarded`);
+      }
+      reset();
+      onClose();
+    } catch (err) {
+      toast.error(errorMessage(err, "Could not add employer"));
+    } finally {
+      setBusy(false);
     }
-    if (ndaFile) {
-      setEmployerDoc(id, "nda", {
-        filename: ndaFile.name,
-        sizeKb: Math.max(1, Math.round(ndaFile.size / 1024)),
-        uploadedAt: DOC_STAMP,
-      });
-    }
-    toast.success(`${employer.name} onboarded`);
-    reset();
-    onClose();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && !busy && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Add employer</DialogTitle>
@@ -439,7 +554,18 @@ function AddEmployerDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="ae-ind" className="text-xs">Industry</Label>
-              <Input id="ae-ind" value={industry} onChange={(e) => setIndustry(e.target.value)} placeholder="Telecommunications" />
+              <Input
+                id="ae-ind"
+                list="ae-industry-options"
+                value={industry}
+                onChange={(e) => setIndustry(e.target.value)}
+                placeholder="Telecommunications"
+              />
+              <datalist id="ae-industry-options">
+                {industryOptions.map((i) => (
+                  <option key={i} value={i} />
+                ))}
+              </datalist>
             </div>
             <div>
               <Label htmlFor="ae-city" className="text-xs">HQ city</Label>
@@ -468,13 +594,16 @@ function AddEmployerDialog({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="ae-cs" className="text-xs">Contract start</Label>
-              <input id="ae-cs" type="date" value={contractStart} onChange={(e) => setContractStart(e.target.value)} className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm" />
+              <input id="ae-cs" type="date" value={contractStart} max={contractEnd || undefined} onChange={(e) => setContractStart(e.target.value)} className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm" />
             </div>
             <div>
               <Label htmlFor="ae-ce" className="text-xs">Contract end</Label>
-              <input id="ae-ce" type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm" />
+              <input id="ae-ce" type="date" value={contractEnd} min={contractStart || undefined} onChange={(e) => setContractEnd(e.target.value)} className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm" />
             </div>
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Leave the contract dates blank if no agreement is signed yet.
+          </p>
 
           {/* Optional document uploads */}
           <div className="rounded-md border border-border p-3">
@@ -490,9 +619,9 @@ function AddEmployerDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit}>
-            <Plus className="h-4 w-4" />
+          <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button disabled={busy} onClick={submit}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Add employer
           </Button>
         </DialogFooter>
@@ -609,47 +738,6 @@ function DocPill({ label, present }: { label: string; present: boolean }) {
       )}
       <FileText className="h-3 w-3" />
       {label}
-    </div>
-  );
-}
-
-function FilterChips<T extends string>({
-  label,
-  options,
-  active,
-  onToggle,
-}: {
-  label: string;
-  options: { value: T; label: string }[];
-  active: T[];
-  onToggle: (v: T) => void;
-}) {
-  return (
-    <div>
-      <Label className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = active.includes(o.value);
-          return (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => onToggle(o.value)}
-              aria-pressed={on}
-              className={cn(
-                "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                on
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {o.label}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

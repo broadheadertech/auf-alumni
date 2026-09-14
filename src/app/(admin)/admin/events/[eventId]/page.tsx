@@ -1,21 +1,28 @@
 "use client";
 
 /**
- * Admin event detail — event info, attendance analytics (going / maybe /
- * declined / no-response), invitation analytics (emails sent vs responded),
- * and a real "send invitation" email (Resend) with one-tap RSVP buttons.
+ * Admin event detail — live (Convex `api.adminData.event`).
+ *
+ * Event info, attendance analytics from real RSVPs (going / maybe / waitlist /
+ * cancelled / no response against the audience reach), and a real "send
+ * invitation" email (Resend) with one-tap RSVP buttons.
+ *
+ * Reach = verified alumni the event's batch/program audience matches right
+ * now. Response rate = everyone who RSVP'd in any state ÷ reach.
  */
 
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
+  Clock,
   HelpCircle,
+  Loader2,
   Mail,
   MapPin,
   Send,
@@ -24,15 +31,15 @@ import {
   XCircle,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
+import { useAsOf } from "@/lib/use-as-of";
+import type { EventView } from "../../../../../../convex/adminData";
+import { fmtDate, fmtDateTime } from "@/lib/mock-admin";
 import {
-  EVENT_CATEGORY_LABEL,
+  audienceBatches,
+  audiencePrograms,
   describeAudience,
-  eventStats,
-  fmtDate,
-  fmtDateTime,
-  getEventById,
-  isUpcoming,
-} from "@/lib/mock-admin";
+  eventCategoryLabel,
+} from "@/lib/admin-event-format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -42,26 +49,46 @@ import { cn } from "@/lib/utils";
 
 export default function AdminEventDetailPage() {
   const params = useParams<{ eventId: string }>();
-  const event = getEventById(params.eventId);
+  const asOf = useAsOf();
+  const event = useQuery(api.adminData.event, { id: params.eventId, asOf }) as
+    | EventView
+    | null
+    | undefined;
   const sendInvite = useAction(api.actions.sendEventInvite.sendEventInvite);
 
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
 
-  if (!event) {
+  if (event === undefined) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 py-16">
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (event === null) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
         <EmptyState
           message="Event not found"
-          description="Newly-created demo events aren't saved. Open a seeded event from the list."
+          description="This event doesn't exist or was removed. Open an event from the list."
           cta={{ label: "Back to events", href: "/admin/events" }}
         />
       </div>
     );
   }
 
-  const s = eventStats(event);
-  const upcoming = isUpcoming(event);
+  const going = event.rsvpYes;
+  const maybe = event.rsvpMaybe;
+  const waitlist = event.rsvpWaitlist;
+  const cancelled = event.rsvpCancelled;
+  const responded = going + maybe + waitlist + cancelled;
+  const reach = event.reach;
+  const noResponse = Math.max(0, reach - responded);
+  const responseRate = reach ? responded / reach : 0;
+  const batches = audienceBatches(event.audience);
+  const programs = audiencePrograms(event.audience);
 
   const onSend = async () => {
     if (!email.trim()) {
@@ -87,12 +114,13 @@ export default function AdminEventDetailPage() {
   };
 
   const segments = [
-    { key: "going", label: "Going", value: s.going, cls: "bg-emerald-500" },
-    { key: "maybe", label: "Maybe", value: s.maybe, cls: "bg-amber-500" },
-    { key: "declined", label: "Declined", value: s.declined, cls: "bg-rose-500" },
-    { key: "noResponse", label: "No response", value: s.noResponse, cls: "bg-muted-foreground/30" },
+    { key: "going", label: "Going", value: going, cls: "bg-emerald-500" },
+    { key: "maybe", label: "Maybe", value: maybe, cls: "bg-amber-500" },
+    { key: "waitlist", label: "Waitlist", value: waitlist, cls: "bg-sky-500" },
+    { key: "cancelled", label: "Cancelled", value: cancelled, cls: "bg-rose-500" },
+    { key: "noResponse", label: "No response", value: noResponse, cls: "bg-muted-foreground/30" },
   ];
-  const totalForBar = Math.max(1, s.emailsSent);
+  const totalForBar = Math.max(1, reach, responded);
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
@@ -108,17 +136,19 @@ export default function AdminEventDetailPage() {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
         <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-          {EVENT_CATEGORY_LABEL[event.category]}
+          {eventCategoryLabel(event.category)}
         </span>
         <span
           className={cn(
             "rounded-full px-2 py-0.5 text-[11px]",
-            upcoming
-              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : "bg-muted text-muted-foreground",
+            event.cancelled
+              ? "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+              : event.upcoming
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "bg-muted text-muted-foreground",
           )}
         >
-          {upcoming ? "Upcoming" : "Past"}
+          {event.cancelled ? "Cancelled" : event.upcoming ? "Upcoming" : "Past"}
         </span>
       </div>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
@@ -135,23 +165,31 @@ export default function AdminEventDetailPage() {
         </span>
         <span className="inline-flex items-center gap-1.5">
           <Users2 className="h-4 w-4" />
-          {describeAudience(event.audience)} · reach ~{s.reach.toLocaleString()}
+          {describeAudience(event.audience)} · reach {reach.toLocaleString()}
         </span>
       </div>
 
       {/* Summary */}
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Invites sent" value={s.emailsSent.toLocaleString()} />
+        <StatTile
+          label="Audience reach"
+          value={reach.toLocaleString()}
+          hint="Verified alumni matching the audience"
+        />
         <StatTile
           label="Responded"
-          value={`${(s.responseRate * 100).toFixed(0)}%`}
-          hint={`${s.responded.toLocaleString()} of ${s.emailsSent.toLocaleString()}`}
+          value={reach ? `${(responseRate * 100).toFixed(0)}%` : "—"}
+          hint={`${responded.toLocaleString()} of ${reach.toLocaleString()}`}
         />
-        <StatTile label="Going" value={s.going.toLocaleString()} />
+        <StatTile
+          label="Going"
+          value={going.toLocaleString()}
+          hint={event.capacity ? `cap ${event.capacity}` : undefined}
+        />
         <StatTile
           label="Maybe"
-          value={s.maybe.toLocaleString()}
-          hint={event.capacity ? `cap ${event.capacity}` : undefined}
+          value={maybe.toLocaleString()}
+          hint={waitlist ? `${waitlist} on waitlist` : undefined}
         />
       </div>
 
@@ -171,18 +209,19 @@ export default function AdminEventDetailPage() {
               ))}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Legend Icon={CheckCircle2} label="Going" value={s.going} cls="text-emerald-600 dark:text-emerald-400" />
-              <Legend Icon={HelpCircle} label="Maybe" value={s.maybe} cls="text-amber-600 dark:text-amber-400" />
-              <Legend Icon={XCircle} label="Declined" value={s.declined} cls="text-rose-600 dark:text-rose-400" />
-              <Legend Icon={Mail} label="No response" value={s.noResponse} cls="text-muted-foreground" />
+              <Legend Icon={CheckCircle2} label="Going" value={going} cls="text-emerald-600 dark:text-emerald-400" />
+              <Legend Icon={HelpCircle} label="Maybe" value={maybe} cls="text-amber-600 dark:text-amber-400" />
+              <Legend Icon={Clock} label="Waitlist" value={waitlist} cls="text-sky-600 dark:text-sky-400" />
+              <Legend Icon={XCircle} label="Cancelled" value={cancelled} cls="text-rose-600 dark:text-rose-400" />
+              <Legend Icon={Mail} label="No response" value={noResponse} cls="text-muted-foreground" />
             </div>
             <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
               Response rate{" "}
               <span className="font-medium text-foreground">
-                {(s.responseRate * 100).toFixed(0)}%
+                {reach ? `${(responseRate * 100).toFixed(0)}%` : "—"}
               </span>{" "}
-              · {s.responded.toLocaleString()} of {s.emailsSent.toLocaleString()}{" "}
-              invited alumni replied.
+              · {responded.toLocaleString()} RSVP{responded === 1 ? "" : "s"} against a
+              reach of {reach.toLocaleString()} verified alumni.
             </p>
           </CardContent>
         </Card>
@@ -194,9 +233,14 @@ export default function AdminEventDetailPage() {
             <dl className="mt-2 space-y-1.5 text-sm">
               <Row label="When" value={fmtDateTime(event.startsAt)} />
               <Row label="Where" value={event.location} />
+              {event.onlineUrl && <Row label="Online link" value={event.onlineUrl} />}
               <Row label="Audience" value={describeAudience(event.audience)} />
+              {batches.length > 0 && (
+                <Row label="Batches" value={[...batches].sort((a, b) => a - b).join(", ")} />
+              )}
+              {programs.length > 0 && <Row label="Programs" value={programs.join(", ")} />}
               <Row label="Capacity" value={event.capacity ? String(event.capacity) : "Unlimited"} />
-              <Row label="Created" value={fmtDate(event.createdAt)} />
+              <Row label="Published" value={fmtDate(event.createdAt)} />
             </dl>
           </CardContent>
         </Card>
@@ -212,7 +256,7 @@ export default function AdminEventDetailPage() {
           <p className="mt-1 text-xs text-muted-foreground">
             Emails the event details with one-tap <strong>“Yes, I will
             attend”</strong> / Maybe / Can&apos;t-make-it buttons (via Resend).
-            In production this goes to all ~{s.reach.toLocaleString()} targeted
+            In production this goes to the {reach.toLocaleString()} targeted
             alumni; here, send a test to any address.
           </p>
           <div className="mt-2 flex max-w-md gap-2">
@@ -258,9 +302,9 @@ function Legend({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium">{value}</dd>
+    <div className="flex items-start justify-between gap-4">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-right font-medium">{value}</dd>
     </div>
   );
 }

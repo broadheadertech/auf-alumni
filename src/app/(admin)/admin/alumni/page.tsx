@@ -5,10 +5,11 @@
  *
  * Live Convex data (api.adminAlumni.listRoster): hired / open-to-work status,
  * what roles they're applying to (joined from real applications), CV
- * availability, top skills, and application counts. Filterable by work status,
- * college (derived from program), batch, company-applied-to, and open-to-work;
- * full-text search; sortable columns. Each row links to the per-alumna
- * drill-down.
+ * availability, top skills, and application counts. Uses the standard
+ * FilterPanel (URL-backed, persisted for the session): College -> Program from
+ * the taxonomy tables, batch year/range, work status, employment status (from
+ * the admin-managed statuses list), company applied to, and open-to-work.
+ * Sortable columns; each row links to the per-alumna drill-down.
  */
 
 import { useMemo, useState } from "react";
@@ -20,17 +21,22 @@ import {
   FileCheck2,
   FileX2,
   Loader2,
-  Search,
   ShieldCheck,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { WORK_STATUSES, type WorkStatus } from "@/lib/mock-admin";
+import { useCollegePrograms } from "@/lib/use-program-options";
+import { useLookupOptions } from "@/lib/use-lookup-options";
+import { useUrlFilters } from "@/lib/use-url-filters";
+import { parseBatchInput } from "@/lib/batch-input";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { StatTile, WorkStatusBadge } from "@/components/auf/AdminBits";
-import { ACCOUNT_STATUS_LABEL, useAccountStatusMap } from "@/lib/account-status";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
+import {
+  ACCOUNT_STATUS_LABEL,
+  ACCOUNT_STATUS_TONE,
+  type AccountStatus,
+} from "@/lib/account-status";
 import { cn } from "@/lib/utils";
 
 type RosterApplication = {
@@ -49,6 +55,7 @@ type Alumna = {
   program: string;
   college: string;
   city: string;
+  employmentStatus: string | null;
   currentRole: string | null;
   currentCompany: string | null;
   openToWork: boolean;
@@ -57,22 +64,34 @@ type Alumna = {
   skills: string[];
   cv: boolean;
   verifiedAt: number | null;
+  accountStatus: AccountStatus;
   registeredAt: number;
   applications: RosterApplication[];
 };
 
 type SortKey = "name" | "batch" | "applications" | "registered";
 
+const FILTER_KEYS = [
+  "q",
+  "college",
+  "program",
+  "batch",
+  "workStatus",
+  "employmentStatus",
+  "company",
+  "openToWork",
+] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
 export default function AdminAlumniPage() {
   const data = useQuery(api.adminAlumni.listRoster);
-  const acctStatus = useAccountStatusMap();
 
-  const [search, setSearch] = useState("");
-  const [statuses, setStatuses] = useState<WorkStatus[]>([]);
-  const [colleges, setColleges] = useState<string[]>([]);
-  const [batches, setBatches] = useState<number[]>([]);
-  const [company, setCompany] = useState<string>("all");
-  const [openOnly, setOpenOnly] = useState(false);
+  const { values, set, setMany, reset, restored } = useUrlFilters(
+    "admin-alumni",
+    FILTER_KEYS,
+  );
+  const taxonomy = useCollegePrograms();
+  const employmentStatuses = useLookupOptions("status");
   const [sort, setSort] = useState<SortKey>("registered");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
 
@@ -82,15 +101,6 @@ export default function AdminAlumniPage() {
   );
   const pendingCount = data?.pendingCount ?? 0;
 
-  // Filter option lists, derived from the live roster.
-  const collegeOptions = useMemo(
-    () => Array.from(new Set(alumni.map((a) => a.college))).sort(),
-    [alumni],
-  );
-  const batchOptions = useMemo(
-    () => Array.from(new Set(alumni.map((a) => a.batch))).sort((x, y) => y - x),
-    [alumni],
-  );
   const companyOptions = useMemo(
     () =>
       Array.from(
@@ -99,14 +109,21 @@ export default function AdminAlumniPage() {
     [alumni],
   );
 
+  const batch = parseBatchInput(values.batch);
+  const collegePrograms = values.college ? taxonomy.programsFor(values.college) : [];
+
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = values.q.trim().toLowerCase();
+    const years = batch.years;
     const list = alumni.filter((a) => {
-      if (statuses.length && !statuses.includes(a.workStatus)) return false;
-      if (colleges.length && !colleges.includes(a.college)) return false;
-      if (batches.length && !batches.includes(a.batch)) return false;
-      if (openOnly && !a.openToWork) return false;
-      if (company !== "all" && !a.applications.some((ap) => ap.company === company))
+      if (values.workStatus && a.workStatus !== values.workStatus) return false;
+      if (values.college && a.college !== values.college) return false;
+      if (values.program && a.program !== values.program) return false;
+      if (years && !years.includes(a.batch)) return false;
+      if (values.employmentStatus && a.employmentStatus !== values.employmentStatus)
+        return false;
+      if (values.openToWork === "yes" && !a.openToWork) return false;
+      if (values.company && !a.applications.some((ap) => ap.company === values.company))
         return false;
       if (q) {
         const hay = [
@@ -146,7 +163,7 @@ export default function AdminAlumniPage() {
           : (va as number) - (vb as number);
       return dir === "asc" ? cmp : -cmp;
     });
-  }, [alumni, search, statuses, colleges, batches, company, openOnly, sort, dir]);
+  }, [alumni, values, batch.years, sort, dir]);
 
   const setSortKey = (key: SortKey) => {
     if (sort === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -156,12 +173,10 @@ export default function AdminAlumniPage() {
     }
   };
 
-  const toggle = <T,>(arr: T[], v: T, set: (a: T[]) => void) =>
-    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-
   const totals = useMemo(
     () => ({
       total: alumni.length,
+      verified: alumni.filter((a) => a.verifiedAt != null).length,
       open: alumni.filter((a) => a.openToWork).length,
       hired: alumni.filter((a) => a.hired).length,
       applying: alumni.filter((a) => a.applications.length > 0).length,
@@ -169,19 +184,75 @@ export default function AdminAlumniPage() {
     [alumni],
   );
 
-  const activeFilters =
-    statuses.length +
-    colleges.length +
-    batches.length +
-    (company !== "all" ? 1 : 0) +
-    (openOnly ? 1 : 0);
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Name, role, skill, job…" },
+    {
+      type: "select",
+      key: "college",
+      label: "College",
+      allLabel: "All colleges",
+      options: taxonomy.colleges.map((c) => ({ value: c.name, label: c.name })),
+    },
+    {
+      type: "select",
+      key: "program",
+      label: "Program / degree",
+      allLabel: values.college ? "All programs in this college" : "All programs",
+      options: (values.college ? collegePrograms : taxonomy.programs).map((p) => ({
+        value: p.name,
+        label: p.name,
+        group: values.college ? undefined : p.collegeName,
+      })),
+    },
+    {
+      type: "text",
+      key: "batch",
+      label: "Batch (year)",
+      placeholder: "e.g. 2021 or 2018-2022",
+      maxLength: 9,
+      hint: batch.error ?? undefined,
+    },
+    {
+      type: "select",
+      key: "workStatus",
+      label: "Work status",
+      allLabel: "Any work status",
+      options: WORK_STATUSES.map((w) => ({ value: w, label: w })),
+    },
+    {
+      type: "select",
+      key: "employmentStatus",
+      label: "Employment status",
+      allLabel: "Any employment status",
+      options: employmentStatuses.options.map((o) => ({ value: o.name, label: o.name })),
+    },
+    {
+      type: "select",
+      key: "company",
+      label: "Applied to company",
+      allLabel: "Any company",
+      options: companyOptions.map((c) => ({ value: c, label: c })),
+    },
+    {
+      type: "select",
+      key: "openToWork",
+      label: "Open to work",
+      allLabel: "Everyone",
+      options: [{ value: "yes", label: "Open to work only" }],
+    },
+  ];
 
-  const clearAll = () => {
-    setStatuses([]);
-    setColleges([]);
-    setBatches([]);
-    setCompany("all");
-    setOpenOnly(false);
+  const onFilterChange = (key: string, value: string) => {
+    if (key === "college") {
+      // Dependent dropdown: keep the program only if it belongs to the new college.
+      const keep =
+        values.program && value && taxonomy.collegeOfProgram(values.program) === value;
+      setMany({ college: value, program: keep ? values.program : "" });
+    } else if (key === "program" && value && !values.college) {
+      setMany({ program: value, college: taxonomy.collegeOfProgram(value) ?? "" });
+    } else {
+      set(key as FilterKey, value);
+    }
   };
 
   const loading = data === undefined;
@@ -211,115 +282,22 @@ export default function AdminAlumniPage() {
       )}
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Registered" value={totals.total} />
+        <StatTile label="Registered" value={totals.total} hint={`${totals.verified} verified`} />
         <StatTile label="Open to work" value={totals.open} />
         <StatTile label="Hired via AUF" value={totals.hired} />
         <StatTile label="Actively applying" value={totals.applying} />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[240px_1fr]">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[270px_1fr]">
         {/* Filters */}
-        <aside className="space-y-5">
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Search
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Name, role, skill, job…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={openOnly}
-              onChange={(e) => setOpenOnly(e.target.checked)}
-              className="h-4 w-4 rounded border-border"
-            />
-            <span className={openOnly ? "font-medium" : ""}>
-              Open to work only
-            </span>
-          </label>
-
-          <CheckGroup
-            label="Work status"
-            options={WORK_STATUSES.map((s) => ({ value: s, label: s }))}
-            active={statuses}
-            onToggle={(v) => toggle(statuses, v, setStatuses as (a: WorkStatus[]) => void)}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <FilterPanel
+            fields={fields}
+            values={values}
+            onChange={onFilterChange}
+            onReset={reset}
+            restored={restored}
           />
-
-          {collegeOptions.length > 0 && (
-            <CheckGroup
-              label="College"
-              options={collegeOptions.map((c) => ({ value: c, label: c }))}
-              active={colleges}
-              onToggle={(v) => toggle(colleges, v, setColleges as (a: string[]) => void)}
-            />
-          )}
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Applied to company
-            </Label>
-            <select
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            >
-              <option value="all">Any company</option>
-              {companyOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {batchOptions.length > 0 && (
-            <div>
-              <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-                Batch
-              </Label>
-              <div className="flex flex-wrap gap-1.5">
-                {batchOptions.map((b) => {
-                  const on = batches.includes(b);
-                  return (
-                    <button
-                      key={b}
-                      type="button"
-                      onClick={() => toggle(batches, b, setBatches as (a: number[]) => void)}
-                      aria-pressed={on}
-                      className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                        on
-                          ? "border-foreground bg-foreground text-background"
-                          : "border-border text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {b}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {activeFilters > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAll}
-              className="w-full justify-start text-muted-foreground"
-            >
-              Clear {activeFilters} filter{activeFilters === 1 ? "" : "s"}
-            </Button>
-          )}
         </aside>
 
         {/* Table */}
@@ -388,16 +366,14 @@ export default function AdminAlumniPage() {
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex flex-col items-start gap-1">
-                              {acctStatus[a.id] && (
+                              {a.accountStatus && (
                                 <span
                                   className={cn(
                                     "inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium",
-                                    acctStatus[a.id].kind === "rejected"
-                                      ? "bg-destructive/10 text-destructive"
-                                      : "bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                                    ACCOUNT_STATUS_TONE[a.accountStatus.kind],
                                   )}
                                 >
-                                  {ACCOUNT_STATUS_LABEL[acctStatus[a.id].kind]}
+                                  {ACCOUNT_STATUS_LABEL[a.accountStatus.kind]}
                                 </span>
                               )}
                               <WorkStatusBadge status={a.workStatus} />
@@ -495,44 +471,5 @@ function Th({
         {active && <span className="sr-only">{dir}</span>}
       </button>
     </th>
-  );
-}
-
-function CheckGroup<T extends string>({
-  label,
-  options,
-  active,
-  onToggle,
-}: {
-  label: string;
-  options: { value: T; label: string }[];
-  active: T[];
-  onToggle: (v: T) => void;
-}) {
-  return (
-    <div>
-      <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex flex-col gap-1">
-        {options.map((o) => {
-          const on = active.includes(o.value);
-          return (
-            <label
-              key={o.value}
-              className="flex cursor-pointer items-start gap-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                checked={on}
-                onChange={() => onToggle(o.value)}
-                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border"
-              />
-              <span className={on ? "font-medium" : ""}>{o.label}</span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
   );
 }

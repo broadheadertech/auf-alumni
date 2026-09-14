@@ -3,23 +3,43 @@
 /**
  * Employer applicants (Convex) — every candidate who applied to this employer's
  * postings, read from real applications with the apply-time privacy-filtered
- * profile snapshot. Filter by posting, stage, and applied-date; search by
- * name/skill. Move candidates through the pipeline (persisted via Convex).
+ * profile snapshot. Standard FilterPanel (URL-backed, persisted for the
+ * session): search, posting, stage, College → Program (taxonomy tables),
+ * batch year/range, city, CV review state, and applied-date range. Move
+ * candidates through the pipeline (persisted via Convex).
+ *
+ * `?posting=<jobId>` (linked from the postings page) opens a single posting.
  */
 
 import { Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Check, ChevronDown, FileCheck2, FileText, Search } from "lucide-react";
+import { Check, ChevronDown, FileCheck2, FileText } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StageBadge, StatTile } from "@/components/auf/employer-ui";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { STAGE_ORDER, STAGE_LABEL, fmtDate } from "@/lib/employer-format";
+import { useUrlFilters } from "@/lib/use-url-filters";
+import { useCollegePrograms } from "@/lib/use-program-options";
+import { useLookupOptions } from "@/lib/use-lookup-options";
+import { parseBatchInput } from "@/lib/batch-input";
 import { cn } from "@/lib/utils";
+
+const FILTER_KEYS = [
+  "q",
+  "posting",
+  "stage",
+  "college",
+  "program",
+  "batch",
+  "city",
+  "cv",
+  "from",
+  "to",
+] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
 
 type Applicant = {
   _id: string;
@@ -43,9 +63,6 @@ export default function EmployerApplicantsPage() {
 }
 
 function ApplicantsInner() {
-  const sp = useSearchParams();
-  const initialPosting = sp.get("posting") ?? "all";
-
   const applicants = useQuery(api.jobs.myApplicants) as
     | Applicant[]
     | undefined;
@@ -53,28 +70,56 @@ function ApplicantsInner() {
   const moveApplication = useMutation(api.jobs.moveApplication);
   const setReviewed = useMutation(api.jobs.setReviewed);
 
-  const [posting, setPosting] = useState<string>(initialPosting);
-  const [stages, setStages] = useState<string[]>([]);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [search, setSearch] = useState("");
+  const { values, set, setMany, reset, restored } = useUrlFilters(
+    "employer-applicants",
+    FILTER_KEYS,
+  );
+  const taxonomy = useCollegePrograms();
+  const areas = useLookupOptions("area");
+  const batch = parseBatchInput(values.batch);
   const [sort, setSort] = useState<"recent" | "name">("recent");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
+  // Plain computation (not memoized): the taxonomy helpers are rebuilt every
+  // render, and the list is one employer's applicants.
+  const { collegeOfProgram } = taxonomy;
+  const rows = (() => {
     const list = applicants ?? [];
-    const q = search.trim().toLowerCase();
-    const fromMs = from ? new Date(from).getTime() : 0;
-    const toMs = to ? new Date(to).getTime() + 86_400_000 : Infinity;
+    const q = values.q.trim().toLowerCase();
+    const years = batch.years;
+    const fromMs = values.from ? new Date(values.from).getTime() : 0;
+    const toMs = values.to ? new Date(values.to).getTime() + 86_400_000 : Infinity;
     return list
-      .filter((a) => (posting !== "all" ? a.jobId === posting : true))
-      .filter((a) => (stages.length ? stages.includes(a.stage) : true))
+      .filter((a) => (values.posting ? a.jobId === values.posting : true))
+      .filter((a) => (values.stage ? a.stage === values.stage : true))
+      .filter((a) => {
+        if (!values.college) return true;
+        // Snapshots carry the program; the college comes from the taxonomy.
+        const program: string | undefined = a.snapshot?.program;
+        const college: string | null =
+          a.snapshot?.college ?? (program ? collegeOfProgram(program) : null);
+        return college === values.college;
+      })
+      .filter((a) => (values.program ? a.snapshot?.program === values.program : true))
+      .filter((a) => (years ? years.includes(Number(a.snapshot?.batch)) : true))
+      .filter((a) => (values.city ? a.snapshot?.city === values.city : true))
+      .filter((a) =>
+        !values.cv
+          ? true
+          : values.cv === "reviewed"
+            ? Boolean(a.reviewedAt)
+            : values.cv === "not-reviewed"
+              ? !a.reviewedAt
+              : !a.resumeFilename,
+      )
       .filter((a) => a.createdAt >= fromMs && a.createdAt <= toMs)
       .filter((a) => {
         if (!q) return true;
         const hay = [
           a.snapshot?.displayName ?? "",
           a.snapshot?.currentRole ?? "",
+          a.snapshot?.company ?? "",
+          a.snapshot?.program ?? "",
           ...(a.snapshot?.skills ?? []),
         ]
           .join(" ")
@@ -88,7 +133,7 @@ function ApplicantsInner() {
             )
           : b.createdAt - a.createdAt,
       );
-  }, [applicants, posting, stages, from, to, search, sort]);
+  })();
 
   const totals = useMemo(() => {
     const counts = Object.fromEntries(
@@ -98,8 +143,115 @@ function ApplicantsInner() {
     return counts;
   }, [applicants]);
 
-  const toggle = (arr: string[], v: string, set: (a: string[]) => void) =>
-    set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  // Applicant counts per posting, for the posting dropdown labels.
+  const perJob = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of applicants ?? []) m.set(a.jobId, (m.get(a.jobId) ?? 0) + 1);
+    return m;
+  }, [applicants]);
+
+  // City: the admin-managed areas list first, then any city present on an
+  // applicant snapshot that isn't in it.
+  const cityOptions = useMemo(() => {
+    const known = new Set(areas.options.map((a) => a.name));
+    const extraCities = Array.from(
+      new Set(
+        (applicants ?? [])
+          .map((a) => a.snapshot?.city as string | undefined)
+          .filter((c): c is string => !!c && !known.has(c)),
+      ),
+    ).sort();
+    return [
+      ...areas.options.map((a) => ({ value: a.name, label: a.name, group: a.group })),
+      ...extraCities.map((c) => ({
+        value: c,
+        label: c,
+        group: known.size ? "Other" : undefined,
+      })),
+    ];
+  }, [areas.options, applicants]);
+
+  const collegePrograms = values.college ? taxonomy.programsFor(values.college) : [];
+
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Name, role, or skill…" },
+    {
+      type: "select",
+      key: "posting",
+      label: "Posting",
+      allLabel: "All postings",
+      options: (jobs ?? []).map((p) => ({
+        value: p._id,
+        label: `${p.title} (${perJob.get(p._id) ?? 0})`,
+      })),
+    },
+    {
+      type: "select",
+      key: "stage",
+      label: "Stage",
+      allLabel: "Any stage",
+      options: STAGE_ORDER.map((s) => ({ value: s, label: STAGE_LABEL[s] })),
+    },
+    {
+      type: "select",
+      key: "college",
+      label: "College",
+      allLabel: "All colleges",
+      options: taxonomy.colleges.map((c) => ({ value: c.name, label: c.name })),
+    },
+    {
+      type: "select",
+      key: "program",
+      label: "Program / degree",
+      allLabel: values.college ? "All programs in this college" : "All programs",
+      options: (values.college ? collegePrograms : taxonomy.programs).map((p) => ({
+        value: p.name,
+        label: p.name,
+        group: values.college ? undefined : p.collegeName,
+      })),
+    },
+    {
+      type: "text",
+      key: "batch",
+      label: "Batch (year)",
+      placeholder: "e.g. 2021 or 2018-2022",
+      maxLength: 9,
+      hint: batch.error ?? undefined,
+    },
+    {
+      type: "select",
+      key: "city",
+      label: "City",
+      allLabel: "All cities",
+      options: cityOptions,
+    },
+    {
+      type: "select",
+      key: "cv",
+      label: "CV",
+      allLabel: "Any CV state",
+      options: [
+        { value: "reviewed", label: "CV reviewed" },
+        { value: "not-reviewed", label: "Not yet reviewed" },
+        { value: "missing", label: "No CV uploaded" },
+      ],
+    },
+    { type: "date", key: "from", label: "Applied from", max: values.to },
+    { type: "date", key: "to", label: "Applied to", min: values.from },
+  ];
+
+  const onFilterChange = (key: string, value: string) => {
+    if (key === "college") {
+      // Dependent dropdown: keep the program only if it belongs to the new college.
+      const keep =
+        values.program && value && taxonomy.collegeOfProgram(values.program) === value;
+      setMany({ college: value, program: keep ? values.program : "" });
+    } else if (key === "program" && value && !values.college) {
+      setMany({ program: value, college: taxonomy.collegeOfProgram(value) ?? "" });
+    } else {
+      set(key as FilterKey, value);
+    }
+  };
 
   const moveStage = async (a: Applicant, next: string) => {
     try {
@@ -126,12 +278,6 @@ function ApplicantsInner() {
     }
   };
 
-  const activeFilters =
-    (posting !== "all" ? 1 : 0) +
-    stages.length +
-    (from ? 1 : 0) +
-    (to ? 1 : 0);
-
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Applicants</h1>
@@ -146,104 +292,16 @@ function ApplicantsInner() {
         ))}
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[230px_1fr]">
+      <div className="mt-6 grid gap-6 lg:grid-cols-[270px_1fr]">
         {/* Filters */}
-        <aside className="space-y-5">
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Search
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Name or skill…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Posting
-            </Label>
-            <select
-              value={posting}
-              onChange={(e) => setPosting(e.target.value)}
-              className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-            >
-              <option value="all">All postings</option>
-              {(jobs ?? []).map((p) => (
-                <option key={p._id} value={p._id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Stage
-            </Label>
-            <div className="flex flex-wrap gap-1.5">
-              {STAGE_ORDER.map((s) => {
-                const on = stages.includes(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => toggle(stages, s, setStages)}
-                    aria-pressed={on}
-                    className={cn(
-                      "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
-                      on
-                        ? "border-foreground bg-foreground text-background"
-                        : "border-border text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {STAGE_LABEL[s]}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Applied between
-            </Label>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-              />
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-              />
-            </div>
-          </div>
-
-          {activeFilters > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-muted-foreground"
-              onClick={() => {
-                setPosting("all");
-                setStages([]);
-                setFrom("");
-                setTo("");
-              }}
-            >
-              Clear {activeFilters} filter{activeFilters === 1 ? "" : "s"}
-            </Button>
-          )}
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <FilterPanel
+            fields={fields}
+            values={values}
+            onChange={onFilterChange}
+            onReset={reset}
+            restored={restored}
+          />
         </aside>
 
         {/* List */}
@@ -277,9 +335,20 @@ function ApplicantsInner() {
             ) : rows.length === 0 ? (
               <Card>
                 <CardContent className="p-10 text-center text-sm text-muted-foreground">
-                  {(applicants ?? []).length === 0
-                    ? "No applications yet. They'll appear here as alumni apply to your postings."
-                    : "No applicants match these filters."}
+                  {(applicants ?? []).length === 0 ? (
+                    "No applications yet. They'll appear here as alumni apply to your postings."
+                  ) : (
+                    <>
+                      No applicants match these filters.{" "}
+                      <button
+                        type="button"
+                        onClick={reset}
+                        className="font-medium text-foreground underline-offset-4 hover:underline"
+                      >
+                        Reset filters
+                      </button>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             ) : (

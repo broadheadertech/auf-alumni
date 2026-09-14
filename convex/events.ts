@@ -649,3 +649,23 @@ export const sendDueReminders = internalMutation({
     return { sent };
   },
 });
+
+/**
+ * Public, minimal event summary for the no-login RSVP confirmation page
+ * (/rsvp?e=<eventId>). Accepts the raw id string from the URL so a malformed
+ * or stale link returns null instead of throwing. Title/time/place only.
+ */
+export const getEventPublic = query({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    const eventId = ctx.db.normalizeId("events", id);
+    if (!eventId) return null;
+    const event = await ctx.db.get(eventId);
+    if (!event || event.cancelledAt) return null;
+    return {
+      title: event.title,
+      startsAt: event.startsAt,
+      location: event.locationLabel ?? (event.onlineUrl ? "Online" : null),
+    };
+  },
+});

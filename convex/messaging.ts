@@ -1,8 +1,14 @@
 /**
  * Direct messages (Epic 10).
  *
- * Connected alumni only. Rate-limited per-recipient to prevent spam.
- * Threads are pair-keyed (userA < userB) so one row per relationship.
+ * Who can message whom (`canMessage`):
+ *   - connected users, either direction;
+ *   - an employer admin → anyone who applied to one of that employer's
+ *     postings (the application is the consent to be contacted);
+ *   - that applicant → the employer admin, but only replying in a thread the
+ *     employer started (applicants can't cold-message recruiters).
+ * Rate-limited per recipient. Threads are pair-keyed (userA < userB) so one
+ * row per relationship.
  */
 
 import { v } from "convex/values";
@@ -34,6 +40,62 @@ async function isConnected(
     .withIndex("by_pair", (q) => q.eq("userA", userA).eq("userB", userB))
     .unique();
   return !!row && row.status === "connected";
+}
+
+/** True if `applicantId` applied to a posting of an org `employerUserId` administers. */
+async function appliedToEmployerOf(
+  ctx: QueryCtx | MutationCtx,
+  employerUserId: Id<"users">,
+  applicantId: Id<"users">,
+): Promise<boolean> {
+  const apps = await ctx.db
+    .query("applications")
+    .withIndex("by_applicant_time", (q) => q.eq("applicantId", applicantId))
+    .collect();
+  for (const a of apps) {
+    const job = await ctx.db.get(a.jobId);
+    if (!job) continue;
+    if (job.createdBy === employerUserId) return true;
+    const org = await ctx.db.get(job.employerOrgId);
+    if (org && !org.suspendedAt && (org.adminUserIds ?? []).includes(employerUserId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function findThread(
+  ctx: QueryCtx | MutationCtx,
+  a: Id<"users">,
+  b: Id<"users">,
+): Promise<Doc<"messageThreads"> | null> {
+  const [userA, userB] = pair(a, b);
+  return ctx.db
+    .query("messageThreads")
+    .withIndex("by_pair", (q) => q.eq("userA", userA).eq("userB", userB))
+    .unique();
+}
+
+async function canMessage(
+  ctx: QueryCtx | MutationCtx,
+  me: Id<"users">,
+  other: Id<"users">,
+): Promise<boolean> {
+  if (await isConnected(ctx, me, other)) return true;
+  if (await appliedToEmployerOf(ctx, me, other)) return true;
+  // Applicant replying to an employer who already opened the conversation.
+  if (await appliedToEmployerOf(ctx, other, me)) {
+    const thread = await findThread(ctx, me, other);
+    return !!thread && thread.lastMessagePreview !== "";
+  }
+  return false;
+}
+
+/** Employer org names a user administers (labels employer threads). */
+async function employerLabel(ctx: QueryCtx, userId: Id<"users">): Promise<string | null> {
+  const orgs = await ctx.db.query("employerOrgs").collect();
+  const names = orgs.filter((o) => (o.adminUserIds ?? []).includes(userId)).map((o) => o.name);
+  return names.length ? names.join(", ") : null;
 }
 
 async function ensureThread(
@@ -88,10 +150,10 @@ export const sendMessage = mutation({
         message: `Message must be ${MAX_LENGTH} characters or fewer`,
       });
     }
-    if (!(await isConnected(ctx, me, recipientId))) {
+    if (!(await canMessage(ctx, me, recipientId))) {
       throw new ConvexError({
         code: "not-connected",
-        message: "You must be connected to message this alumna",
+        message: "You can only message connections, or applicants to your postings",
       });
     }
 
@@ -161,10 +223,13 @@ export const listMyThreads = query({
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", otherId))
         .unique();
+      const org = otherProfile ? null : await employerLabel(ctx, otherId);
       out.push({
         threadId: t._id,
         otherUserId: otherId,
-        otherName: otherProfile?.displayName ?? other?.name ?? "Alumna",
+        otherName:
+          otherProfile?.displayName ??
+          (org ? `${other?.name ?? "Recruiter"} · ${org}` : other?.name ?? "Alumna"),
         otherSlug: otherProfile?.slug ?? null,
         lastMessageAt: t.lastMessageAt,
         lastMessagePreview: t.lastMessagePreview,
@@ -195,10 +260,14 @@ export const getThread = query({
       .withIndex("by_thread_time", (q) => q.eq("threadId", threadId))
       .order("asc")
       .take(200);
+    const other = otherProfile ? null : await ctx.db.get(otherId);
+    const org = otherProfile ? null : await employerLabel(ctx, otherId);
     return {
       threadId: thread._id,
       otherUserId: otherId,
-      otherName: otherProfile?.displayName ?? null,
+      otherName:
+        otherProfile?.displayName ??
+        (org ? `${other?.name ?? "Recruiter"} · ${org}` : other?.name ?? null),
       otherSlug: otherProfile?.slug ?? null,
       messages: messages.map((m) => ({
         _id: m._id,
@@ -235,5 +304,37 @@ export const markThreadRead = mutation({
         await ctx.db.patch(m._id, { readAt: Date.now() });
       }
     }
+  },
+});
+
+/**
+ * Employer-side: the thread (if any) with one applicant, plus whether the
+ * viewer may message them. Powers /employer/messages.
+ */
+export const threadWith = query({
+  args: { otherUserId: v.id("users") },
+  handler: async (ctx, { otherUserId }) => {
+    const me = await getAuthUserId(ctx);
+    if (!me || me === otherUserId) return null;
+    const allowed = await canMessage(ctx, me, otherUserId);
+    const thread = await findThread(ctx, me, otherUserId);
+    if (!thread) return { threadId: null, allowed, unread: 0, messages: [] };
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_thread_time", (q) => q.eq("threadId", thread._id))
+      .order("asc")
+      .take(200);
+    return {
+      threadId: thread._id,
+      allowed,
+      unread: thread.userA === me ? thread.unreadForUserA : thread.unreadForUserB,
+      messages: messages.map((m) => ({
+        _id: m._id,
+        mine: m.senderId === me,
+        content: m.content,
+        sentAt: m.sentAt,
+        readAt: m.readAt ?? null,
+      })),
+    };
   },
 });

@@ -50,6 +50,103 @@ export const startCheckout = mutation({
   },
 });
 
+/**
+ * Plan pricing/quotas. Single source of truth for the demo activation and the
+ * billing UI. amountMinor is in centavos (₱ minor units).
+ */
+export const PLAN_CONFIG: Record<
+  string,
+  { label: string; quota?: number; amountMinor?: number }
+> = {
+  starter: { label: "Starter", quota: 1, amountMinor: 200000 },
+  growth: { label: "Growth", quota: 5, amountMinor: 500000 },
+  scale: { label: "Scale", quota: undefined, amountMinor: undefined },
+};
+
+/**
+ * Demo plan activation. Until a live payment processor is wired in, this
+ * applies the chosen plan directly so the pricing/billing flow works
+ * end-to-end (updates the org's tier + monthly quota, records a subscription
+ * and a billing event). No real charge is made.
+ */
+// @no-audit-required: employer self-service plan change (demo — no real money moves).
+export const activateDemoPlan = mutation({
+  args: {
+    employerOrgId: v.id("employerOrgs"),
+    planTier: v.string(),
+  },
+  handler: async (ctx, { employerOrgId, planTier }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({
+        code: "unauthenticated",
+        message: "Sign in required",
+      });
+    }
+    const org = await ctx.db.get(employerOrgId);
+    if (!org) {
+      throw new ConvexError({
+        code: "not-found",
+        message: "Employer not found",
+      });
+    }
+    // Only an admin of this org (or a platform admin) can change its plan.
+    const user = await ctx.db.get(userId);
+    const roles = new Set(user?.roles ?? []);
+    const isPlatform = roles.has("super-admin") || roles.has("moderator");
+    const isMember = (org.adminUserIds ?? []).includes(userId);
+    if (!isPlatform && !isMember) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "You don't manage this employer organisation",
+      });
+    }
+    const plan = PLAN_CONFIG[planTier];
+    if (!plan) {
+      throw new ConvexError({
+        code: "validation",
+        message: `Unknown plan: ${planTier}`,
+      });
+    }
+
+    const now = Date.now();
+    // Retire any current active subscription so getMyBilling's .unique() holds.
+    const actives = await ctx.db
+      .query("subscriptions")
+      .withIndex("by_employer_status", (q) =>
+        q.eq("employerOrgId", employerOrgId).eq("status", "active"),
+      )
+      .collect();
+    for (const s of actives) {
+      await ctx.db.patch(s._id, { status: "canceled", cancelledAt: now });
+    }
+    await ctx.db.insert("subscriptions", {
+      employerOrgId,
+      processor: "demo",
+      planTier,
+      status: "active",
+      quotaPerMonth: plan.quota,
+      activatedAt: now,
+    });
+    await ctx.db.patch(employerOrgId, {
+      planTier,
+      jobPostQuota: plan.quota,
+      updatedAt: now,
+    });
+    await ctx.db.insert("billingEvents", {
+      employerOrgId,
+      processor: "demo",
+      eventId: `demo-${employerOrgId}-${now}`,
+      eventType: `plan.activated:${planTier}`,
+      amountMinor: plan.amountMinor,
+      currency: "PHP",
+      raw: { demo: true, planTier },
+      receivedAt: now,
+    });
+    return { ok: true, planTier, quota: plan.quota ?? null };
+  },
+});
+
 export const recordWebhookEvent = mutation({
   args: {
     employerOrgId: v.id("employerOrgs"),

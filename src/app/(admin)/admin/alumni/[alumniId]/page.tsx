@@ -214,7 +214,7 @@ export default function AlumnaDetailPage() {
             </CardContent>
           </Card>
 
-          <AccountStatusCard id={a.id} name={a.name} kind="alumnus" />
+          <AccountStatusCard id={a.id} name={a.name} kind="alumnus" status={a.accountStatus ?? null} />
         </div>
 
         {/* Right column */}

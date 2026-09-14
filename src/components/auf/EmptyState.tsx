@@ -8,10 +8,9 @@ type Suggestion = {
   onClick: () => void;
 };
 
-type CTA = {
-  label: string;
-  href: string;
-};
+type CTA =
+  | { label: string; href: string; onClick?: never }
+  | { label: string; onClick: () => void; href?: never };
 
 type EmptyStateProps = {
   message: string;
@@ -63,13 +62,22 @@ export function EmptyState({
           ))}
         </div>
       )}
-      {cta && (
+      {cta?.href != null && (
         <Link
           href={cta.href}
           className="mt-4 text-sm font-medium text-foreground underline-offset-4 hover:underline"
         >
           {cta.label}
         </Link>
+      )}
+      {cta?.onClick && (
+        <button
+          type="button"
+          onClick={cta.onClick}
+          className="mt-4 text-sm font-medium text-foreground underline-offset-4 hover:underline"
+        >
+          {cta.label}
+        </button>
       )}
     </div>
   );

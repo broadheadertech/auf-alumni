@@ -1,11 +1,23 @@
 "use client";
 
+/**
+ * Publish an event (Convex `events.publishEvent`).
+ *
+ * Audience batches come from the live verified-alumni batches
+ * (`api.adminData.overview` → alumniByBatch) plus any year / range typed in;
+ * programs come from the admin-managed taxonomy. The reach preview uses the
+ * same verified-alumni counts; with a program filter the exact reach is shown
+ * on the event page after publishing.
+ */
+
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { api } from "@/lib/convex-api";
-import { BATCHES, PROGRAMS } from "@/lib/mock-alumni";
+import { useAsOf } from "@/lib/use-as-of";
+import { parseBatchInput } from "@/lib/batch-input";
+import { useProgramOptions } from "@/lib/use-program-options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,6 +58,36 @@ export default function NewEventPage() {
   const [capacity, setCapacity] = useState("");
   const [audienceBatches, setAudienceBatches] = useState<number[]>([]);
   const [audiencePrograms, setAudiencePrograms] = useState<string[]>([]);
+  const [batchText, setBatchText] = useState("");
+  const batchInput = parseBatchInput(batchText);
+  // Live verified-alumni counts per batch — the chip list and reach preview.
+  const asOf = useAsOf();
+  const overview = useQuery(api.adminData.overview, { asOf });
+  const batchCounts = new Map<number, number>(
+    (overview?.alumniByBatch ?? [])
+      .map((b: { label: string; count: number }) => [Number(b.label), b.count] as const)
+      .filter(([year]: readonly [number, number]) => Number.isFinite(year)),
+  );
+  const batchChips = Array.from(
+    new Set([...batchCounts.keys(), ...audienceBatches]),
+  ).sort((a, b) => b - a);
+  const reachPreview: string = !overview
+    ? "…"
+    : audiencePrograms.length > 0
+      ? "Shown on the event page after publishing"
+      : audienceBatches.length === 0
+        ? `${overview.alumniRegistered.toLocaleString()} verified alumni`
+        : `${audienceBatches
+            .reduce((s, y) => s + (batchCounts.get(y) ?? 0), 0)
+            .toLocaleString()} verified alumni`;
+  const addTypedBatches = () => {
+    if (!batchInput.years) return;
+    const years = batchInput.years;
+    setAudienceBatches((cur) => Array.from(new Set([...cur, ...years])));
+    setBatchText("");
+  };
+  // Same admin-managed program list as profiles and job targeting.
+  const programOptions = useProgramOptions();
   const [category, setCategory] = useState<string>(CATEGORY_NONE);
   const [agenda, setAgenda] = useState<AgendaRow[]>([]);
   const [coverStorageId, setCoverStorageId] = useState<string | null>(null);
@@ -132,7 +174,7 @@ export default function NewEventPage() {
       }));
     setSubmitting(true);
     try {
-      await publishEvent({
+      const res = await publishEvent({
         title: title.trim(),
         description: description.trim(),
         startsAt: new Date(startsAt).getTime(),
@@ -151,7 +193,8 @@ export default function NewEventPage() {
         agenda: agendaItems.length ? agendaItems : undefined,
       });
       toast.success("Event published");
-      router.push("/events");
+      const newId = (res as { eventId?: string } | undefined)?.eventId;
+      router.push(newId ? `/admin/events/${newId}` : "/admin/events");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Publish failed");
     } finally {
@@ -364,10 +407,46 @@ export default function NewEventPage() {
                 Audience filter (leave empty = all verified alumni)
               </legend>
               <div>
-                <Label className="text-xs">Batches</Label>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {BATCHES.map((b) => {
+                <Label htmlFor="batchText" className="text-xs">
+                  Batches
+                </Label>
+                <div className="mt-1 flex max-w-sm gap-2">
+                  <Input
+                    id="batchText"
+                    value={batchText}
+                    maxLength={9}
+                    placeholder="Add a year or range, e.g. 2018-2022"
+                    onChange={(e) => setBatchText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTypedBatches();
+                      }
+                    }}
+                    className="h-8 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!batchInput.years}
+                    onClick={addTypedBatches}
+                  >
+                    Add
+                  </Button>
+                </div>
+                {batchInput.error && (
+                  <p className="mt-1 text-xs text-destructive">{batchInput.error}</p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {batchChips.length === 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {overview ? "No verified alumni batches yet." : "Loading batches…"}
+                    </span>
+                  )}
+                  {batchChips.map((b) => {
                     const active = audienceBatches.includes(b);
+                    const count = batchCounts.get(b) ?? 0;
                     return (
                       <button
                         key={b}
@@ -387,6 +466,7 @@ export default function NewEventPage() {
                         }
                       >
                         {b}
+                        <span className="ml-1 opacity-70 tabular-nums">{count}</span>
                       </button>
                     );
                   })}
@@ -402,7 +482,7 @@ export default function NewEventPage() {
                   )}
                 </Label>
                 <div className="mt-1 flex flex-wrap gap-1">
-                  {PROGRAMS.map((p) => {
+                  {programOptions.all.map((p) => {
                     const active = audiencePrograms.includes(p);
                     return (
                       <button
@@ -427,6 +507,10 @@ export default function NewEventPage() {
                     );
                   })}
                 </div>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-md bg-muted/60 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Estimated reach</span>
+                <span className="font-medium tabular-nums">{reachPreview}</span>
               </div>
             </fieldset>
 

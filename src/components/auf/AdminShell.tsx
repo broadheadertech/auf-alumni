@@ -14,19 +14,25 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
+  BadgeCheck,
   BarChart3,
   Building2,
   CalendarDays,
   ClipboardCheck,
   Contact,
   FileText,
+  Gavel,
   LayoutDashboard,
+  LayoutTemplate,
   LogOut,
+  MapPin,
   Menu,
+  Newspaper,
   Scale,
   ScrollText,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Stamp,
   UserCog,
   Users,
@@ -65,6 +71,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/employers", label: "Employers", Icon: Building2 },
       { href: "/admin/jobs", label: "Job postings", Icon: ClipboardCheck },
+      { href: "/admin/moderation/jobs", label: "Job moderation", Icon: Gavel },
       { href: "/admin/analytics", label: "Analytics", Icon: BarChart3 },
     ],
   },
@@ -82,9 +89,14 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Configuration",
+    label: "Content management",
     items: [
+      { href: "/admin/content", label: "Main page", Icon: LayoutTemplate },
+      { href: "/admin/articles", label: "Articles", Icon: Newspaper },
       { href: "/admin/settings", label: "Colleges & programs", Icon: Settings2 },
+      { href: "/admin/lists/areas", label: "Areas", Icon: MapPin },
+      { href: "/admin/lists/statuses", label: "Statuses", Icon: BadgeCheck },
+      { href: "/admin/lists/skills", label: "Skill sets", Icon: Sparkles },
     ],
   },
 ];

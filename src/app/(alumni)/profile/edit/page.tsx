@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProgramOptions } from "@/lib/use-program-options";
+import { useLookupOptions } from "@/lib/use-lookup-options";
 import {
   PrivacyTierIcon,
   type PrivacyTier as PrivacyTierType,
@@ -71,6 +72,7 @@ type FormState = {
   company: string;
   city: string;
   country: string;
+  employmentStatus: string;
   bio: string;
   skills: string[];
   openTo: OpenToKind[];
@@ -92,11 +94,15 @@ const DEFAULT_TIERS: Record<string, PrivacyTier> = {
   company: "alumni",
   city: "alumni",
   country: "public",
+  employmentStatus: "alumni",
   bio: "alumni",
   skills: "alumni",
   experience: "alumni",
   education: "alumni",
 };
+
+/** Select sentinel for "no employment status" (Select items need a value). */
+const NO_STATUS = "__none__";
 
 const SECTIONS: { id: string; label: string }[] = [
   { id: "opentowork", label: "Open to work" },
@@ -120,6 +126,7 @@ const EMPTY: FormState = {
   company: "",
   city: "",
   country: "",
+  employmentStatus: "",
   bio: "",
   skills: [],
   openTo: [],
@@ -143,6 +150,9 @@ export default function ProfileEditPage() {
   const uploadUrl = useMutation(api.profiles.generatePhotoUploadUrl);
   const setPhoto = useMutation(api.profiles.setPhoto);
   const programOptions = useProgramOptions();
+  const areaOptions = useLookupOptions("area");
+  const statusOptions = useLookupOptions("status");
+  const skillOptions = useLookupOptions("skill");
 
   const [state, setState] = useState<FormState>(EMPTY);
   const [skillInput, setSkillInput] = useState("");
@@ -171,6 +181,7 @@ export default function ProfileEditPage() {
       company: existing.company ?? "",
       city: existing.city ?? "",
       country: existing.country ?? "",
+      employmentStatus: existing.employmentStatus ?? "",
       bio: existing.bio ?? "",
       skills: existing.skills ?? [],
       openTo: (existing.openTo ?? []) as OpenToKind[],
@@ -278,6 +289,7 @@ export default function ProfileEditPage() {
         company: state.company.trim() || undefined,
         city: state.city.trim() || undefined,
         country: state.country.trim() || undefined,
+        employmentStatus: state.employmentStatus || undefined,
         bio: state.bio.trim() || undefined,
         skills: state.skills,
         openTo: state.openTo,
@@ -689,6 +701,41 @@ export default function ProfileEditPage() {
             <CardContent className="space-y-4 p-6">
               <h2 className="font-semibold">Where you are now</h2>
               <FieldWithPrivacy
+                label="Employment status"
+                fieldKey="employmentStatus"
+                tier={state.privacyTiers.employmentStatus ?? "alumni"}
+                onTier={(t) => updateTier("employmentStatus", t)}
+                hidden={showHiddenInPreview("employmentStatus")}
+              >
+                <Select
+                  value={state.employmentStatus || NO_STATUS}
+                  onValueChange={(v) =>
+                    setState((s) => ({
+                      ...s,
+                      employmentStatus: !v || v === NO_STATUS ? "" : v,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full" aria-label="Employment status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_STATUS}>Not specified</SelectItem>
+                    {state.employmentStatus &&
+                      !statusOptions.names.includes(state.employmentStatus) && (
+                        <SelectItem value={state.employmentStatus}>
+                          {state.employmentStatus}
+                        </SelectItem>
+                      )}
+                    {statusOptions.options.map((o) => (
+                      <SelectItem key={o._id} value={o.name}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldWithPrivacy>
+              <FieldWithPrivacy
                 label="Current role"
                 fieldKey="currentRole"
                 tier={state.privacyTiers.currentRole ?? "alumni"}
@@ -726,10 +773,16 @@ export default function ProfileEditPage() {
                 >
                   <Input
                     value={state.city}
+                    list="area-options"
                     onChange={(e) =>
                       setState((s) => ({ ...s, city: e.target.value }))
                     }
                   />
+                  <datalist id="area-options">
+                    {areaOptions.names.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
                 </FieldWithPrivacy>
                 <FieldWithPrivacy
                   label="Country"
@@ -841,7 +894,15 @@ export default function ProfileEditPage() {
                       }
                     }}
                     placeholder="Add a skill (press Enter)"
+                    list="skill-options"
                   />
+                  <datalist id="skill-options">
+                    {skillOptions.names
+                      .filter((n) => !state.skills.includes(n))
+                      .map((n) => (
+                        <option key={n} value={n} />
+                      ))}
+                  </datalist>
                   <Button type="button" size="sm" variant="outline" onClick={addSkill}>
                     Add
                   </Button>

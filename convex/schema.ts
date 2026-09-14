@@ -38,6 +38,8 @@ export default defineSchema({
     deletedAtHardDeleteScheduledFor: v.optional(v.number()),
     suspendedAt: v.optional(v.number()),
     suspendedReason: v.optional(v.string()),
+    // Why the account is off: "suspended" | "deactivated" | "rejected".
+    suspendedKind: v.optional(v.string()),
     consentAcknowledgedAt: v.optional(v.number()),
     consentVersion: v.optional(v.string()),
     planTier: v.optional(v.string()),
@@ -64,6 +66,8 @@ export default defineSchema({
     company: v.optional(v.string()),
     city: v.optional(v.string()),
     country: v.optional(v.string()),
+    // Name of an admin-managed "status" reference item (e.g. "Employed").
+    employmentStatus: v.optional(v.string()),
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
@@ -139,6 +143,51 @@ export default defineSchema({
     .index("by_college", ["collegeId"])
     .index("by_sort", ["sortOrder"]),
 
+  // ---------- CMS: reference lists (admin-managed) ----------
+  // One table for the simple admin-editable pick lists: areas (locations),
+  // employment statuses, and skill sets. `kind` partitions them; `group` is an
+  // optional grouping label (region for areas, category for skills). Like
+  // programs, values are stored on profiles by name — these rows are the
+  // canonical source for pickers and filters.
+  referenceItems: defineTable({
+    kind: v.string(), // "area" | "status" | "skill"
+    name: v.string(),
+    group: v.optional(v.string()),
+    description: v.optional(v.string()),
+    sortOrder: v.number(),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_kind_sort", ["kind", "sortOrder"]),
+
+  // ---------- CMS: editable page copy ----------
+  // One row per page (`key`, e.g. "home"). `fields` is a flat map of
+  // field-key → text; the server whitelists keys per page and merges with
+  // built-in defaults, so an empty table still renders the original copy.
+  siteContent: defineTable({
+    key: v.string(),
+    fields: v.record(v.string(), v.string()),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }).index("by_key", ["key"]),
+
+  // ---------- CMS: articles (newsroom) ----------
+  articles: defineTable({
+    title: v.string(),
+    slug: v.string(),
+    excerpt: v.optional(v.string()),
+    body: v.string(), // plain text; blank lines separate paragraphs
+    category: v.optional(v.string()),
+    coverStorageId: v.optional(v.id("_storage")),
+    status: v.string(), // "draft" | "published" | "archived"
+    publishedAt: v.optional(v.number()),
+    authorId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_status_published", ["status", "publishedAt"]),
+
   // ---------- verificationSubmissions (Epic 2 Stories 2.3, 2.4) ----------
   verificationSubmissions: defineTable({
     userId: v.id("users"),
@@ -204,12 +253,24 @@ export default defineSchema({
   jobs: defineTable({
     employerOrgId: v.id("employerOrgs"),
     title: v.string(),
-    description: v.string(),
+    description: v.string(), // overview / "about the role"
+    // Structured posting sections (each a list of bullet points). Optional so
+    // legacy/seeded jobs without them still render (the UI falls back to
+    // parsing the description).
+    responsibilities: v.optional(v.array(v.string())),
+    requirements: v.optional(v.array(v.string())),
+    benefits: v.optional(v.array(v.string())),
     location: v.string(),
+    workMode: v.optional(v.string()), // "remote" | "hybrid" | "onsite"
     employmentType: v.string(), // "full-time" | "part-time" | "contract" | "internship"
+    experienceLevel: v.optional(v.string()), // "entry" | "mid" | "senior" | "lead"
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    // Required skill sets for the role, picked by the employer. Stores skill
+    // NAMES (canonical casing from referenceItems kind "skill" when matched;
+    // free-text allowed). Optional so legacy jobs stay valid.
+    skills: v.optional(v.array(v.string())),
     targetingBatches: v.optional(v.array(v.number())),
     targetingPrograms: v.optional(v.array(v.string())),
     targetingSkills: v.optional(v.array(v.string())),
@@ -254,6 +315,10 @@ export default defineSchema({
     // The PDF/DOC binary lives in storage; we keep only the pointer.
     resumeStorageId: v.optional(v.id("_storage")),
     resumeFilename: v.optional(v.string()),
+    // Stage timing for analytics: when the stage last changed, and when the
+    // application reached "hired" (time-to-hire = hiredAt − createdAt).
+    stageChangedAt: v.optional(v.number()),
+    hiredAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -498,6 +563,33 @@ export default defineSchema({
     logoStorageId: v.optional(v.id("_storage")),
     websiteUrl: v.optional(v.string()),
     hqCity: v.optional(v.string()),
+    // Company profile — edited by the org's own employer admins from
+    // /employer/company and shown on the public /companies/[slug] page.
+    tagline: v.optional(v.string()),
+    about: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    companySize: v.optional(v.string()),
+    foundedYear: v.optional(v.number()),
+    contactEmail: v.optional(v.string()),
+    // Partnership contract (admin-managed): ISO dates + signed MOA / NDA.
+    contractStart: v.optional(v.string()),
+    contractEnd: v.optional(v.string()),
+    moaDoc: v.optional(
+      v.object({
+        filename: v.string(),
+        sizeKb: v.number(),
+        uploadedAt: v.string(),
+        storageId: v.optional(v.id("_storage")),
+      }),
+    ),
+    ndaDoc: v.optional(
+      v.object({
+        filename: v.string(),
+        sizeKb: v.number(),
+        uploadedAt: v.string(),
+        storageId: v.optional(v.id("_storage")),
+      }),
+    ),
     mouAcknowledgedAt: v.optional(v.number()),
     planTier: v.string(),
     subscriptionId: v.optional(v.string()),
@@ -512,6 +604,7 @@ export default defineSchema({
     updatedAt: v.number(),
     suspendedAt: v.optional(v.number()),
     suspendedReason: v.optional(v.string()),
+    suspendedKind: v.optional(v.string()), // "deactivated" | "rejected"
   })
     .index("by_slug", ["slug"])
     .index("by_tier", ["tier"]),

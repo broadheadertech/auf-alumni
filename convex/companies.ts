@@ -34,6 +34,7 @@ type CompanyJobCard = {
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  skills?: string[];
   publishedAt: number | null;
 };
 
@@ -67,6 +68,7 @@ export const getBySlug = query({
         salaryMin: j.salaryMin,
         salaryMax: j.salaryMax,
         salaryCurrency: j.salaryCurrency,
+        skills: j.skills,
         publishedAt: j.publishedAt ?? null,
       }));
 
@@ -122,6 +124,11 @@ export const getBySlug = query({
       tier: org.tier,
       websiteUrl: org.websiteUrl ?? null,
       hqCity: org.hqCity ?? null,
+      tagline: org.tagline ?? null,
+      about: org.about ?? null,
+      industry: org.industry ?? null,
+      companySize: org.companySize ?? null,
+      foundedYear: org.foundedYear ?? null,
       planTier: org.planTier,
       jobPostsUsed: org.jobPostsUsed,
       logoUrl,

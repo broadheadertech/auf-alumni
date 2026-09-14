@@ -260,10 +260,12 @@ function Trigger({
         onClick={onOpen}
         aria-label="Open search"
         aria-expanded={open}
-        className="flex-1 max-w-[520px] relative hidden md:flex items-center text-left auf-search cursor-pointer"
+        className="flex-1 min-w-0 max-w-[520px] relative hidden md:flex items-center text-left auf-search cursor-pointer"
       >
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 ink-3" />
-        <span className="ink-3">Search alumni, jobs, and courses…</span>
+        <span className="ink-3 min-w-0 flex-1 truncate pr-10">
+          Search alumni, jobs, and courses…
+        </span>
         <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] ink-3 font-mono border auf-hairline rounded px-1.5 py-0.5 bg-white">
           ⌘K
         </kbd>

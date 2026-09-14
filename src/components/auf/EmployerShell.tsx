@@ -14,6 +14,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
   BarChart3,
+  Building2,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -39,6 +40,12 @@ const GROUPS: NavGroup[] = [
     label: null,
     items: [
       { href: "/employer/dashboard", label: "Dashboard", Icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Company",
+    items: [
+      { href: "/employer/company", label: "Company profile", Icon: Building2 },
     ],
   },
   {

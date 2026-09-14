@@ -39,7 +39,16 @@ For demo content (10 alumni, 6 employers, 6 jobs, events, posts):
 npx convex run seed:run
 ```
 
-Both seeders are idempotent — safe to re-run.
+Then, for the hiring history the admin Dashboard, Analytics, Employers, Job
+postings, Approvals and Events screens read (≈60 more alumni, six months of
+applications and hires, employer contracts, pending verifications, RSVPs):
+
+```bash
+npx convex run seedActivity:run
+```
+
+All seeders are idempotent — safe to re-run. Every admin screen reads the live
+tables (see `convex/adminData.ts`), so numbers agree across screens.
 
 ## Scripts
 

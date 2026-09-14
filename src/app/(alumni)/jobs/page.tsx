@@ -32,6 +32,7 @@ type Job = {
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  skills?: string[];
   targetingBatches?: number[];
   targetingPrograms?: string[];
   targetingSkills?: string[];
@@ -398,6 +399,23 @@ export default function JobsBoardPage() {
                       {salary && (
                         <div className="mt-1 text-xs font-medium">{salary}</div>
                       )}
+                      {j.skills && j.skills.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {j.skills.slice(0, 4).map((s) => (
+                            <span
+                              key={s}
+                              className="rounded-full border border-border px-1.5 py-0.5 text-[10px]"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                          {j.skills.length > 4 && (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                              +{j.skills.length - 4}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -744,6 +762,22 @@ function JobDetail({
             {job.description}
           </p>
         </div>
+
+        {job.skills && job.skills.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium">Required skills</h3>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {job.skills.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {tags.length > 0 && (
           <div className="mt-4">

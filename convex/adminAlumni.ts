@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
+import { loadCollegeClassifier } from "./helpers/taxonomy";
+import { accountStatusOf } from "./accountStatus";
 
 /**
  * Admin alumni roster (Story 6.x support view).
@@ -12,29 +14,14 @@ import { requireRole } from "./helpers/rbac";
  *     `employerOrgs`
  *   - `workStatus` / `hired` are *derived* from application stages + the
  *     profile's open-to-work flag (there is no stored status column)
- *   - `college` is derived from the free-text `program` via keyword match,
- *     since the schema only stores `program`, not a college classification
+ *   - `college` is looked up from the admin-managed taxonomy (programs →
+ *     colleges), the same tables every picker and filter uses. A keyword match
+ *     is only a fallback for legacy free-text programs not in the taxonomy.
  *
  * Fields the mock invented with no backing store (EQ composite, certification
  * counts, skill endorsement weights) are intentionally dropped — the page no
  * longer shows them.
  */
-
-const COLLEGE_RULES: Array<[RegExp, string]> = [
-  [/comput|informa|software|data sci|\bit\b|information tech/i, "College of Computer Studies"],
-  [/engineer|architect/i, "College of Engineering & Architecture"],
-  [/business|account|management|marketing|finance|entrep|commerce|economic/i, "College of Business & Accountancy"],
-  [/nurs/i, "College of Nursing"],
-  [/medic|pharmac|physical therapy|medical tech|radiolog|allied|therapy|dentis/i, "College of Allied Medical Professions"],
-  [/educat|teaching|elementary|secondary/i, "College of Education"],
-];
-
-function collegeFor(program: string): string {
-  for (const [re, college] of COLLEGE_RULES) {
-    if (re.test(program)) return college;
-  }
-  return "College of Arts & Sciences";
-}
 
 type RosterApplication = {
   applicationId: string;
@@ -50,12 +37,16 @@ export const listRoster = query({
 
     // Load the joins once, then group in memory — prototype data volumes are
     // small and this avoids an N+1 across every profile.
-    const [profiles, applications, jobs, orgs] = await Promise.all([
+    const [profiles, applications, jobs, orgs, collegeFor, users] = await Promise.all([
+      // @no-privacy-required: admin-only roster; requireRole(verifier/moderator/super-admin) above.
       ctx.db.query("profiles").collect(),
       ctx.db.query("applications").collect(),
       ctx.db.query("jobs").collect(),
       ctx.db.query("employerOrgs").collect(),
+      loadCollegeClassifier(ctx),
+      ctx.db.query("users").collect(),
     ]);
+    const userById = new Map(users.map((u) => [u._id, u]));
 
     const orgName = new Map(orgs.map((o) => [o._id, o.name]));
     const jobById = new Map(
@@ -99,6 +90,7 @@ export const listRoster = query({
         program: p.program,
         college: collegeFor(p.program),
         city: p.city ?? "",
+        employmentStatus: p.employmentStatus ?? null,
         currentRole: p.currentRole ?? null,
         currentCompany: p.company ?? null,
         openToWork,
@@ -107,6 +99,7 @@ export const listRoster = query({
         skills: p.skills ?? [],
         cv: !!p.resumeStorageId,
         verifiedAt: p.verifiedAt ?? null,
+        accountStatus: accountStatusOf(userById.get(p.userId)),
         registeredAt: p.createdAt,
         applications: apps,
       };
@@ -138,6 +131,7 @@ export const getAlumna = query({
     if (!p) return null;
 
     const user = await ctx.db.get(p.userId);
+    const collegeFor = await loadCollegeClassifier(ctx);
 
     // This alumna's applications, joined to job + employer.
     const apps = (await ctx.db.query("applications").collect()).filter(
@@ -179,6 +173,7 @@ export const getAlumna = query({
       college: collegeFor(p.program),
       city: p.city ?? "",
       country: p.country ?? "",
+      employmentStatus: p.employmentStatus ?? null,
       email: user?.email ?? "—",
       currentRole: p.currentRole ?? null,
       currentCompany: p.company ?? null,
@@ -197,6 +192,7 @@ export const getAlumna = query({
             }
           : null,
       verifiedAt: p.verifiedAt ?? null,
+      accountStatus: accountStatusOf(user),
       alumniId: p.alumniId ?? null,
       registeredAt: p.createdAt,
       applications,

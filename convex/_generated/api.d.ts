@@ -9,6 +9,7 @@
  */
 
 import type * as academy from "../academy.js";
+import type * as accountStatus from "../accountStatus.js";
 import type * as actions_email from "../actions/email.js";
 import type * as actions_sendCardIssued from "../actions/sendCardIssued.js";
 import type * as actions_sendConnectionEmail from "../actions/sendConnectionEmail.js";
@@ -18,7 +19,10 @@ import type * as actions_sendVerificationEmail from "../actions/sendVerification
 import type * as addJob from "../addJob.js";
 import type * as admin from "../admin.js";
 import type * as adminAlumni from "../adminAlumni.js";
+import type * as adminData from "../adminData.js";
+import type * as adminEmployers from "../adminEmployers.js";
 import type * as analytics from "../analytics.js";
+import type * as articles from "../articles.js";
 import type * as auth from "../auth.js";
 import type * as authReset from "../authReset.js";
 import type * as authResetHelpers from "../authResetHelpers.js";
@@ -39,9 +43,12 @@ import type * as helpers_privacy from "../helpers/privacy.js";
 import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
 import type * as helpers_registryStub from "../helpers/registryStub.js";
+import type * as helpers_siteContentPages from "../helpers/siteContentPages.js";
+import type * as helpers_taxonomy from "../helpers/taxonomy.js";
 import type * as http from "../http.js";
 import type * as idCards from "../idCards.js";
 import type * as jobs from "../jobs.js";
+import type * as lookups from "../lookups.js";
 import type * as mentorship from "../mentorship.js";
 import type * as messaging from "../messaging.js";
 import type * as notifications from "../notifications.js";
@@ -50,6 +57,8 @@ import type * as reports from "../reports.js";
 import type * as seed from "../seed.js";
 import type * as seedAccounts from "../seedAccounts.js";
 import type * as seedAccountsHelpers from "../seedAccountsHelpers.js";
+import type * as seedActivity from "../seedActivity.js";
+import type * as siteContent from "../siteContent.js";
 import type * as social from "../social.js";
 import type * as taxonomy from "../taxonomy.js";
 import type * as users from "../users.js";
@@ -63,6 +72,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   academy: typeof academy;
+  accountStatus: typeof accountStatus;
   "actions/email": typeof actions_email;
   "actions/sendCardIssued": typeof actions_sendCardIssued;
   "actions/sendConnectionEmail": typeof actions_sendConnectionEmail;
@@ -72,7 +82,10 @@ declare const fullApi: ApiFromModules<{
   addJob: typeof addJob;
   admin: typeof admin;
   adminAlumni: typeof adminAlumni;
+  adminData: typeof adminData;
+  adminEmployers: typeof adminEmployers;
   analytics: typeof analytics;
+  articles: typeof articles;
   auth: typeof auth;
   authReset: typeof authReset;
   authResetHelpers: typeof authResetHelpers;
@@ -93,9 +106,12 @@ declare const fullApi: ApiFromModules<{
   "helpers/rbac": typeof helpers_rbac;
   "helpers/registry": typeof helpers_registry;
   "helpers/registryStub": typeof helpers_registryStub;
+  "helpers/siteContentPages": typeof helpers_siteContentPages;
+  "helpers/taxonomy": typeof helpers_taxonomy;
   http: typeof http;
   idCards: typeof idCards;
   jobs: typeof jobs;
+  lookups: typeof lookups;
   mentorship: typeof mentorship;
   messaging: typeof messaging;
   notifications: typeof notifications;
@@ -104,6 +120,8 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   seedAccounts: typeof seedAccounts;
   seedAccountsHelpers: typeof seedAccountsHelpers;
+  seedActivity: typeof seedActivity;
+  siteContent: typeof siteContent;
   social: typeof social;
   taxonomy: typeof taxonomy;
   users: typeof users;

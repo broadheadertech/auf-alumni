@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
-import { BookOpen, Loader2, Plus } from "lucide-react";
+import { BookOpen, CheckCircle2, Loader2, Plus } from "lucide-react";
 import { api } from "@/lib/convex-api";
 
 type GradKey = 1 | 2 | 3 | 4 | 5 | 6;
@@ -23,6 +23,12 @@ type Course = {
   instructorBatch: number | null;
   instructorProgram: string | null;
   enrolledCount: number;
+};
+
+type MyCourse = {
+  courseId: string;
+  progress: number;
+  completedAt: number | null;
 };
 
 const CATEGORIES = [
@@ -61,6 +67,14 @@ export default function AcademyBrowsePage() {
 
   const courses = useQuery(api.academy.listPublished, queryArgs);
   const list = (courses ?? []) as Course[];
+
+  // My enrolled courses → progress/completion keyed by courseId, for the badges.
+  const myCourses = useQuery(api.academy.myCourses) as MyCourse[] | null | undefined;
+  const enrollmentByCourse = useMemo(() => {
+    const m = new Map<string, MyCourse>();
+    for (const e of myCourses ?? []) m.set(e.courseId, e);
+    return m;
+  }, [myCourses]);
 
   return (
     <div className="mx-auto max-w-[1100px] px-4 sm:px-7 py-6 sm:py-8">
@@ -134,6 +148,7 @@ export default function AcademyBrowsePage() {
             {list.map((c) => {
               const grad = gradFor(c.slug);
               const glyph = c.title.charAt(0).toUpperCase();
+              const mine = enrollmentByCourse.get(c._id);
               return (
                 <Link
                   key={c._id}
@@ -153,6 +168,15 @@ export default function AcademyBrowsePage() {
                         className={`av-grad-${grad} flex h-full w-full items-center justify-center font-serif text-5xl font-semibold text-white`}
                       >
                         {glyph}
+                      </div>
+                    )}
+                    {mine && <CourseBadge enrollment={mine} />}
+                    {mine && !mine.completedAt && mine.progress > 0 && (
+                      <div className="absolute inset-x-0 bottom-0 h-1.5 bg-black/25">
+                        <div
+                          className="h-full brand-bg transition-all"
+                          style={{ width: `${mine.progress}%` }}
+                        />
                       </div>
                     )}
                   </div>
@@ -187,5 +211,25 @@ export default function AcademyBrowsePage() {
         )}
       </div>
     </div>
+  );
+}
+
+/** Completion / progress badge overlaid on an enrolled course's cover. */
+function CourseBadge({ enrollment }: { enrollment: MyCourse }) {
+  if (enrollment.completedAt) {
+    return (
+      <span
+        className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm"
+        style={{ background: "var(--gold-ink, #8a6d1a)" }}
+      >
+        <CheckCircle2 size={12} /> Completed
+      </span>
+    );
+  }
+  const label = enrollment.progress > 0 ? `${enrollment.progress}% done` : "Enrolled";
+  return (
+    <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm backdrop-blur-sm">
+      {label}
+    </span>
   );
 }

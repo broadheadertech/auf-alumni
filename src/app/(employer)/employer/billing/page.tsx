@@ -21,9 +21,9 @@ import { Label } from "@/components/ui/label";
 import { EmptyState } from "@/components/auf/EmptyState";
 
 const PLAN_TIERS = [
-  { value: "starter", label: "Starter — 1 post / mo" },
-  { value: "growth", label: "Growth — 5 posts / mo" },
-  { value: "scale", label: "Scale — unlimited" },
+  { value: "starter", label: "Starter — ₱2,000 · 1 post / mo" },
+  { value: "growth", label: "Growth — ₱5,000 · 5 posts / mo" },
+  { value: "scale", label: "Scale — Custom · unlimited" },
 ];
 
 export default function EmployerBillingPage() {
@@ -37,7 +37,7 @@ export default function EmployerBillingPage() {
       ? { employerOrgId: employerOrgId as unknown as never }
       : "skip",
   );
-  const startCheckout = useMutation(api.billing.startCheckout);
+  const activatePlan = useMutation(api.billing.activateDemoPlan);
   const [planTier, setPlanTier] = useState("growth");
   const [busy, setBusy] = useState(false);
 
@@ -71,13 +71,16 @@ export default function EmployerBillingPage() {
     if (!employerOrgId) return;
     setBusy(true);
     try {
-      const { checkoutUrl } = await startCheckout({
+      await activatePlan({
         employerOrgId: employerOrgId as unknown as never,
         planTier,
       });
-      window.location.href = checkoutUrl;
+      const label =
+        PLAN_TIERS.find((p) => p.value === planTier)?.label ?? planTier;
+      toast.success(`Plan activated — ${label.split(" — ")[0]} (demo, no charge)`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Checkout failed");
+      toast.error(err instanceof Error ? err.message : "Plan change failed");
+    } finally {
       setBusy(false);
     }
   };
@@ -150,11 +153,12 @@ export default function EmployerBillingPage() {
             ))}
           </select>
           <Button onClick={onCheckout} disabled={busy || !employerOrgId}>
-            {busy ? "Redirecting…" : "Continue to checkout"}
+            {busy ? "Activating…" : "Activate plan"}
           </Button>
           <p className="text-xs text-muted-foreground">
-            v1 returns a placeholder URL — live processor (Stripe / PayMongo /
-            Maya) integrates in Phase 3.1.
+            Demo activation — applies the plan and quota immediately with no real
+            charge. A live processor (Stripe / PayMongo / Maya) replaces this in
+            Phase 3.1.
           </p>
         </CardContent>
       </Card>

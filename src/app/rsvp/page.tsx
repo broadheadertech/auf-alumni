@@ -11,8 +11,20 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useQuery } from "convex/react";
 import { CalendarCheck, CheckCircle2, HelpCircle, XCircle } from "lucide-react";
-import { getEventById, fmtDateTime } from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+
+function fmtEventTime(ms: number): string {
+  return new Date(ms).toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Manila",
+  });
+}
 
 const RESPONSES = {
   yes: { label: "Going", Icon: CheckCircle2, tone: "text-emerald-600 dark:text-emerald-400", verb: "You're marked as attending" },
@@ -36,7 +48,7 @@ function Inner() {
     | "yes"
     | "maybe"
     | "no";
-  const event = eventId ? getEventById(eventId) : undefined;
+  const event = useQuery(api.events.getEventPublic, eventId ? { id: eventId } : "skip");
   const resp = RESPONSES[r];
 
   return (
@@ -60,7 +72,8 @@ function Inner() {
               {event.title}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {fmtDateTime(event.startsAt)} · {event.location}
+              {fmtEventTime(event.startsAt)}
+              {event.location ? ` · ${event.location}` : ""}
             </div>
           </div>
         )}

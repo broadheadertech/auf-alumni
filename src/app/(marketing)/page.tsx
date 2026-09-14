@@ -5,6 +5,9 @@
  *
  * Server component — hydrates StatsStrip / FeaturedJobs / MentorSpotlight
  * from Convex via `fetchQuery`. Public, unauthenticated queries only.
+ *
+ * Section copy is admin-editable (Admin → Content management → Main page) and
+ * read from convex/siteContent.ts; the registry defaults are the fallback.
  */
 
 import Link from "next/link";
@@ -22,6 +25,7 @@ import {
 import { fetchQuery } from "convex/nextjs";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
 import { api } from "@/lib/convex-api";
+import { PAGES, defaultsFor } from "../../../convex/helpers/siteContentPages";
 
 export const metadata = {
   title: "AUF Alumni Network — where AUF alumni hire AUF alumni",
@@ -59,6 +63,24 @@ type PublicMentor = {
   company?: string;
 };
 
+type Copy = Record<string, string>;
+
+const DEFAULT_COPY: Copy = defaultsFor(PAGES.home);
+
+/** Render text with admin-entered line breaks preserved. */
+function Lines({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("\n").map((line, i) => (
+        <span key={i}>
+          {i > 0 && <br />}
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
+
 const EMPTY_STATS: PublicStats = {
   verifiedAlumni: 0,
   openJobs: 0,
@@ -75,7 +97,11 @@ async function safeFetch<T>(p: Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function HomePage() {
-  const [stats, jobs, mentors] = await Promise.all([
+  const [copy, stats, jobs, mentors] = await Promise.all([
+    safeFetch(
+      fetchQuery(api.siteContent.get, { key: "home" }) as Promise<Copy>,
+      DEFAULT_COPY,
+    ),
     safeFetch(fetchQuery(api.analytics.publicStats, {}), EMPTY_STATS),
     safeFetch(fetchQuery(api.jobs.publicFeatured, {}), [] as PublicJob[]),
     safeFetch(
@@ -84,20 +110,22 @@ export default async function HomePage() {
     ),
   ]);
 
+  const c: Copy = { ...DEFAULT_COPY, ...copy };
+
   return (
     <div>
-      <Hero />
+      <Hero copy={c} />
       <StatsStrip stats={stats} />
-      <HowItWorks />
-      <FeaturedJobs jobs={jobs} />
-      <MentorSpotlight mentors={mentors} />
-      <Testimonial />
-      <FinalCTA />
+      <HowItWorks copy={c} />
+      <FeaturedJobs jobs={jobs} copy={c} />
+      <MentorSpotlight mentors={mentors} copy={c} />
+      <Testimonial copy={c} />
+      <FinalCTA copy={c} />
     </div>
   );
 }
 
-function Hero() {
+function Hero({ copy }: { copy: Copy }) {
   return (
     <section className="relative overflow-hidden">
       <div
@@ -110,15 +138,15 @@ function Hero() {
       <div className="max-w-[1240px] mx-auto px-4 sm:px-7 pt-12 pb-16 sm:pt-20 sm:pb-24 grid grid-cols-12 gap-10 relative">
         <div className="col-span-12 lg:col-span-7">
           <div className="auf-chip auf-chip-brand mb-5">
-            <span className="live-dot" /> Now open to all AUF alumni
+            <span className="live-dot" /> {copy.heroBadge}
           </div>
           <h1 className="font-serif text-[44px] sm:text-[56px] lg:text-[64px] leading-[1.05] font-semibold tracking-tight">
-            Where{" "}
+            {copy.heroTitleLead}{" "}
             <span className="italic" style={{ color: "var(--brand)" }}>
-              AUF alumni
+              {copy.heroTitleAccent}
             </span>
             <br />
-            hire{" "}
+            {copy.heroTitleMiddle}{" "}
             <span
               style={{
                 background:
@@ -126,26 +154,24 @@ function Hero() {
                 paddingInline: 4,
               }}
             >
-              AUF alumni.
+              {copy.heroTitleHighlight}
             </span>
           </h1>
           <p className="text-[16px] sm:text-[18px] ink-2 leading-[1.55] mt-6 max-w-[52ch]">
-            The official career and mentorship network for Angeles University
-            Foundation alumni — verified by the registrar, trusted by 1,400+
-            employers, and built so a referral is never more than one alum away.
+            {copy.heroSubtitle}
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-8">
             <Link
               href="/signup"
               className="auf-btn auf-btn-primary !px-5 !py-3 !text-[15px]"
             >
-              Join the network <ArrowRight size={15} />
+              {copy.heroPrimaryCta} <ArrowRight size={15} />
             </Link>
             <Link
               href="/for-employers"
               className="auf-btn auf-btn-outline !px-5 !py-3 !text-[15px]"
             >
-              <Building2 size={15} /> Post a job
+              <Building2 size={15} /> {copy.heroSecondaryCta}
             </Link>
             <Link
               href="/login"
@@ -166,8 +192,8 @@ function Hero() {
               ))}
             </div>
             <span>
-              <span className="font-semibold ink-2">12,847</span> alumni joined in
-              the past 90 days
+              <span className="font-semibold ink-2">{copy.heroSocialProofNumber}</span>{" "}
+              {copy.heroSocialProofText}
             </span>
           </div>
         </div>
@@ -291,35 +317,33 @@ function StatsStrip({ stats }: { stats: PublicStats }) {
   );
 }
 
-function HowItWorks() {
+function HowItWorks({ copy }: { copy: Copy }) {
   const steps = [
     {
       n: "01",
-      t: "Verify you're AUF",
-      d: "Sign up with your student ID or grad year. We check the registrar so the network stays trusted alumni-only.",
+      t: copy.howStep1Title,
+      d: copy.howStep1Body,
       Icon: ShieldCheck,
     },
     {
       n: "02",
-      t: "Find your people",
-      d: "Search 38K+ alumni by college, batch, industry, or city. Every connection is one degree from a referral.",
+      t: copy.howStep2Title,
+      d: copy.howStep2Body,
       Icon: Users,
     },
     {
       n: "03",
-      t: "Land the job — together",
-      d: "Every job posting shows who from AUF works there. Skip the cold portal — DM the alum directly.",
+      t: copy.howStep3Title,
+      d: copy.howStep3Body,
       Icon: Briefcase,
     },
   ];
   return (
     <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
       <div className="text-center mb-12">
-        <div className="section-eyebrow brand-fg">How it works</div>
+        <div className="section-eyebrow brand-fg">{copy.howEyebrow}</div>
         <h2 className="font-serif text-[32px] md:text-[40px] font-semibold mt-3 leading-tight">
-          A career platform with
-          <br />
-          your AUF batch built in.
+          <Lines text={copy.howTitle} />
         </h2>
       </div>
       <div className="grid gap-6 md:grid-cols-3">
@@ -351,17 +375,15 @@ function formatPay(job: PublicJob): string | null {
   return fmt((salaryMin ?? salaryMax) as number);
 }
 
-function FeaturedJobs({ jobs }: { jobs: PublicJob[] }) {
+function FeaturedJobs({ jobs, copy }: { jobs: PublicJob[]; copy: Copy }) {
   return (
     <section className="border-y auf-hairline" style={{ background: "var(--surface-2)" }}>
       <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
         <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
           <div>
-            <div className="section-eyebrow brand-fg">Hiring now</div>
+            <div className="section-eyebrow brand-fg">{copy.jobsEyebrow}</div>
             <h2 className="font-serif text-[28px] md:text-[36px] font-semibold mt-2 leading-tight">
-              Jobs your batchmates
-              <br />
-              already work at.
+              <Lines text={copy.jobsTitle} />
             </h2>
           </div>
           <Link href="/jobs" className="auf-btn auf-btn-outline">
@@ -430,29 +452,30 @@ function batchSuffix(batch?: number): string {
   return `'${yy}`;
 }
 
-function MentorSpotlight({ mentors }: { mentors: PublicMentor[] }) {
+function MentorSpotlight({
+  mentors,
+  copy,
+}: {
+  mentors: PublicMentor[];
+  copy: Copy;
+}) {
   return (
     <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
       <div className="grid gap-10 lg:grid-cols-12 items-center">
         <div className="lg:col-span-5">
-          <div className="section-eyebrow brand-fg">Mentorship</div>
+          <div className="section-eyebrow brand-fg">{copy.mentorsEyebrow}</div>
           <h2 className="font-serif text-[28px] md:text-[36px] font-semibold mt-2 leading-tight">
-            Real mentors. Real time. Real careers.
+            {copy.mentorsTitle}
           </h2>
           <p className="text-[15px] ink-2 mt-4 leading-[1.6]">
-            Match with senior AUF alums who&apos;ve been in your field 5, 10, 20
-            years. Office hours, mock interviews, portfolio reviews — booked in
-            two clicks.
+            {copy.mentorsBody}
           </p>
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-[13.5px]">
-            {[
-              "Industry-vetted mentors",
-              "Coffee chats from ₱0",
-              "1:1 + cohort options",
-              "Both PH-based and abroad",
-              "Booked in 2 clicks",
-              "Free for verified alumni",
-            ].map((p) => (
+            {copy.mentorsBullets
+              .split("\n")
+              .map((p) => p.trim())
+              .filter(Boolean)
+              .map((p) => (
               <div key={p} className="flex items-center gap-2">
                 <Check size={14} className="brand-fg" /> {p}
               </div>
@@ -519,7 +542,7 @@ function MentorSpotlight({ mentors }: { mentors: PublicMentor[] }) {
   );
 }
 
-function Testimonial() {
+function Testimonial({ copy }: { copy: Copy }) {
   return (
     <section className="py-20" style={{ background: "var(--brand-deep)", color: "white" }}>
       <div className="max-w-[1000px] mx-auto px-4 sm:px-7 text-center">
@@ -527,16 +550,14 @@ function Testimonial() {
           &ldquo;
         </div>
         <blockquote className="font-serif text-[22px] md:text-[28px] leading-[1.35] font-medium -mt-6">
-          I had my AUF degree on my CV for 8 years. The day I joined the alumni
-          network, three batchmates reached out — and I had a referral at GCash
-          within the week. This is the network we should&apos;ve had since 2017.
+          {copy.testimonialQuote}
         </blockquote>
         <div className="flex items-center justify-center gap-3 mt-8">
-          <AUFAvatar name="Mark Lim" grad={4} size={48} />
+          <AUFAvatar name={copy.testimonialName} grad={4} size={48} />
           <div className="text-left">
-            <div className="font-medium">Mark Lim</div>
+            <div className="font-medium">{copy.testimonialName}</div>
             <div className="text-[12.5px]" style={{ color: "rgba(255,255,255,0.6)" }}>
-              Product Designer, GCash · BS Multimedia Arts &apos;19
+              {copy.testimonialRole}
             </div>
           </div>
         </div>
@@ -545,7 +566,7 @@ function Testimonial() {
   );
 }
 
-function FinalCTA() {
+function FinalCTA({ copy }: { copy: Copy }) {
   return (
     <section className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-24">
       <div className="auf-card p-6 sm:p-12 relative overflow-hidden text-center">
@@ -557,13 +578,12 @@ function FinalCTA() {
           }}
         />
         <div className="relative">
-          <div className="section-eyebrow brand-fg mb-3">Class of &apos;71 through &apos;26</div>
+          <div className="section-eyebrow brand-fg mb-3">{copy.ctaEyebrow}</div>
           <h2 className="font-serif text-[32px] md:text-[42px] font-semibold leading-tight max-w-[20ch] mx-auto">
-            Your AUF batch is online. Are you?
+            {copy.ctaTitle}
           </h2>
           <p className="text-[15px] ink-2 mt-4 max-w-[52ch] mx-auto">
-            Free for all verified alumni. Built and operated by AUF. No spam, no
-            recruiters cold-DMing you.
+            {copy.ctaBody}
           </p>
           <div className="flex items-center justify-center gap-3 mt-7">
             <Link href="/signup" className="auf-btn auf-btn-primary !px-6 !py-3 !text-[15px]">

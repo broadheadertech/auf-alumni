@@ -1,19 +1,26 @@
 "use client";
 
 /**
- * Alumnus approval queue (mock).
+ * Alumnus approval queue — live (Convex).
  *
- * Pending registrations awaiting verification. The admin reviews claimed
- * identity, the registry match, any flags, and uploaded ID / diploma, then
- * Approves, Rejects, or Requests more info. Decisions are local to this demo
- * (no backend) — they remove the item from the queue and advance to the next.
+ * Registrations awaiting verification (`api.adminData.pendingApprovals`:
+ * pending-review, info-requested and escalated submissions). The admin reviews
+ * claimed identity, the registry match, any flags, and uploaded ID / diploma,
+ * then Approves, Rejects, or Requests more info. Each decision calls the
+ * audited mutation in convex/admin.ts; the query updates live, so a decided
+ * item leaves the queue and the review panel advances to the next one.
  *
- * Mirrors the live Convex flow at /admin/queue; populated for stakeholder
- * review. See lib/mock-admin.ts → PENDING_ALUMNI.
+ * Standard FilterPanel (search, flags, College → Program, batch, submitted
+ * date range; URL-backed and persisted) and bulk review: Select all /
+ * Unselect all, then approve or reject every selected registration. Bulk runs
+ * the same per-submission mutations (one audit entry each) and reports
+ * partial failures.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -21,25 +28,25 @@ import {
   Check,
   Download,
   FileText,
-  Search,
+  Loader2,
   ShieldCheck,
   X,
 } from "lucide-react";
-import {
-  APPROVAL_FLAG_LABEL,
-  PENDING_ALUMNI,
-  ageSince,
-  fmtDate,
-  waitHours,
-  type PendingAlumnus,
-  type UploadedDoc,
-} from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+import type { Id } from "../../../../../../convex/_generated/dataModel";
+import type { EmployerDocView, PendingApprovalView } from "../../../../../../convex/adminData";
+import { APPROVAL_FLAG_LABEL, fmtDate } from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { StatTile } from "@/components/auf/AdminBits";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
+import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
+import { runBulk, useBulkSelection } from "@/lib/use-bulk-selection";
+import { useUrlFilters } from "@/lib/use-url-filters";
+import { useCollegePrograms } from "@/lib/use-program-options";
+import { parseBatchInput } from "@/lib/batch-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,34 +59,82 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "flagged" | "clean";
+const FILTER_KEYS = ["q", "flags", "college", "program", "batch", "from", "to"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
 type Dialog =
   | { kind: "none" }
   | { kind: "reject"; id: string }
-  | { kind: "info"; id: string };
+  | { kind: "info"; id: string }
+  | { kind: "bulk-reject"; ids: string[] }
+  | { kind: "bulk-approve"; ids: string[]; flagged: number };
+
+const STATUS_CHIP: Record<string, { label: string; cls: string } | undefined> = {
+  "info-requested": {
+    label: "Info requested",
+    cls: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+  },
+  escalated: {
+    label: "Escalated",
+    cls: "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  },
+};
+
+const flagLabel = (f: string) =>
+  (APPROVAL_FLAG_LABEL as Record<string, string>)[f] ?? f;
+
+/** Hours since an ISO datetime, relative to the real clock. */
+function waitHours(iso: string): number {
+  return Math.max(0, (Date.now() - new Date(iso).getTime()) / 3_600_000);
+}
+
+/** "12m ago" / "5.2h ago" / "3d ago" relative to the real clock. */
+function ageSince(iso: string): string {
+  const hours = waitHours(iso);
+  const mins = Math.round(hours * 60);
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 48) return `${hours.toFixed(hours < 10 ? 1 : 0)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function fmtWait(hours: number): string {
+  if (hours < 48) return `${Math.round(hours)}h`;
+  return `${Math.round(hours / 24)}d`;
+}
 
 export default function AlumniApprovalsPage() {
-  // Decisions live in local state for the prototype.
-  const [decided, setDecided] = useState<Record<string, "approved" | "rejected" | "info">>({});
-  const [filter, setFilter] = useState<Filter>("all");
-  const [search, setSearch] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const rows = useQuery(api.adminData.pendingApprovals) as PendingApprovalView[] | undefined;
+  const approve = useMutation(api.admin.approveVerification);
+  const reject = useMutation(api.admin.rejectVerification);
+  const requestInfo = useMutation(api.admin.requestVerificationInfo);
+
+  const { values, set, setMany, reset, restored } = useUrlFilters(
+    "admin-approvals",
+    FILTER_KEYS,
+  );
+  const taxonomy = useCollegePrograms();
+  const batch = parseBatchInput(values.batch);
   const [sort, setSort] = useState<"oldest" | "newest">("oldest");
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>({ kind: "none" });
   const [dialogText, setDialogText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const all = useMemo(() => rows ?? [], [rows]);
 
   const pending = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return PENDING_ALUMNI.filter((p) => !decided[p.id])
+    const q = values.q.trim().toLowerCase();
+    return all
       .filter((p) =>
-        filter === "all"
+        !values.flags
           ? true
-          : filter === "flagged"
+          : values.flags === "flagged"
             ? p.flags.length > 0
             : p.flags.length === 0,
       )
+      .filter((p) => !values.college || p.college === values.college)
+      .filter((p) => !values.program || p.claimedProgram === values.program)
+      .filter((p) => !batch.years || batch.years.includes(p.claimedBatch))
       .filter((p) =>
         q
           ? [p.name, p.email, p.claimedProgram, p.college]
@@ -90,8 +145,8 @@ export default function AlumniApprovalsPage() {
       )
       .filter((p) => {
         const day = p.submittedAt.slice(0, 10); // YYYY-MM-DD
-        if (fromDate && day < fromDate) return false;
-        if (toDate && day > toDate) return false;
+        if (values.from && day < values.from) return false;
+        if (values.to && day > values.to) return false;
         return true;
       })
       .sort((a, b) =>
@@ -99,51 +154,161 @@ export default function AlumniApprovalsPage() {
           ? a.submittedAt.localeCompare(b.submittedAt)
           : b.submittedAt.localeCompare(a.submittedAt),
       );
-  }, [decided, filter, search, fromDate, toDate, sort]);
+  }, [all, values, batch.years, sort]);
+
+  const selection = useBulkSelection(pending.map((p) => p.id));
+
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Name, email, program…" },
+    {
+      type: "select",
+      key: "flags",
+      label: "Flags",
+      allLabel: "All registrations",
+      options: [
+        { value: "flagged", label: "Flagged only" },
+        { value: "clean", label: "No flags" },
+      ],
+    },
+    {
+      type: "select",
+      key: "college",
+      label: "College",
+      allLabel: "All colleges",
+      options: taxonomy.colleges.map((c) => ({ value: c.name, label: c.name })),
+    },
+    {
+      type: "select",
+      key: "program",
+      label: "Program / degree",
+      allLabel: values.college ? "All programs in this college" : "All programs",
+      options: taxonomy.programsFor(values.college).map((pr) => ({
+        value: pr.name,
+        label: pr.name,
+        group: values.college ? undefined : pr.collegeName,
+      })),
+    },
+    {
+      type: "text",
+      key: "batch",
+      label: "Batch (year)",
+      placeholder: "e.g. 2021 or 2018-2022",
+      maxLength: 9,
+      hint: batch.error ?? undefined,
+    },
+    { type: "date", key: "from", label: "Submitted from", max: values.to },
+    { type: "date", key: "to", label: "Submitted to", min: values.from },
+  ];
+
+  const onFilterChange = (key: string, value: string) => {
+    if (key === "college") {
+      const keep =
+        values.program && value && taxonomy.collegeOfProgram(values.program) === value;
+      setMany({ college: value, program: keep ? values.program : "" });
+    } else if (key === "program" && value && !values.college) {
+      setMany({ program: value, college: taxonomy.collegeOfProgram(value) ?? "" });
+    } else {
+      set(key as FilterKey, value);
+    }
+  };
 
   const active =
     pending.find((p) => p.id === activeId) ?? pending[0] ?? null;
 
   const totals = useMemo(() => {
-    const live = PENDING_ALUMNI.filter((p) => !decided[p.id]);
-    const decidedCount = Object.keys(decided).length;
-    const approved = Object.values(decided).filter((d) => d === "approved").length;
-    const oldest = live.reduce((max, p) => Math.max(max, waitHours(p.submittedAt)), 0);
+    const oldest = all.reduce((max, p) => Math.max(max, waitHours(p.submittedAt)), 0);
     return {
-      pending: live.length,
-      flagged: live.filter((p) => p.flags.length > 0).length,
-      oldest: Math.round(oldest),
-      reviewedToday: decidedCount,
-      approved,
+      pending: all.length,
+      flagged: all.filter((p) => p.flags.length > 0).length,
+      oldest,
+      infoRequested: all.filter((p) => p.status === "info-requested").length,
+      escalated: all.filter((p) => p.status === "escalated").length,
     };
-  }, [decided]);
+  }, [all]);
 
-  const decide = (id: string, outcome: "approved" | "rejected" | "info") => {
-    setDecided((m) => ({ ...m, [id]: outcome }));
-    setActiveId(null); // fall through to next in list
+  const asId = (id: string) => id as Id<"verificationSubmissions">;
+  const errMsg = (err: unknown, fallback: string) =>
+    err instanceof ConvexError
+      ? ((err.data as { message?: string } | undefined)?.message ?? fallback)
+      : err instanceof Error
+        ? err.message
+        : fallback;
+
+  const onApprove = async (p: PendingApprovalView) => {
+    setBusy(true);
+    try {
+      await approve({ submissionId: asId(p.id) });
+      toast.success(`${p.name} approved — added to verified alumni`);
+      setActiveId(null); // fall through to next in list
+    } catch (err) {
+      toast.error(errMsg(err, "Approve failed"));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const onApprove = (p: PendingAlumnus) => {
-    decide(p.id, "approved");
-    toast.success(`${p.name} approved — added to verified alumni`);
+  /** Run one audited mutation per id and toast the (possibly partial) outcome. */
+  const bulk = async (
+    verb: string,
+    ids: string[],
+    action: (id: string) => Promise<unknown>,
+  ) => {
+    setBusy(true);
+    try {
+      const { ok, failed } = await runBulk(ids, action);
+      const parts = [`${verb} ${ok.length} registration${ok.length === 1 ? "" : "s"}`];
+      if (failed.length > 0) parts.push(`${failed.length} failed`);
+      (failed.length ? toast.warning : toast.success)(parts.join(" · "), {
+        description: failed.length ? failed[0].message : undefined,
+      });
+      selection.deselect(ok);
+      setActiveId(null);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const onConfirmDialog = () => {
+  const onBulkApprove = (ids: string[]) =>
+    bulk("Approved", ids, (id) => approve({ submissionId: asId(id) }));
+
+  const onConfirmDialog = async () => {
     if (dialog.kind === "none") return;
-    if (!dialogText.trim()) {
+    if (dialog.kind === "bulk-approve") {
+      await onBulkApprove(dialog.ids);
+      setDialog({ kind: "none" });
+      return;
+    }
+    const text = dialogText.trim();
+    if (!text) {
       toast.error("A message / reason is required");
       return;
     }
-    const p = PENDING_ALUMNI.find((x) => x.id === dialog.id);
-    if (dialog.kind === "reject") {
-      decide(dialog.id, "rejected");
-      toast.success(`${p?.name ?? "Submission"} rejected`);
-    } else {
-      decide(dialog.id, "info");
-      toast.success("Info request sent to the applicant");
+    if (dialog.kind === "bulk-reject") {
+      await bulk("Rejected", dialog.ids, (id) =>
+        reject({ submissionId: asId(id), reason: text }),
+      );
+      setDialog({ kind: "none" });
+      setDialogText("");
+      return;
     }
-    setDialog({ kind: "none" });
-    setDialogText("");
+    const p = all.find((x) => x.id === dialog.id);
+    setBusy(true);
+    try {
+      if (dialog.kind === "reject") {
+        await reject({ submissionId: asId(dialog.id), reason: text });
+        toast.success(`${p?.name ?? "Submission"} rejected`);
+        setActiveId(null);
+      } else {
+        await requestInfo({ submissionId: asId(dialog.id), message: text });
+        toast.success("Info request sent to the applicant");
+      }
+      setDialog({ kind: "none" });
+      setDialogText("");
+    } catch (err) {
+      toast.error(errMsg(err, "Action failed"));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -167,92 +332,90 @@ export default function AlumniApprovalsPage() {
       </p>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Pending" value={totals.pending} />
-        <StatTile label="Flagged" value={totals.flagged} />
-        <StatTile label="Oldest wait" value={`${totals.oldest}h`} />
+        <StatTile label="In queue" value={rows ? totals.pending : "—"} />
+        <StatTile label="Flagged" value={rows ? totals.flagged : "—"} />
         <StatTile
-          label="Reviewed (session)"
-          value={totals.reviewedToday}
-          hint={`${totals.approved} approved`}
+          label="Oldest wait"
+          value={rows ? (totals.pending ? fmtWait(totals.oldest) : "—") : "—"}
+        />
+        <StatTile
+          label="Info requested"
+          value={rows ? totals.infoRequested : "—"}
+          hint={rows ? `${totals.escalated} escalated` : undefined}
         />
       </div>
 
-      {/* Controls */}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(["all", "flagged", "clean"] as Filter[]).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter(f)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs capitalize transition-colors",
-                filter === f
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {f}
-            </button>
-          ))}
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as "oldest" | "newest")}
-            className="ml-2 rounded-md border border-border bg-background px-2 py-1 text-xs"
+      {/* Filters */}
+      <FilterPanel
+        layout="bar"
+        className="mt-6"
+        fields={fields}
+        values={values}
+        onChange={onFilterChange}
+        onReset={reset}
+        restored={restored}
+      />
+
+      {/* Bulk review */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <BulkActionBar
+          className="min-w-0 flex-1"
+          noun="registration"
+          count={selection.count}
+          total={selection.total}
+          allSelected={selection.allSelected}
+          someSelected={selection.someSelected}
+          onSelectAll={selection.selectAll}
+          onUnselectAll={selection.unselectAll}
+        >
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              const ids = selection.selectedIds;
+              const flagged = pending.filter((p) => ids.includes(p.id) && p.flags.length > 0).length;
+              if (flagged > 0) setDialog({ kind: "bulk-approve", ids, flagged });
+              else void onBulkApprove(ids);
+            }}
           >
-            <option value="oldest">Oldest first</option>
-            <option value="newest">Newest first</option>
-          </select>
-          <div className="ml-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span className="hidden sm:inline">Submitted</span>
-            <input
-              type="date"
-              aria-label="Submitted from"
-              value={fromDate}
-              max={toDate || undefined}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-            />
-            <span>–</span>
-            <input
-              type="date"
-              aria-label="Submitted to"
-              value={toDate}
-              min={fromDate || undefined}
-              onChange={(e) => setToDate(e.target.value)}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-            />
-            {(fromDate || toDate) && (
-              <button
-                type="button"
-                onClick={() => {
-                  setFromDate("");
-                  setToDate("");
-                }}
-                className="rounded px-1.5 py-1 hover:text-foreground"
-                aria-label="Clear date filter"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        </div>
-        <div className="relative sm:w-64">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search name, email, program…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+            <Check className="h-4 w-4" /> Approve {selection.count}
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={busy}
+            onClick={() => {
+              setDialog({ kind: "bulk-reject", ids: selection.selectedIds });
+              setDialogText("");
+            }}
+          >
+            <X className="h-4 w-4" /> Reject {selection.count}
+          </Button>
+        </BulkActionBar>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as "oldest" | "newest")}
+          aria-label="Sort"
+          className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+        >
+          <option value="oldest">Oldest first</option>
+          <option value="newest">Newest first</option>
+        </select>
       </div>
 
-      {pending.length === 0 ? (
+      {rows === undefined ? (
+        <div className="mt-10 flex justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : pending.length === 0 ? (
         <div className="mt-8">
           <EmptyState
             message="Queue clear"
-            description="No pending registrations match. Nice work."
+            description={
+              all.length
+                ? "No pending registrations match these filters."
+                : "No registrations are waiting for review. Nice work."
+            }
             cta={{ label: "Back to alumni roster", href: "/admin/alumni" }}
           />
         </div>
@@ -262,17 +425,30 @@ export default function AlumniApprovalsPage() {
           <aside className="space-y-1.5">
             {pending.map((p) => {
               const on = active?.id === p.id;
+              const checked = selection.isSelected(p.id);
+              const chip = STATUS_CHIP[p.status];
               return (
-                <button
+                <div
                   key={p.id}
-                  type="button"
-                  onClick={() => setActiveId(p.id)}
                   className={cn(
-                    "w-full rounded-md border px-3 py-2 text-left",
+                    "flex items-start gap-2 rounded-md border px-2.5 py-2",
                     on
                       ? "border-foreground bg-muted"
-                      : "border-border hover:bg-muted/50",
+                      : checked
+                        ? "border-foreground/40 bg-muted/40"
+                        : "border-border hover:bg-muted/50",
                   )}
+                >
+                <SelectCheckbox
+                  checked={checked}
+                  onChange={() => selection.toggle(p.id)}
+                  label={`Select ${p.name}`}
+                  className="mt-0.5"
+                />
+                <button
+                  type="button"
+                  onClick={() => setActiveId(p.id)}
+                  className="min-w-0 flex-1 text-left"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium">{p.name}</span>
@@ -286,10 +462,16 @@ export default function AlumniApprovalsPage() {
                   <div className="mt-0.5 truncate text-xs text-muted-foreground">
                     {p.claimedProgram} · Batch {p.claimedBatch}
                   </div>
-                  <div className="mt-0.5 text-[11px] text-muted-foreground">
-                    {ageSince(p.submittedAt)} · {p.method}
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                    <span>
+                      {ageSince(p.submittedAt)} · {p.method}
+                    </span>
+                    {chip && (
+                      <span className={cn("rounded px-1", chip.cls)}>{chip.label}</span>
+                    )}
                   </div>
                 </button>
+                </div>
               );
             })}
           </aside>
@@ -317,9 +499,21 @@ export default function AlumniApprovalsPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="rounded-full border border-border px-2.5 py-0.5 text-xs">
-                      {active.method}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {STATUS_CHIP[active.status] && (
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs",
+                            STATUS_CHIP[active.status]!.cls,
+                          )}
+                        >
+                          {STATUS_CHIP[active.status]!.label}
+                        </span>
+                      )}
+                      <span className="rounded-full border border-border px-2.5 py-0.5 text-xs">
+                        {active.method}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-5 grid gap-6 md:grid-cols-2">
@@ -333,7 +527,7 @@ export default function AlumniApprovalsPage() {
                         <DL label="Batch" value={String(active.claimedBatch)} />
                         <DL label="Program" value={active.claimedProgram} />
                         <DL label="College" value={active.college} />
-                        <DL label="City" value={active.city} />
+                        <DL label="City" value={active.city || "—"} />
                       </dl>
                     </div>
 
@@ -348,7 +542,10 @@ export default function AlumniApprovalsPage() {
                             label="Match"
                             value={
                               <span className="text-emerald-700 dark:text-emerald-300">
-                                Yes · {Math.round((active.registryConfidence ?? 0) * 100)}% confidence
+                                Yes
+                                {active.registryConfidence != null
+                                  ? ` · ${Math.round(active.registryConfidence * 100)}% confidence`
+                                  : ""}
                               </span>
                             }
                           />
@@ -358,10 +555,18 @@ export default function AlumniApprovalsPage() {
                             value={`${active.registryRecord.batch} · ${active.registryRecord.program}`}
                           />
                         </div>
+                      ) : active.registryMatched ? (
+                        <p className="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                          Registry matched
+                          {active.registryConfidence != null
+                            ? ` · ${Math.round(active.registryConfidence * 100)}% confidence`
+                            : ""}
+                          .
+                        </p>
                       ) : (
                         <p className="mt-2 text-sm text-muted-foreground">
-                          No registry match (stub mode). Cross-reference the AUF
-                          registry manually before approving.
+                          No registry match. Cross-reference the AUF registry
+                          manually before approving.
                         </p>
                       )}
                     </div>
@@ -380,7 +585,7 @@ export default function AlumniApprovalsPage() {
                             key={f}
                             className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
                           >
-                            {APPROVAL_FLAG_LABEL[f]}
+                            {flagLabel(f)}
                           </span>
                         ))}
                       </div>
@@ -410,13 +615,14 @@ export default function AlumniApprovalsPage() {
 
                   {/* Actions */}
                   <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-                    <Button size="sm" onClick={() => onApprove(active)}>
+                    <Button size="sm" disabled={busy} onClick={() => void onApprove(active)}>
                       <Check className="h-4 w-4" />
                       Approve
                     </Button>
                     <Button
                       size="sm"
                       variant="outline"
+                      disabled={busy}
                       onClick={() => {
                         setDialog({ kind: "info", id: active.id });
                         setDialogText(
@@ -429,6 +635,7 @@ export default function AlumniApprovalsPage() {
                     <Button
                       size="sm"
                       variant="destructive"
+                      disabled={busy}
                       onClick={() => {
                         setDialog({ kind: "reject", id: active.id });
                         setDialogText("");
@@ -446,50 +653,56 @@ export default function AlumniApprovalsPage() {
       )}
 
       <p className="mt-4 text-xs italic text-muted-foreground">
-        Demo queue — approvals are not persisted. Mirrors the live verification
-        flow at{" "}
-        <Link href="/admin/queue" className="underline">
-          /admin/queue
-        </Link>
-        .
+        Live verification queue — every decision is saved and recorded in the
+        audit log. Info-requested items stay here until the applicant resubmits.
       </p>
 
       {/* Reject / info dialog */}
       <AlertDialog
         open={dialog.kind !== "none"}
-        onOpenChange={(open) => !open && setDialog({ kind: "none" })}
+        onOpenChange={(open) => !open && !busy && setDialog({ kind: "none" })}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {dialog.kind === "reject"
                 ? "Reject this registration"
-                : "Request more information"}
+                : dialog.kind === "bulk-reject"
+                  ? `Reject ${dialog.ids.length} registrations`
+                  : dialog.kind === "bulk-approve"
+                    ? `Approve ${dialog.ids.length} registrations?`
+                    : "Request more information"}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {dialog.kind === "info"
                 ? "Tell the applicant what to update. They'll receive your message by email and on their status page."
-                : "This decision is recorded. Be specific about the reason."}
+                : dialog.kind === "bulk-approve"
+                  ? `${dialog.flagged} of the selected registrations have flags (e.g. no registry match). Approve them all anyway?`
+                  : dialog.kind === "bulk-reject"
+                    ? "The same reason is recorded for each applicant. Be specific."
+                    : "This decision is recorded. Be specific about the reason."}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <Textarea
-            rows={4}
-            value={dialogText}
-            onChange={(e) => setDialogText(e.target.value)}
-            placeholder={
-              dialog.kind === "info" ? "Message to the applicant" : "Reason (required)"
-            }
-          />
+          {dialog.kind !== "bulk-approve" && (
+            <Textarea
+              rows={4}
+              value={dialogText}
+              onChange={(e) => setDialogText(e.target.value)}
+              placeholder={
+                dialog.kind === "info" ? "Message to the applicant" : "Reason (required)"
+              }
+            />
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
-                onConfirmDialog();
+                void onConfirmDialog();
               }}
-              disabled={!dialogText.trim()}
+              disabled={busy || (dialog.kind !== "bulk-approve" && !dialogText.trim())}
             >
-              Confirm
+              {busy ? "Working…" : dialog.kind === "bulk-approve" ? "Approve all" : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -507,7 +720,7 @@ function DL({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function DocRow({ label, doc }: { label: string; doc: UploadedDoc | null }) {
+function DocRow({ label, doc }: { label: string; doc: EmployerDocView | null }) {
   if (!doc) {
     return (
       <div className="flex items-center justify-between gap-2 rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
@@ -530,9 +743,19 @@ function DocRow({ label, doc }: { label: string; doc: UploadedDoc | null }) {
           </span>
         </span>
       </span>
-      <Button variant="ghost" size="icon-sm" aria-label={`Download ${label}`}>
-        <Download className="h-4 w-4" />
-      </Button>
+      {doc.url ? (
+        <a
+          href={doc.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Download ${label}`}
+          className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+        >
+          <Download className="h-4 w-4" />
+        </a>
+      ) : (
+        <span className="text-[11px] italic text-muted-foreground">File unavailable</span>
+      )}
     </div>
   );
 }

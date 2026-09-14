@@ -19,6 +19,41 @@ const FALLBACK: ProgramGroup[] = [
   { college: "Programs", programs: [...FALLBACK_PROGRAMS] },
 ];
 
+export type CollegeOption = { name: string; shortName?: string };
+export type ProgramOption = { name: string; collegeName: string; degree?: string };
+
+/**
+ * Colleges + programs for dependent College → Program dropdowns (filters).
+ * Straight from the taxonomy tables, no fallback: filters must only offer
+ * values that exist in the database.
+ */
+export function useCollegePrograms(): {
+  colleges: CollegeOption[];
+  programs: ProgramOption[];
+  /** Programs under a college name; all programs when collegeName is empty. */
+  programsFor: (collegeName: string) => ProgramOption[];
+  collegeOfProgram: (programName: string) => string | null;
+  ready: boolean;
+} {
+  const colleges = useQuery(api.taxonomy.listColleges) as
+    | Array<{ name: string; shortName?: string }>
+    | undefined;
+  const programs = useQuery(api.taxonomy.listPrograms) as
+    | Array<{ name: string; collegeName: string; degree?: string }>
+    | undefined;
+  const c = colleges ?? [];
+  const p = programs ?? [];
+  return {
+    colleges: c.map((x) => ({ name: x.name, shortName: x.shortName })),
+    programs: p.map((x) => ({ name: x.name, collegeName: x.collegeName, degree: x.degree })),
+    programsFor: (collegeName) =>
+      collegeName ? p.filter((x) => x.collegeName === collegeName) : p,
+    collegeOfProgram: (programName) =>
+      p.find((x) => x.name === programName)?.collegeName ?? null,
+    ready: colleges !== undefined && programs !== undefined,
+  };
+}
+
 export function useProgramOptions(): {
   groups: ProgramGroup[];
   all: string[];
