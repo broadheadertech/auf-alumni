@@ -40,6 +40,8 @@ type Job = {
   closingAt?: number;
   employerName: string;
   employerTier: string;
+  /** True when the viewer has already applied — matches the Jobs nav badge. */
+  applied?: boolean;
 };
 
 function formatSalary(min?: number, max?: number, ccy?: string): string | null {
@@ -238,6 +240,14 @@ export default function JobsBoardPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Roles posted by verified employers. Filter to find your fit.
           </p>
+          {list.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {list.length} role{list.length === 1 ? "" : "s"} ·{" "}
+              {list.filter((j) => !j.applied).length}{" "}
+              you haven&apos;t applied to
+              {/* The Jobs badge in the sidebar counts the not-yet-applied ones. */}
+            </p>
+          )}
         </div>
         <Link
           href="/jobs/applications"
@@ -382,7 +392,14 @@ export default function JobsBoardPage() {
                       {initialsOf(j.employerName)}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{j.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-medium">{j.title}</span>
+                        {j.applied && (
+                          <span className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                            Applied
+                          </span>
+                        )}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {j.employerName} ·{" "}
                         <span className="rounded bg-muted px-1 py-0.5 text-[10px]">

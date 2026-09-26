@@ -18,6 +18,7 @@ import {
   Briefcase,
   Calendar,
   Loader2,
+  MessageCircle,
   Send,
   Sparkles,
   Trash2,
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 
 type Post = {
   _id: string;
@@ -59,6 +61,7 @@ type EventRow = {
 
 type Suggested = {
   _id: string;
+  userId?: string;
   displayName: string;
   currentRole?: string;
   company?: string;
@@ -371,6 +374,25 @@ function FeedPost({
       <p className="mt-3 text-[14.5px] leading-[1.55] whitespace-pre-wrap ink">
         {post.content}
       </p>
+      {!mine && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t auf-hairline pt-3">
+          <Link
+            href={`/messages?to=${post.authorId}`}
+            className="auf-btn auf-btn-outline auf-btn-sm"
+          >
+            <MessageCircle size={13} /> Message
+          </Link>
+          <ConnectButton otherUserId={post.authorId} />
+          {post.authorSlug && (
+            <Link
+              href={`/profile/${post.authorSlug}`}
+              className="text-[12px] ink-3 hover:underline underline-offset-2"
+            >
+              View profile
+            </Link>
+          )}
+        </div>
+      )}
       {post.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -512,12 +534,16 @@ function RightCardSuggested({ suggested }: { suggested: Suggested[] }) {
                     {[a.currentRole, a.company].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                <Link
-                  href="/connections"
-                  className="auf-btn auf-btn-outline auf-btn-sm"
-                >
-                  Connect
-                </Link>
+                {a.userId ? (
+                  <ConnectButton otherUserId={a.userId} className="shrink-0" />
+                ) : (
+                  <Link
+                    href="/connections"
+                    className="auf-btn auf-btn-outline auf-btn-sm"
+                  >
+                    Connect
+                  </Link>
+                )}
               </div>
             );
           })}

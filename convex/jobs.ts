@@ -308,6 +308,14 @@ export const browse = query({
       ? published
       : published.filter((j) => jobMatches(j, profile));
 
+    // Which of these the viewer has already applied to — the board marks them
+    // and the nav badge counts only the rest.
+    const myApps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", userId))
+      .collect();
+    const appliedTo = new Set(myApps.map((a) => a.jobId as string));
+
     const out = [];
     for (const j of filtered) {
       const org = await ctx.db.get(j.employerOrgId);
@@ -316,6 +324,7 @@ export const browse = query({
         ...j,
         employerName: org?.name ?? "—",
         employerTier: org?.tier ?? "unverified",
+        applied: appliedTo.has(j._id as string),
       });
     }
     return out;
@@ -341,9 +350,23 @@ export const myAvailableCount = query({
       .withIndex("by_published")
       .order("desc")
       .take(100);
-    return jobs.filter(
-      (j) => j.status === "published" && jobMatches(j, profile),
-    ).length;
+    // Same set the Jobs page lists by default, minus the ones already applied
+    // to — the badge means "roles still open to you".
+    const myApps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", userId))
+      .collect();
+    const appliedTo = new Set(myApps.map((a) => a.jobId as string));
+    let count = 0;
+    for (const j of jobs) {
+      if (j.status !== "published") continue;
+      if (!jobMatches(j, profile)) continue;
+      if (appliedTo.has(j._id as string)) continue;
+      const org = await ctx.db.get(j.employerOrgId);
+      if (org?.suspendedAt) continue; // deactivated / rejected employer
+      count += 1;
+    }
+    return count;
   },
 });
 

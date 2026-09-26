@@ -14,16 +14,16 @@ import {
   MapPin,
   ShieldCheck,
   MessageSquare,
-  UserPlus,
   Lock,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { VerifiedBadge } from "@/components/auf/VerifiedBadge";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 
 type Experience = { role: string; company: string; years: string };
 type Education = {
@@ -36,6 +36,7 @@ type Education = {
 export default function ProfilePage() {
   const params = useParams<{ slug: string }>();
   const profile = useQuery(api.profiles.getBySlug, { slug: params.slug });
+  const me = useQuery(api.users.getMe);
 
   if (profile === undefined) {
     return (
@@ -63,6 +64,8 @@ export default function ProfilePage() {
   }
 
   const p = profile as Record<string, unknown>;
+  const profileUserId = (p.userId as string | undefined) ?? null;
+  const isMe = !!profileUserId && me?._id === profileUserId;
   const displayName = (p.displayName as string) ?? "Alumnus";
   const initials =
     (p.initials as string) ?? displayName.slice(0, 2).toUpperCase();
@@ -134,14 +137,25 @@ export default function ProfilePage() {
               </div>
             </div>
             <div className="flex gap-2 sm:flex-col lg:flex-row">
-              <Button size="sm" className="gap-1.5">
-                <UserPlus className="h-4 w-4" />
-                Connect
-              </Button>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <MessageSquare className="h-4 w-4" />
-                Message
-              </Button>
+              {profileUserId && !isMe ? (
+                <>
+                  <ConnectButton otherUserId={profileUserId} />
+                  <Link
+                    href={`/messages?to=${profileUserId}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" }) + " gap-1.5"}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Message
+                  </Link>
+                </>
+              ) : isMe ? (
+                <Link
+                  href="/profile/edit"
+                  className={buttonVariants({ size: "sm", variant: "outline" }) + " gap-1.5"}
+                >
+                  Edit profile
+                </Link>
+              ) : null}
             </div>
           </div>
         </CardContent>

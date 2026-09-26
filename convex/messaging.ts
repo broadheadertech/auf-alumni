@@ -2,7 +2,8 @@
  * Direct messages (Epic 10).
  *
  * Who can message whom (`canMessage`):
- *   - connected users, either direction;
+ *   - any verified alumnus → any other verified alumnus (connection not
+ *     required; blocks and the per-recipient rate limit still apply);
  *   - an employer admin → anyone who applied to one of that employer's
  *     postings (the application is the consent to be contacted);
  *   - that applicant → the employer admin, but only replying in a thread the
@@ -78,12 +79,30 @@ async function findThread(
     .unique();
 }
 
+/** Verified alumni can reach each other directly (both sides verified). */
+async function bothVerifiedAlumni(
+  ctx: QueryCtx | MutationCtx,
+  a: Id<"users">,
+  b: Id<"users">,
+): Promise<boolean> {
+  const profiles = await Promise.all(
+    [a, b].map((id) =>
+      ctx.db
+        .query("profiles")
+        .withIndex("by_userId", (q) => q.eq("userId", id))
+        .unique(),
+    ),
+  );
+  return profiles.every((p) => p?.verifiedAt != null);
+}
+
 async function canMessage(
   ctx: QueryCtx | MutationCtx,
   me: Id<"users">,
   other: Id<"users">,
 ): Promise<boolean> {
   if (await isConnected(ctx, me, other)) return true;
+  if (await bothVerifiedAlumni(ctx, me, other)) return true;
   if (await appliedToEmployerOf(ctx, me, other)) return true;
   // Applicant replying to an employer who already opened the conversation.
   if (await appliedToEmployerOf(ctx, other, me)) {
@@ -170,7 +189,8 @@ export const sendMessage = mutation({
     if (!(await canMessage(ctx, me, recipientId))) {
       throw new ConvexError({
         code: "not-connected",
-        message: "You can only message connections, or applicants to your postings",
+        message:
+          "You can message verified alumni, and applicants to your postings",
       });
     }
 
@@ -353,6 +373,18 @@ export const markThreadRead = mutation({
         await ctx.db.patch(m._id, { readAt: Date.now() });
       }
     }
+
+    // Clear the matching bell notifications too, so the badge can't keep
+    // announcing messages the user has already read.
+    const notifications = await ctx.db
+      .query("notifications")
+      .withIndex("by_user_time", (q) => q.eq("userId", me))
+      .collect();
+    for (const n of notifications) {
+      if (n.kind === "message" && !n.readAt) {
+        await ctx.db.patch(n._id, { readAt: Date.now() });
+      }
+    }
   },
 });
 
@@ -367,7 +399,19 @@ export const threadWith = query({
     if (!me || me === otherUserId) return null;
     const allowed = await canMessage(ctx, me, otherUserId);
     const thread = await findThread(ctx, me, otherUserId);
-    if (!thread) return { threadId: null, allowed, unread: 0, messages: [] };
+    const otherProfile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", otherUserId))
+      .unique();
+    const otherUser = otherProfile ? null : await ctx.db.get(otherUserId);
+    const org = otherProfile ? null : await employerLabel(ctx, otherUserId);
+    const other = {
+      otherName:
+        otherProfile?.displayName ??
+        (org ? `${otherUser?.name ?? "Recruiter"} · ${org}` : otherUser?.name ?? "Conversation"),
+      otherSlug: otherProfile?.slug ?? null,
+    };
+    if (!thread) return { threadId: null, allowed, unread: 0, messages: [], ...other };
     const messages = await ctx.db
       .query("messages")
       .withIndex("by_thread_time", (q) => q.eq("threadId", thread._id))
@@ -377,6 +421,7 @@ export const threadWith = query({
       threadId: thread._id,
       allowed,
       unread: thread.userA === me ? thread.unreadForUserA : thread.unreadForUserB,
+      ...other,
       messages: messages.map((m) => ({
         _id: m._id,
         mine: m.senderId === me,

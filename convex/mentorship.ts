@@ -11,6 +11,8 @@ import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
+import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+import { loadCollegeClassifier } from "./helpers/taxonomy";
 
 // @no-audit-required: user self-service.
 export const requestMentorship = mutation({
@@ -50,7 +52,7 @@ export const requestMentorship = mutation({
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", mentorId))
       .unique();
-    if (!mentorProfile?.openTo?.includes("mentorship")) {
+    if (!isOpenToMentorship(mentorProfile?.openTo)) {
       throw new ConvexError({
         code: "not-open",
         message: "This alumna isn't open to mentorship right now",
@@ -250,5 +252,121 @@ export const myReferrals = query({
       .withIndex("by_referrer_time", (q) => q.eq("referrerId", me))
       .order("desc")
       .take(50);
+  },
+});
+
+// ---------------------------------------------------------- find a mentor ---
+
+/**
+ * `openTo` values are inconsistent across data written at different times
+ * ("mentorship" from the profile editor, "Mentorship" from the seeds), so
+ * every mentor check matches case-insensitively on the stem.
+ */
+export function isOpenToMentorship(openTo: string[] | undefined): boolean {
+  return (openTo ?? []).some((t) => t.toLowerCase().includes("mentor"));
+}
+
+export type MentorCard = {
+  userId: string;
+  slug: string;
+  displayName: string;
+  initials: string;
+  program: string | null;
+  college: string;
+  batch: number | null;
+  currentRole: string | null;
+  company: string | null;
+  city: string | null;
+  bio: string | null;
+  skills: string[];
+  openTo: string[];
+  /** My latest request to this mentor, if any — drives the button state. */
+  myRequestStatus: string | null;
+};
+
+/**
+ * Alumni-facing mentor directory: verified alumni who are open to mentorship.
+ *
+ * Privacy-filtered per viewer like the directory; deactivated / suspended
+ * accounts are excluded, as is the viewer themselves.
+ */
+export const availableMentors = query({
+  args: {
+    search: v.optional(v.string()),
+    programs: v.optional(v.array(v.string())),
+    batches: v.optional(v.array(v.number())),
+    cities: v.optional(v.array(v.string())),
+    skills: v.optional(v.array(v.string())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<MentorCard[]> => {
+    const me = await getAuthUserId(ctx);
+    if (!me) return [];
+
+    const [profiles, users, collegeFor, myRequests] = await Promise.all([
+      ctx.db.query("profiles").collect(),
+      ctx.db.query("users").collect(),
+      loadCollegeClassifier(ctx),
+      ctx.db
+        .query("mentorshipRequests")
+        .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
+        .collect(),
+    ]);
+    const blocked = new Set(
+      users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string),
+    );
+    // Latest request per mentor wins.
+    const statusByMentor = new Map<string, string>();
+    for (const r of [...myRequests].sort((a, b) => a.createdAt - b.createdAt)) {
+      statusByMentor.set(r.mentorId as string, r.status);
+    }
+
+    const search = (args.search ?? "").trim().toLowerCase();
+    const skills = (args.skills ?? []).map((s) => s.toLowerCase());
+    const out: MentorCard[] = [];
+
+    for (const p of profiles) {
+      if (p.verifiedAt == null) continue;
+      if (p.userId === me) continue;
+      if (blocked.has(p.userId as string)) continue;
+      if (!isOpenToMentorship(p.openTo)) continue;
+      if (args.programs?.length && !args.programs.includes(p.program)) continue;
+      if (args.batches?.length && !args.batches.includes(p.batch)) continue;
+      if (args.cities?.length && !(p.city && args.cities.includes(p.city))) continue;
+      if (skills.length) {
+        const have = new Set((p.skills ?? []).map((s) => s.toLowerCase()));
+        if (!skills.some((s) => have.has(s))) continue;
+      }
+      if (search) {
+        const hay = [p.displayName, p.currentRole, p.company, p.bio, p.program, ...(p.skills ?? [])]
+          .filter((x): x is string => typeof x === "string")
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(search)) continue;
+      }
+
+      const viewer = await getViewerContext(ctx, p.userId);
+      const safe = applyPrivacy(p, viewer);
+      out.push({
+        userId: p.userId,
+        slug: p.slug,
+        displayName: p.displayName,
+        initials: p.initials,
+        program: safe.program ?? null,
+        // College comes from the program, so only expose it when the program is.
+        college: safe.program ? collegeFor(safe.program) : "",
+        batch: safe.batch ?? null,
+        currentRole: safe.currentRole ?? null,
+        company: safe.company ?? null,
+        city: safe.city ?? null,
+        bio: safe.bio ?? null,
+        skills: safe.skills ?? [],
+        openTo: safe.openTo ?? [],
+        myRequestStatus: statusByMentor.get(p.userId as string) ?? null,
+      });
+    }
+
+    out.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return out.slice(0, Math.min(Math.max(args.limit ?? 60, 1), 200));
   },
 });
