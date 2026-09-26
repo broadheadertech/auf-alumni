@@ -22,6 +22,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { isChannelEnabled, maybeInsertNotification } from "./notifications";
 
 const NOTE_MAX_LENGTH = 200;
 const REQUESTS_PER_DAY = 50;
@@ -171,10 +172,20 @@ export const sendRequest = mutation({
       createdAt: Date.now(),
     });
 
-    // Notify recipient asynchronously
+    // Notify recipient: in-app bell + email, each gated by their prefs.
     const recipient = await ctx.db.get(recipientId);
     const requester = await ctx.db.get(me);
-    if (recipient?.email) {
+    const requesterName = requester?.name ?? "an AUF alumnus";
+    await maybeInsertNotification(ctx, recipientId, "connectionRequestInApp", {
+      kind: "connection-request",
+      title: `${requesterName} wants to connect`,
+      body: note?.trim() || "Review the request in your connections inbox.",
+      href: "/connections",
+    });
+    if (
+      recipient?.email &&
+      (await isChannelEnabled(ctx, recipientId, "connectionRequestEmail"))
+    ) {
       await ctx.scheduler.runAfter(
         0,
         internal.actions.sendConnectionEmail.sendConnectionEmail,
@@ -228,10 +239,20 @@ export const accept = mutation({
       decidedAt: Date.now(),
     });
 
-    // Notify the requester
+    // Notify the requester: in-app bell + email, each gated by their prefs.
     const requester = await ctx.db.get(row.requesterId);
     const meDoc = await ctx.db.get(me);
-    if (requester?.email) {
+    const accepterName = meDoc?.name ?? "an AUF alumnus";
+    await maybeInsertNotification(ctx, row.requesterId, "connectionAcceptedInApp", {
+      kind: "connection-accepted",
+      title: `${accepterName} accepted your connection request`,
+      body: "You can now message each other.",
+      href: "/connections",
+    });
+    if (
+      requester?.email &&
+      (await isChannelEnabled(ctx, row.requesterId, "connectionAcceptedEmail"))
+    ) {
       await ctx.scheduler.runAfter(
         0,
         internal.actions.sendConnectionEmail.sendConnectionEmail,

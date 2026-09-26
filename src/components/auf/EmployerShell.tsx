@@ -24,6 +24,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/lib/convex-api";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,11 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const active = useMemo(() => activeHref(pathname), [pathname]);
+  // Unread count for the Messages nav item (same source as the alumni shell).
+  const threads = useQuery(api.messaging.listMyThreads) as
+    | Array<{ unread: number }>
+    | undefined;
+  const unreadMessages = (threads ?? []).reduce((sum, t) => sum + (t.unread ?? 0), 0);
   const title = ALL_ITEMS.find((i) => i.href === active)?.label ?? "Employer";
 
   return (
@@ -101,6 +108,7 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
         active={active}
         drawerOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        unreadMessages={unreadMessages}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -134,10 +142,12 @@ function Sidebar({
   active,
   drawerOpen,
   onClose,
+  unreadMessages,
 }: {
   active: string | null;
   drawerOpen: boolean;
   onClose: () => void;
+  unreadMessages: number;
 }) {
   return (
     <aside
@@ -193,7 +203,19 @@ function Sidebar({
                     )}
                   >
                     <item.Icon size={16} className="shrink-0" />
-                    <span className="truncate">{item.label}</span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {item.href === "/employer/messages" && unreadMessages > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                          isActive
+                            ? "bg-background text-foreground"
+                            : "bg-primary text-primary-foreground",
+                        )}
+                      >
+                        {unreadMessages > 99 ? "99+" : unreadMessages}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

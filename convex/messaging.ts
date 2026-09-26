@@ -21,6 +21,8 @@ import {
   type MutationCtx,
   type QueryCtx,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { isChannelEnabled, maybeInsertNotification } from "./notifications";
 
 const MESSAGES_PER_RECIPIENT_PER_DAY = 30;
 const MAX_LENGTH = 4000;
@@ -89,6 +91,21 @@ async function canMessage(
     return !!thread && thread.lastMessagePreview !== "";
   }
   return false;
+}
+
+/** How the recipient should be addressed and where their inbox lives. */
+async function inboxOf(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
+  const profile = await ctx.db
+    .query("profiles")
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
+    .unique();
+  const user = await ctx.db.get(userId);
+  return {
+    name: profile?.displayName ?? user?.name ?? null,
+    email: user?.email ?? null,
+    // Employer admins (no alumni profile) read messages on the employer surface.
+    href: profile ? "/messages" : "/employer/messages",
+  };
 }
 
 /** Employer org names a user administers (labels employer threads). */
@@ -184,12 +201,44 @@ export const sendMessage = mutation({
     });
     const preview = trimmed.slice(0, 120);
     const isUserA = thread.userA === me;
+    const unreadBefore = isUserA ? thread.unreadForUserB : thread.unreadForUserA;
     await ctx.db.patch(thread._id, {
       lastMessageAt: now,
       lastMessagePreview: preview,
       unreadForUserA: isUserA ? thread.unreadForUserA : thread.unreadForUserA + 1,
       unreadForUserB: isUserA ? thread.unreadForUserB + 1 : thread.unreadForUserB,
     });
+
+    // Tell the recipient: in-app bell always, email only for the first unread
+    // message in a thread (so a burst of replies is one email, not ten).
+    const sender = await inboxOf(ctx, me);
+    const recipient = await inboxOf(ctx, recipientId);
+    const senderOrg = await employerLabel(ctx, me);
+    const senderLabel = senderOrg
+      ? `${sender.name ?? "A recruiter"} · ${senderOrg}`
+      : sender.name ?? "An AUF alumnus";
+    await maybeInsertNotification(ctx, recipientId, "dmInApp", {
+      kind: "message",
+      title: `New message from ${senderLabel}`,
+      body: preview,
+      href: recipient.href,
+    });
+    if (
+      unreadBefore === 0 &&
+      recipient.email &&
+      (await isChannelEnabled(ctx, recipientId, "dmEmail"))
+    ) {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      await ctx.scheduler.runAfter(0, internal.actions.email.send, {
+        to: recipient.email,
+        subject: `New message from ${senderLabel}`,
+        html: `<p>Hi ${recipient.name ?? "there"},</p>
+          <p><strong>${senderLabel}</strong> sent you a message on the AUF Alumni Network:</p>
+          <blockquote>${preview.replace(/[<>]/g, "")}</blockquote>
+          <p><a href="${appUrl}${recipient.href}">Read and reply</a></p>
+          <p>— AUF Alumni Network</p>`,
+      });
+    }
     return { messageId, threadId: thread._id };
   },
 });

@@ -17,6 +17,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { isChannelEnabled, maybeInsertNotification } from "./notifications";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
@@ -624,7 +625,25 @@ export const sendDueReminders = internalMutation({
         }
         if (!kind) continue;
         const user = await ctx.db.get(r.userId);
-        if (!user?.email) continue;
+        const whenLabel = kind === "24h" ? "24 hours" : "1 hour";
+        await maybeInsertNotification(ctx, r.userId, "eventReminderInApp", {
+          kind: "event-reminder",
+          title: `${event.title} starts in about ${whenLabel}`,
+          body: event.locationLabel ?? (event.onlineUrl ? "Online event" : ""),
+          href: `/events/${event._id}`,
+        });
+        if (
+          !user?.email ||
+          !(await isChannelEnabled(ctx, r.userId, "eventReminderEmail"))
+        ) {
+          // Still stamp the reminder so the in-app notice isn't repeated.
+          await ctx.db.patch(r._id, {
+            remindedAt24h: kind === "24h" ? Date.now() : r.remindedAt24h,
+            remindedAt1h: kind === "1h" ? Date.now() : r.remindedAt1h,
+          });
+          sent += 1;
+          continue;
+        }
         await ctx.scheduler.runAfter(
           0,
           internal.actions.email.send,
