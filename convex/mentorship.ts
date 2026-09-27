@@ -280,6 +280,7 @@ export type MentorCard = {
   bio: string | null;
   skills: string[];
   openTo: string[];
+  photoUrl: string | null;
   /** My latest request to this mentor, if any — drives the button state. */
   myRequestStatus: string | null;
 };
@@ -362,6 +363,9 @@ export const availableMentors = query({
         bio: safe.bio ?? null,
         skills: safe.skills ?? [],
         openTo: safe.openTo ?? [],
+        photoUrl: safe.photoStorageId
+          ? await ctx.storage.getUrl(safe.photoStorageId)
+          : null,
         myRequestStatus: statusByMentor.get(p.userId as string) ?? null,
       });
     }

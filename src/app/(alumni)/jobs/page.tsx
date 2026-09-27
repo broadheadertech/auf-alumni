@@ -42,6 +42,11 @@ type Job = {
   employerTier: string;
   /** True when the viewer has already applied — matches the Jobs nav badge. */
   applied?: boolean;
+  /** 0–100 fit with your profile; see scoreJob in convex/jobs.ts. */
+  matchScore?: number;
+  strongMatch?: boolean;
+  matchReasons?: string[];
+  matchGaps?: string[];
 };
 
 function formatSalary(min?: number, max?: number, ccy?: string): string | null {
@@ -72,8 +77,10 @@ function workMode(location: string): string {
 }
 
 export default function JobsBoardPage() {
-  const [showUnmatched, setShowUnmatched] = useState(false);
-  const jobs = useQuery(api.jobs.browse, { showUnmatched });
+  // The board lists every published role, best fit first; this narrows it to
+  // strong matches instead of hiding the rest by default.
+  const [onlyStrong, setOnlyStrong] = useState(false);
+  const jobs = useQuery(api.jobs.browse, { onlyStrong });
   type SavedResume = {
     filename: string;
     uploadedAt: number | null;
@@ -103,7 +110,8 @@ export default function JobsBoardPage() {
   const [modes, setModes] = useState<string[]>([]);
   const [minSalary, setMinSalary] = useState("");
   const [company, setCompany] = useState("all");
-  const [sort, setSort] = useState<"recent" | "salary">("recent");
+  // Default to the server's ranking (best fit for your profile first).
+  const [sort, setSort] = useState<"match" | "recent" | "salary">("match");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const list = (jobs ?? []) as Job[];
@@ -133,6 +141,12 @@ export default function JobsBoardPage() {
     .sort((a, b) => {
       if (sort === "salary") {
         return (b.salaryMax ?? b.salaryMin ?? 0) - (a.salaryMax ?? a.salaryMin ?? 0);
+      }
+      if (sort === "match") {
+        return (
+          (b.matchScore ?? 0) - (a.matchScore ?? 0) ||
+          (b.publishedAt ?? 0) - (a.publishedAt ?? 0)
+        );
       }
       return (b.publishedAt ?? 0) - (a.publishedAt ?? 0);
     });
@@ -243,6 +257,8 @@ export default function JobsBoardPage() {
           {list.length > 0 && (
             <p className="mt-1 text-xs text-muted-foreground">
               {list.length} role{list.length === 1 ? "" : "s"} ·{" "}
+              {list.filter((j) => j.strongMatch).length} strong match
+              {list.filter((j) => j.strongMatch).length === 1 ? "" : "es"} ·{" "}
               {list.filter((j) => !j.applied).length}{" "}
               you haven&apos;t applied to
               {/* The Jobs badge in the sidebar counts the not-yet-applied ones. */}
@@ -275,6 +291,7 @@ export default function JobsBoardPage() {
             onChange={(e) => setSort(e.target.value as "recent" | "salary")}
             className="rounded-md border border-border bg-background px-2.5 py-2 text-sm"
           >
+            <option value="match">Best match</option>
             <option value="recent">Most recent</option>
             <option value="salary">Salary (high to low)</option>
           </select>
@@ -322,12 +339,12 @@ export default function JobsBoardPage() {
           <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5">
             <input
               type="checkbox"
-              checked={showUnmatched}
-              onChange={(e) => setShowUnmatched(e.target.checked)}
+              checked={onlyStrong}
+              onChange={(e) => setOnlyStrong(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-border"
             />
-            <span className={showUnmatched ? "font-medium" : "text-muted-foreground"}>
-              All jobs
+            <span className={onlyStrong ? "font-medium" : "text-muted-foreground"}>
+              Best matches only
             </span>
           </label>
           {(query || activeFilters > 0) && (
@@ -355,16 +372,16 @@ export default function JobsBoardPage() {
         <EmptyState
           message={
             list.length === 0
-              ? showUnmatched
-                ? "No jobs published yet"
-                : "No matched jobs right now"
+              ? onlyStrong
+                ? "No strong matches right now"
+                : "No jobs published yet"
               : "No jobs match your filters"
           }
           description={
             list.length === 0
-              ? showUnmatched
-                ? "Once employers start posting, opportunities will appear here."
-                : "Toggle 'All jobs' to see roles outside your profile match."
+              ? onlyStrong
+                ? "Untick “Best matches only” to see every open role."
+                : "Once employers start posting, opportunities will appear here."
               : "Try widening your search or clearing filters."
           }
         />
@@ -397,6 +414,22 @@ export default function JobsBoardPage() {
                         {j.applied && (
                           <span className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
                             Applied
+                          </span>
+                        )}
+                        {typeof j.matchScore === "number" && (
+                          <span
+                            title={
+                              [...(j.matchReasons ?? []), ...(j.matchGaps ?? [])].join(" · ") ||
+                              "Based on your program, skills, batch and city"
+                            }
+                            className={cn(
+                              "ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                              j.strongMatch
+                                ? "bg-primary/10 text-primary"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {j.matchScore}% match
                           </span>
                         )}
                       </div>

@@ -211,6 +211,7 @@ export default function AdminDirectoryPage() {
           openTo: (((p.openTo as string[] | undefined) ?? []) as string[]).map(
             (t) => t.toLowerCase() as OpenToKind,
           ),
+          photoUrl: (p.photoUrl as string | null | undefined) ?? null,
         };
       });
   }, [convexResult]);

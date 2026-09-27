@@ -120,7 +120,7 @@ export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = params?.jobId;
 
-  const jobs = useQuery(api.jobs.browse, { showUnmatched: true });
+  const jobs = useQuery(api.jobs.browse, {});
   const list = (jobs ?? []) as Job[];
   const job = useMemo(() => list.find((j) => j._id === jobId), [list, jobId]);
 

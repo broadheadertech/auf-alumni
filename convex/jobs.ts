@@ -30,27 +30,86 @@ const STAGES = [
   "not-selected",
 ] as const;
 
-function jobMatches(
+/**
+ * How well a job fits an alumna, 0-100, with the reasons shown on the card.
+ *
+ * Employer targeting used to be a hard filter: one non-matching field hid the
+ * job completely, so the board showed a fraction of what was open. Targeting
+ * now *ranks* instead — every published role is listed, best fit first, and
+ * each card explains why it does or doesn't fit.
+ *
+ * Weights: program 35, skills 35, batch 15, city 15. A facet the employer left
+ * open scores neutral (0.5) rather than counting for or against.
+ */
+export type JobMatch = {
+  score: number;
+  strong: boolean;
+  reasons: string[];
+  gaps: string[];
+};
+
+const STRONG_MATCH = 60;
+
+export function scoreJob(
   job: Doc<"jobs">,
   profile: Doc<"profiles"> | null,
-): boolean {
-  if (job.status !== "published") return false;
-  if (!profile) return false;
-  if (job.targetingBatches && job.targetingBatches.length > 0) {
-    if (!job.targetingBatches.includes(profile.batch)) return false;
+): JobMatch {
+  if (!profile) return { score: 0, strong: false, reasons: [], gaps: [] };
+  const reasons: string[] = [];
+  const gaps: string[] = [];
+
+  const programs = job.targetingPrograms ?? [];
+  let programFit = 0.5;
+  if (programs.length) {
+    if (programs.includes(profile.program)) {
+      programFit = 1;
+      reasons.push("Open to your program");
+    } else {
+      programFit = 0;
+      gaps.push(`Aimed at ${programs.slice(0, 2).join(", ")}${programs.length > 2 ? "…" : ""}`);
+    }
   }
-  if (job.targetingPrograms && job.targetingPrograms.length > 0) {
-    if (!job.targetingPrograms.includes(profile.program)) return false;
+
+  const batches = job.targetingBatches ?? [];
+  let batchFit = 0.5;
+  if (batches.length) {
+    if (batches.includes(profile.batch)) {
+      batchFit = 1;
+      reasons.push("Your batch");
+    } else {
+      batchFit = 0;
+      gaps.push(`Aimed at batch ${batches.slice(0, 3).join(", ")}`);
+    }
   }
-  if (job.targetingSkills && job.targetingSkills.length > 0) {
-    const skillSet = new Set((profile.skills ?? []).map((s) => s.toLowerCase()));
-    const ok = job.targetingSkills.some((s) => skillSet.has(s.toLowerCase()));
-    if (!ok) return false;
+
+  const wanted = [...new Set([...(job.targetingSkills ?? []), ...(job.skills ?? [])])];
+  let skillFit = 0.5;
+  if (wanted.length) {
+    const have = new Set((profile.skills ?? []).map((sk) => sk.toLowerCase()));
+    const hits = wanted.filter((sk) => have.has(sk.toLowerCase()));
+    skillFit = hits.length / wanted.length;
+    if (hits.length > 0) {
+      reasons.push(`${hits.length} of ${wanted.length} skills match`);
+    } else {
+      gaps.push(`Wants ${wanted.slice(0, 2).join(", ")}${wanted.length > 2 ? "…" : ""}`);
+    }
   }
-  if (job.targetingCity && job.targetingCity.length > 0) {
-    if ((profile.city ?? "") !== job.targetingCity) return false;
+
+  let cityFit = 0.5;
+  if (job.targetingCity) {
+    if ((profile.city ?? "") === job.targetingCity) {
+      cityFit = 1;
+      reasons.push("In your city");
+    } else {
+      cityFit = 0;
+      gaps.push(`Based in ${job.targetingCity}`);
+    }
   }
-  return true;
+
+  const score = Math.round(
+    (programFit * 35 + skillFit * 35 + batchFit * 15 + cityFit * 15),
+  );
+  return { score, strong: score >= STRONG_MATCH, reasons, gaps };
 }
 
 /** Trim, drop empties, cap each entry to 300 chars and the list to 30 items. */
@@ -289,8 +348,13 @@ export const rejectJob = mutation({
  * the targeting. Optional opt-out via showUnmatched=true.
  */
 export const browse = query({
-  args: { showUnmatched: v.optional(v.boolean()) },
-  handler: async (ctx, { showUnmatched }) => {
+  args: {
+    /** Kept for older callers; the board now lists every published role. */
+    showUnmatched: v.optional(v.boolean()),
+    /** Only roles that fit this alumna well (score ≥ 60). */
+    onlyStrong: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { onlyStrong }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
     const profile = await ctx.db
@@ -304,9 +368,6 @@ export const browse = query({
       .order("desc")
       .take(100);
     const published = jobs.filter((j) => j.status === "published");
-    const filtered = showUnmatched
-      ? published
-      : published.filter((j) => jobMatches(j, profile));
 
     // Which of these the viewer has already applied to — the board marks them
     // and the nav badge counts only the rest.
@@ -317,24 +378,36 @@ export const browse = query({
     const appliedTo = new Set(myApps.map((a) => a.jobId as string));
 
     const out = [];
-    for (const j of filtered) {
+    for (const j of published) {
       const org = await ctx.db.get(j.employerOrgId);
       if (org?.suspendedAt) continue; // deactivated / rejected employer
+      const match = scoreJob(j, profile);
+      if (onlyStrong && !match.strong) continue;
       out.push({
         ...j,
         employerName: org?.name ?? "—",
         employerTier: org?.tier ?? "unverified",
         applied: appliedTo.has(j._id as string),
+        matchScore: match.score,
+        strongMatch: match.strong,
+        matchReasons: match.reasons,
+        matchGaps: match.gaps,
       });
     }
+    // Best fit first, then newest.
+    out.sort(
+      (a, b) =>
+        b.matchScore - a.matchScore ||
+        (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt),
+    );
     return out;
   },
 });
 
 /**
  * Lightweight count of jobs available (matched) to the signed-in alumna, for
- * the Jobs nav badge. Mirrors `browse`'s default (matched + published) but
- * returns only the number — no employer joins.
+ * the Jobs nav badge: strong matches (score >= 60) not yet applied to.
+ * No employer joins — just the number.
  */
 export const myAvailableCount = query({
   args: {},
@@ -360,8 +433,8 @@ export const myAvailableCount = query({
     let count = 0;
     for (const j of jobs) {
       if (j.status !== "published") continue;
-      if (!jobMatches(j, profile)) continue;
       if (appliedTo.has(j._id as string)) continue;
+      if (!scoreJob(j, profile).strong) continue;
       const org = await ctx.db.get(j.employerOrgId);
       if (org?.suspendedAt) continue; // deactivated / rejected employer
       count += 1;

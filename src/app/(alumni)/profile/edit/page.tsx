@@ -562,7 +562,7 @@ export default function ProfileEditPage() {
                 </div>
                 <div className="flex flex-1 items-center gap-2">
                   <label
-                    htmlFor="photo"
+                    htmlFor="photo-input"
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted"
                   >
                     {uploading ? (
@@ -573,7 +573,7 @@ export default function ProfileEditPage() {
                     {photoUrl ? "Replace" : "Upload"}
                   </label>
                   <input
-                    id="photo"
+                    id="photo-input"
                     type="file"
                     accept="image/jpeg,image/png"
                     className="sr-only"

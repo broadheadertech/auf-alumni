@@ -20,7 +20,7 @@ import { api } from "@/lib/convex-api";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { VerifiedBadge } from "@/components/auf/VerifiedBadge";
 import { ConnectButton } from "@/components/auf/ConnectButton";
@@ -69,6 +69,7 @@ export default function ProfilePage() {
   const displayName = (p.displayName as string) ?? "Alumnus";
   const initials =
     (p.initials as string) ?? displayName.slice(0, 2).toUpperCase();
+  const photoUrl = (p.photoUrl as string | null | undefined) ?? null;
   const currentRole = p.currentRole as string | undefined;
   const company = p.company as string | undefined;
   const program = p.program as string | undefined;
@@ -104,6 +105,7 @@ export default function ProfilePage() {
         <CardContent className="px-6 pb-6 -mt-12">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <Avatar className="h-24 w-24 border-4 border-background bg-muted">
+              {photoUrl && <AvatarImage src={photoUrl} alt="" />}
               <AvatarFallback className="text-2xl font-semibold">
                 {initials}
               </AvatarFallback>

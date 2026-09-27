@@ -167,10 +167,18 @@ export const list = query({
     const slice = matched.slice(offset, offset + pageSize);
 
     // Privacy-apply per profile so self / connection state is per-result.
-    const pageWithPrivacy = [] as Partial<Doc<"profiles">>[];
+    const pageWithPrivacy = [] as Array<
+      Partial<Doc<"profiles">> & { photoUrl: string | null }
+    >;
     for (const p of slice) {
       const vctx = await getViewerContext(ctx, p.userId);
-      pageWithPrivacy.push(applyPrivacy(p, vctx));
+      const safe = applyPrivacy(p, vctx);
+      pageWithPrivacy.push({
+        ...safe,
+        photoUrl: safe.photoStorageId
+          ? await ctx.storage.getUrl(safe.photoStorageId)
+          : null,
+      });
     }
 
     const next = offset + slice.length;

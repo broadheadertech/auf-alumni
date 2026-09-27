@@ -64,6 +64,7 @@ type MentorCard = {
   bio: string | null;
   skills: string[];
   openTo: string[];
+  photoUrl: string | null;
   myRequestStatus: string | null;
 };
 
@@ -236,7 +237,12 @@ function FindMentors() {
                 <Card key={m.userId}>
                   <CardContent className="flex h-full flex-col p-4">
                     <div className="flex items-start gap-3">
-                      <AUFAvatar name={m.displayName} grad={((i % 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6} size={40} />
+                      <AUFAvatar
+                        name={m.displayName}
+                        src={m.photoUrl}
+                        grad={((i % 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6}
+                        size={40}
+                      />
                       <div className="min-w-0 flex-1">
                         <Link
                           href={`/profile/${m.slug}`}

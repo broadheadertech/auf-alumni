@@ -129,6 +129,7 @@ export const getFeed = query({
       authorId: Id<"users">;
       authorName: string | null;
       authorSlug: string | null;
+      authorPhotoUrl?: string | null;
       kind: string;
       content: string;
       imageUrl: string | null;
@@ -152,6 +153,9 @@ export const getFeed = query({
         authorId: p.authorId,
         authorName: authorProfile?.displayName ?? author.name ?? null,
         authorSlug: authorProfile?.slug ?? null,
+        authorPhotoUrl: authorProfile?.photoStorageId
+          ? await ctx.storage.getUrl(authorProfile.photoStorageId)
+          : null,
         kind: p.kind,
         content: p.content,
         imageUrl: p.imageStorageId

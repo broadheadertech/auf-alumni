@@ -84,7 +84,13 @@ export const getBySlug = query({
       .unique();
     if (!profile) return null;
     const viewer = await getViewerContext(ctx, profile.userId);
-    return applyPrivacy(profile, viewer);
+    const safe = applyPrivacy(profile, viewer);
+    // Resolve the avatar here so every surface can render it (the storage id
+    // alone is useless to the client).
+    const photoUrl = safe.photoStorageId
+      ? await ctx.storage.getUrl(safe.photoStorageId)
+      : null;
+    return { ...safe, photoUrl };
   },
 });
 
