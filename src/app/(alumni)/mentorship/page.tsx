@@ -144,12 +144,18 @@ function FindMentors() {
         : ["(no programs in this college)"]
       : undefined;
 
-  const mentors = useQuery(api.mentorship.availableMentors, {
+  const live = useQuery(api.mentorship.availableMentors, {
     search: values.q || undefined,
     programs: programFilter,
     batches: batch.years ?? undefined,
     cities: values.city ? [values.city] : undefined,
   }) as MentorCard[] | undefined;
+  // Keep the previous results on screen while a new filter loads, so the list
+  // doesn't blank out (and the filter panel never unmounts mid-typing).
+  const [lastMentors, setLastMentors] = useState<MentorCard[] | undefined>(live);
+  if (live !== undefined && live !== lastMentors) setLastMentors(live);
+  const mentors = live ?? lastMentors;
+  const refreshing = live === undefined && lastMentors !== undefined;
 
   const [requesting, setRequesting] = useState<MentorCard | null>(null);
 
@@ -216,9 +222,22 @@ function FindMentors() {
 
       <section>
         {mentors === undefined ? (
-          <div className="py-16 text-center text-sm text-muted-foreground">
-            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-            Finding mentors…
+          <div className="grid gap-3 sm:grid-cols-2" aria-busy="true" aria-label="Loading mentors">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 animate-pulse rounded-full bg-muted" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 animate-pulse rounded bg-muted" />
+                      <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                      <div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+                    </div>
+                  </div>
+                  <div className="mt-3 h-8 w-40 animate-pulse rounded bg-muted" />
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : mentors.length === 0 ? (
           <EmptyState
@@ -228,9 +247,10 @@ function FindMentors() {
             cta={{ label: "Clear filters", onClick: reset }}
           />
         ) : (
-          <>
-            <p className="mb-3 text-sm text-muted-foreground">
+          <div className={cn(refreshing && "opacity-60 transition-opacity")}>
+            <p className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
               {mentors.length} alumn{mentors.length === 1 ? "us" : "i"} open to mentorship
+              {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {mentors.map((m, i) => (
@@ -300,7 +320,7 @@ function FindMentors() {
                 </Card>
               ))}
             </div>
-          </>
+          </div>
         )}
       </section>
 

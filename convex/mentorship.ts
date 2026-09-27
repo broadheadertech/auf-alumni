@@ -11,7 +11,7 @@ import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation, query } from "./_generated/server";
-import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+import { applyPrivacy, type ViewerContext } from "./helpers/privacy";
 import { loadCollegeClassifier } from "./helpers/taxonomy";
 
 // @no-audit-required: user self-service.
@@ -304,15 +304,45 @@ export const availableMentors = query({
     const me = await getAuthUserId(ctx);
     if (!me) return [];
 
-    const [profiles, users, collegeFor, myRequests] = await Promise.all([
-      ctx.db.query("profiles").collect(),
-      ctx.db.query("users").collect(),
-      loadCollegeClassifier(ctx),
-      ctx.db
-        .query("mentorshipRequests")
-        .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
-        .collect(),
+    // Resolve the viewer's context ONCE. Calling getViewerContext per profile
+    // meant two extra reads per mentor (~70 round trips on this page), which
+    // is what made the list take seconds to appear.
+    const [profiles, users, collegeFor, myRequests, sentLinks, recvLinks, myProfile] =
+      await Promise.all([
+        ctx.db.query("profiles").collect(),
+        ctx.db.query("users").collect(),
+        loadCollegeClassifier(ctx),
+        ctx.db
+          .query("mentorshipRequests")
+          .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
+          .collect(),
+        ctx.db
+          .query("connections")
+          .withIndex("by_requester_status", (q) =>
+            q.eq("requesterId", me).eq("status", "connected"),
+          )
+          .collect(),
+        ctx.db
+          .query("connections")
+          .withIndex("by_recipient_status", (q) =>
+            q.eq("recipientId", me).eq("status", "connected"),
+          )
+          .collect(),
+        ctx.db
+          .query("profiles")
+          .withIndex("by_userId", (q) => q.eq("userId", me))
+          .unique(),
+      ]);
+    const connectedIds = new Set<string>([
+      ...sentLinks.map((c) => c.recipientId as string),
+      ...recvLinks.map((c) => c.requesterId as string),
     ]);
+    const viewerRoles = new Set(users.find((u) => u._id === me)?.roles ?? []);
+    const viewerIsAlumnus =
+      !!myProfile ||
+      ["alumnus", "current-student", "super-admin", "verifier", "moderator"].some((r) =>
+        viewerRoles.has(r),
+      );
     const blocked = new Set(
       users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string),
     );
@@ -346,7 +376,11 @@ export const availableMentors = query({
         if (!hay.includes(search)) continue;
       }
 
-      const viewer = await getViewerContext(ctx, p.userId);
+      const viewer: ViewerContext = connectedIds.has(p.userId as string)
+        ? { kind: "connection", userId: me }
+        : viewerIsAlumnus
+          ? { kind: "alumnus", userId: me }
+          : { kind: "stranger" };
       const safe = applyPrivacy(p, viewer);
       out.push({
         userId: p.userId,
