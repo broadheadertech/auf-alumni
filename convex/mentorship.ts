@@ -10,6 +10,7 @@
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { applyPrivacy, type ViewerContext } from "./helpers/privacy";
 import { loadCollegeClassifier } from "./helpers/taxonomy";
@@ -184,7 +185,48 @@ export const myMentorshipQueue = query({
       .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
       .order("desc")
       .take(50);
-    return { incoming, outgoing };
+
+    // The rows alone never said WHO asked, so the cards showed a topic and a
+    // status with no name and only a generic link to the inbox. Join the other
+    // party once per distinct user so each card can name them, link to their
+    // profile, and open the actual conversation.
+    const names = new Map<string, { name: string; slug: string | null }>();
+    const resolve = async (userId: Id<"users">) => {
+      const key = userId as string;
+      const hit = names.get(key);
+      if (hit) return hit;
+      // @no-privacy-required: displayName and slug are always-visible identity
+      // fields (see ALWAYS_INCLUDE in helpers/privacy), and these two people
+      // are already in a mentorship conversation with each other.
+      const profile = await ctx.db
+        .query("profiles")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .unique();
+      const user = profile ? null : await ctx.db.get(userId);
+      const entry = {
+        name: profile?.displayName ?? user?.name ?? "An alumnus",
+        slug: profile?.slug ?? null,
+      };
+      names.set(key, entry);
+      return entry;
+    };
+
+    const withParty = async (
+      rows: Array<Doc<"mentorshipRequests">>,
+      pick: (r: Doc<"mentorshipRequests">) => Id<"users">,
+    ) =>
+      Promise.all(
+        rows.map(async (r) => {
+          const other = pick(r);
+          const { name, slug } = await resolve(other);
+          return { ...r, otherUserId: other as string, otherName: name, otherSlug: slug };
+        }),
+      );
+
+    return {
+      incoming: await withParty(incoming, (r) => r.requesterId),
+      outgoing: await withParty(outgoing, (r) => r.mentorId),
+    };
   },
 });
 

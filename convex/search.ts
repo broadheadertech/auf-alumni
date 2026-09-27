@@ -276,7 +276,13 @@ export const universal = query({
                 : safe.batch
                   ? `Batch ${safe.batch}`
                   : null,
-          href: isAdmin ? `/admin/alumni/${p._id}` : `/u/${p.slug}`,
+          // Signed-in members get the in-app profile, which carries Connect
+          // and Message; /u/ is the public page for everyone else.
+          href: isAdmin
+            ? `/admin/alumni/${p._id}`
+            : isAlumnus
+              ? `/profile/${p.slug}`
+              : `/u/${p.slug}`,
           score,
         });
       }

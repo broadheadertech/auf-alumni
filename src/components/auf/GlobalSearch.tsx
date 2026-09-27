@@ -24,7 +24,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
@@ -139,7 +139,6 @@ function writeRecents(list: string[]) {
 
 export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -149,37 +148,51 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+
+  // One place that knows what opening and closing mean, so no effect has to
+  // synchronise state after the fact.
+  const setOpenState = useCallback((next: boolean) => {
+    setOpen(next);
+    if (next) {
+      setHighlight(0);
+      setRecents(readRecents());
+    } else {
+      setQuery("");
+      setDebounced("");
+      setKind(null);
+    }
+  }, []);
+
   // ⌘/Ctrl+K from anywhere; Esc to close.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((v) => !v);
+        setOpenState(!open);
       } else if (e.key === "Escape" && open) {
         e.preventDefault();
-        setOpen(false);
+        setOpenState(false);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, [open, setOpenState]);
+
+  // Focus the input once the dialog has mounted.
+  useEffect(() => {
+    if (!open) return;
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
   }, [open]);
 
+  // Result clicks close the dialog in go(); this covers browser back/forward,
+  // where the shell (and therefore this component) stays mounted.
   useEffect(() => {
-    if (open) {
-      setHighlight(0);
-      setRecents(readRecents());
-      const id = window.setTimeout(() => inputRef.current?.focus(), 0);
-      return () => window.clearTimeout(id);
-    }
-    setQuery("");
-    setDebounced("");
-    setKind(null);
-  }, [open]);
-
-  // Close on navigation.
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+    if (!open) return;
+    const onPop = () => setOpenState(false);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [open, setOpenState]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebounced(query.trim()), 150);
@@ -222,11 +235,11 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
   // Flatten in display order so ↑/↓ matches what's on screen.
   const flat = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 
-  useEffect(() => {
-    if (highlight >= flat.length) setHighlight(0);
-  }, [flat.length, highlight]);
+  // Results change as you type, so clamp the cursor when reading it rather
+  // than writing a correction back into state.
+  const cursor = highlight < flat.length ? highlight : 0;
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => setOpenState(false), [setOpenState]);
 
   const remember = useCallback((term: string) => {
     const t = term.trim();
@@ -254,7 +267,7 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
       setHighlight((h) => (flat.length ? (h - 1 + flat.length) % flat.length : 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const hit = flat[highlight];
+      const hit = flat[cursor];
       if (hit) go(hit.href);
     } else if (e.key === "Tab" && chipKinds.length > 0) {
       // Cycle the kind filter instead of leaving the input.
@@ -271,7 +284,7 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
   useEffect(() => {
     const el = listRef.current?.querySelector<HTMLElement>('[data-active="true"]');
     el?.scrollIntoView({ block: "nearest" });
-  }, [highlight]);
+  }, [cursor]);
 
   const placeholder = "Search people, jobs, events, pages…";
 
@@ -280,7 +293,7 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
       <Trigger
         variant={variant}
         open={open}
-        onOpen={() => setOpen(true)}
+        onOpen={() => setOpenState(true)}
         placeholder={placeholder}
       />
       {open && (
@@ -375,7 +388,7 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
                       <ul role="listbox">
                         {section.items.map((hit, i) => {
                           const index = start + i;
-                          const active = index === highlight;
+                          const active = index === cursor;
                           return (
                             <li
                               key={`${hit.kind}-${hit.id}`}

@@ -44,6 +44,7 @@ import {
   ProfilePreviewSwitcher,
   type PreviewViewer,
 } from "@/components/auf/ProfilePreviewSwitcher";
+import { prepareImageForUpload } from "@/lib/image-upload";
 import { cn } from "@/lib/utils";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -239,17 +240,16 @@ export default function ProfileEditPage() {
   const onPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Photo must be 5 MB or smaller");
-      return;
-    }
     setUploading(true);
     try {
+      // Downscale and re-encode rather than refusing phone photos outright —
+      // see src/lib/image-upload.ts.
+      const { blob, contentType } = await prepareImageForUpload(file);
       const url = await uploadUrl({});
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
+        headers: { "Content-Type": contentType },
+        body: blob,
       });
       if (!res.ok) throw new Error("Upload failed");
       const { storageId } = (await res.json()) as { storageId: string };
@@ -575,7 +575,7 @@ export default function ProfileEditPage() {
                   <input
                     id="photo-input"
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept="image/*,.heic,.heif"
                     className="sr-only"
                     onChange={onPhotoChange}
                     disabled={uploading}

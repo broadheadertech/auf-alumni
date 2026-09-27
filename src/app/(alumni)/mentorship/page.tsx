@@ -48,6 +48,10 @@ type MentorshipRequest = {
   status: string;
   scheduledFor?: number;
   createdAt: number;
+  /** The other party — mentee on an incoming request, mentor on an outgoing one. */
+  otherUserId: string;
+  otherName: string;
+  otherSlug: string | null;
 };
 
 type MentorCard = {
@@ -517,7 +521,8 @@ function MyRequests({
                 <CardContent className="space-y-2 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-medium">{req.topic}</p>
+                      <p className="font-medium">{req.otherName}</p>
+                      <p className="text-xs text-muted-foreground">{req.topic}</p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         Status: {STATUS_LABEL[req.status] ?? req.status}
                       </p>
@@ -560,11 +565,20 @@ function MyRequests({
                       </Button>
                     )}
                     <Link
-                      href="/messages"
+                      href={`/messages?to=${req.otherUserId}`}
                       className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
                     >
-                      <MessageCircle className="h-3.5 w-3.5" /> Messages
+                      <MessageCircle className="h-3.5 w-3.5" /> Message{" "}
+                      {req.otherName.split(" ")[0]}
                     </Link>
+                    {req.otherSlug && (
+                      <Link
+                        href={`/profile/${req.otherSlug}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        View profile
+                      </Link>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -588,11 +602,29 @@ function MyRequests({
             outgoing.map((req) => (
               <Card key={req._id}>
                 <CardContent className="space-y-1 p-5">
-                  <p className="font-medium">{req.topic}</p>
+                  <p className="font-medium">{req.otherName}</p>
+                  <p className="text-xs text-muted-foreground">{req.topic}</p>
                   <p className="text-xs text-muted-foreground">
                     Status: {STATUS_LABEL[req.status] ?? req.status}
                     {req.scheduledFor && ` · ${new Date(req.scheduledFor).toLocaleString()}`}
                   </p>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    <Link
+                      href={`/messages?to=${req.otherUserId}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" /> Message{" "}
+                      {req.otherName.split(" ")[0]}
+                    </Link>
+                    {req.otherSlug && (
+                      <Link
+                        href={`/profile/${req.otherSlug}`}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        View profile
+                      </Link>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))
