@@ -287,6 +287,8 @@ function EventRowCard({
           <span className="inline-flex items-center gap-1">
             <Users className="h-3.5 w-3.5" />
             {event.goingCount} going
+            {event.maybeCount > 0 && ` · ${event.maybeCount} maybe`}
+            {event.waitlistCount > 0 && ` · ${event.waitlistCount} waitlisted`}
           </span>
         </div>
         {!isPast && event.audienceMatch && (
@@ -302,6 +304,24 @@ function EventRowCard({
                 >
                   {statusLabel}
                 </span>
+                {/* Let people change their mind without cancelling first. */}
+                {event.myRsvpStatus === "maybe" ? (
+                  <button
+                    type="button"
+                    className="auf-btn auf-btn-primary auf-btn-sm"
+                    onClick={() => onRsvp(event._id, "yes")}
+                  >
+                    Switch to Yes
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="auf-btn auf-btn-outline auf-btn-sm"
+                    onClick={() => onRsvp(event._id, "maybe")}
+                  >
+                    Switch to Maybe
+                  </button>
+                )}
                 <button
                   type="button"
                   className="auf-btn auf-btn-outline auf-btn-sm"
