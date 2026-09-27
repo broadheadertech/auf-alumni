@@ -114,7 +114,12 @@ export function NotificationDropdown() {
       >
         <Bell size={18} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--gold)]" />
+          <span
+            className="absolute -top-1 -right-1 min-w-[16px] rounded-full bg-[var(--gold)] px-1 text-[10px] font-semibold leading-4 text-black"
+            aria-label={`${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`}
+          >
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
         )}
       </button>
 

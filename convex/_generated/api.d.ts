@@ -36,6 +36,7 @@ import type * as digest from "../digest.js";
 import type * as digestModel from "../digestModel.js";
 import type * as directory from "../directory.js";
 import type * as employerOrgs from "../employerOrgs.js";
+import type * as enquiries from "../enquiries.js";
 import type * as events from "../events.js";
 import type * as feed from "../feed.js";
 import type * as helpers_audit from "../helpers/audit.js";
@@ -99,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   digestModel: typeof digestModel;
   directory: typeof directory;
   employerOrgs: typeof employerOrgs;
+  enquiries: typeof enquiries;
   events: typeof events;
   feed: typeof feed;
   "helpers/audit": typeof helpers_audit;

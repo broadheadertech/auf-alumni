@@ -26,6 +26,7 @@ export const DEFAULT_PREFS: Record<string, boolean> = {
   dmInApp: true,
   eventReminderEmail: true,
   eventReminderInApp: true,
+  enquiryInApp: true,
   digestEmail: true,
   milestonesAuto: true,
 };

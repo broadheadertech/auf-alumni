@@ -171,6 +171,29 @@ export default defineSchema({
     updatedBy: v.optional(v.id("users")),
   }).index("by_key", ["key"]),
 
+  // ---------- contact enquiries (public forms) ----------
+  // Every "contact us" path writes here so nothing depends on the visitor
+  // having a mail client and the Office of Alumni Relations can triage from
+  // the admin console. See convex/enquiries.ts.
+  enquiries: defineTable({
+    topic: v.string(), // "employer" | "support" | "general" | "privacy" | "security"
+    name: v.string(),
+    email: v.string(),
+    organisation: v.optional(v.string()),
+    message: v.string(),
+    sourcePath: v.optional(v.string()),
+    // Set when the sender was signed in.
+    submittedBy: v.optional(v.id("users")),
+    status: v.string(), // "new" | "in-progress" | "closed"
+    adminNotes: v.optional(v.string()),
+    handledBy: v.optional(v.id("users")),
+    handledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status_time", ["status", "createdAt"])
+    .index("by_email_time", ["email", "createdAt"]),
+
   // ---------- CMS: articles (newsroom) ----------
   articles: defineTable({
     title: v.string(),

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { EnquiryForm } from "@/components/auf/EnquiryForm";
 
 export const metadata: Metadata = {
   title: "Contact — AUF Alumni Network",
@@ -44,13 +45,16 @@ export default function ContactPage() {
       <p className="text-[16px] ink-2 mt-4 leading-[1.6] max-w-[60ch]">
         The AUF Alumni Network is operated by the Office of Alumni Relations
         at Angeles University Foundation. Pick the channel that matches your
-        question and we will get back to you within one business day.
+        question and we will get back to you within one business day. Use the
+        form below and it reaches the right desk — no mail app needed.
       </p>
+
+      <EnquiryForm className="mt-10" />
 
       <section className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-10">
         <div>
           <h2 className="font-serif text-[20px] font-semibold mb-4">
-            Email channels
+            Prefer email?
           </h2>
           <ul className="space-y-4">
             {CHANNELS.map((c) => (

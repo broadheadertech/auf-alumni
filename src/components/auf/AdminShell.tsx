@@ -22,6 +22,7 @@ import {
   Contact,
   FileText,
   Gavel,
+  Inbox,
   LayoutDashboard,
   LayoutTemplate,
   LogOut,
@@ -82,6 +83,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "Trust & operations",
     items: [
+      { href: "/admin/enquiries", label: "Enquiries", Icon: Inbox },
       { href: "/admin/audit", label: "Audit log", Icon: ScrollText },
       { href: "/admin/compliance", label: "Compliance", Icon: Scale },
       { href: "/admin/reports", label: "Reports", Icon: FileText },

@@ -129,12 +129,9 @@ export default function ForEmployersPage() {
         <Link href="/signup" className="auf-btn auf-btn-primary">
           Apply for Verified access
         </Link>
-        <a
-          href="mailto:careers@auf.edu.ph"
-          className="auf-btn auf-btn-outline"
-        >
+        <Link href="/contact?topic=employer" className="auf-btn auf-btn-outline">
           Talk to AUF Career Services
-        </a>
+        </Link>
       </section>
     </div>
   );
