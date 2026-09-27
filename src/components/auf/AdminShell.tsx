@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -157,7 +158,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
               {title}
             </h1>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
               <NotificationDropdown />
             </div>
@@ -179,6 +180,7 @@ function Sidebar({
   drawerOpen: boolean;
   onClose: () => void;
 }) {
+  const refreshHome = useSameRouteRefresh("/admin/dashboard");
   return (
     <aside
       className={cn(
@@ -191,7 +193,11 @@ function Sidebar({
       aria-label="Admin"
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <Link href="/admin/dashboard" className="flex items-center gap-2">
+        <Link
+          href="/admin/dashboard"
+          onClick={refreshHome}
+          className="flex items-center gap-2"
+        >
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
             AUF
           </span>

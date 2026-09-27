@@ -52,7 +52,18 @@ function Inner({ className }: { className?: string }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [organisation, setOrganisation] = useState("");
-  const [message, setMessage] = useState("");
+  // `?plan=` comes from the employer pricing cards on /for-employers, so the
+  // enquiry that lands in the admin inbox says which plan they were looking at.
+  const planParam = sp.get("plan");
+  const [message, setMessage] = useState(() =>
+    planParam && /^[a-z]{3,20}$/.test(planParam)
+      ? `I'd like to know more about the ${
+          planParam.charAt(0).toUpperCase() + planParam.slice(1)
+        } plan for hiring AUF alumni.
+
+`
+      : "",
+  );
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
 

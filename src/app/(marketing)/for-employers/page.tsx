@@ -1,11 +1,66 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowRight, Check } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "For employers — AUF Alumni Network",
   description:
     "Reach 38,000+ verified AUF alumni without the noise. Apply for a Verified or Partner employer account and post jobs reviewed by AUF Career Services.",
 };
+
+/**
+ * Mirrors PLAN_TIERS in convex/billing.ts (starter / growth / scale) so the
+ * pitch page and the employer billing screen can't quote different numbers.
+ * The cards used to be inert and described the plans as per-post, which is not
+ * how billing actually works — they are monthly with a post allowance.
+ */
+const PLANS = [
+  {
+    id: "starter",
+    name: "Starter",
+    price: "₱2,000",
+    period: "/ month",
+    quota: "1 job post a month",
+    blurb: "For a one-off hire or a first look at the network.",
+    features: [
+      "Reviewed and published by AUF",
+      "Applications in one pipeline",
+      "Company profile page",
+    ],
+    cta: "Get started",
+    featured: false,
+  },
+  {
+    id: "growth",
+    name: "Growth",
+    price: "₱5,000",
+    period: "/ month",
+    quota: "5 job posts a month",
+    blurb: "For teams hiring across several roles at once.",
+    features: [
+      "Everything in Starter",
+      "Featured placement on the board",
+      "Alumni-match emails to fitting graduates",
+    ],
+    cta: "Choose Growth",
+    featured: true,
+  },
+  {
+    id: "scale",
+    name: "Scale",
+    price: "Custom",
+    period: "",
+    quota: "Unlimited posts",
+    blurb: "Annual partnership for Partner-tier organisations.",
+    features: [
+      "Everything in Growth",
+      "Named AUF Career Services contact",
+      "Campus and career-fair invitations",
+    ],
+    cta: "Talk to AUF",
+    featured: false,
+  },
+];
 
 export default function ForEmployersPage() {
   return (
@@ -88,40 +143,72 @@ export default function ForEmployersPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="font-serif text-[24px] mt-14 mb-5">Pricing</h2>
+      <section id="pricing">
+        <h2 className="font-serif text-[24px] mt-14 mb-2">Pricing</h2>
+        <p className="text-[14px] ink-2 mb-5 max-w-[62ch]">
+          Employers pay; alumni never do. A plan covers a monthly allowance of
+          posts — every one is reviewed by AUF Career Services before it reaches
+          alumni, and unused posts don&apos;t roll over.
+        </p>
         <div className="grid gap-4 sm:grid-cols-3">
-          <div className="auf-card p-5">
-            <div className="font-serif text-[20px] font-semibold">Starter</div>
-            <div className="text-[22px] font-semibold mt-1">
-              &#8369;2,000
-              <span className="text-[13px] ink-3 font-normal"> /post</span>
+          {PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className={
+                "auf-card flex flex-col p-5" +
+                (plan.featured ? " ring-1 ring-[var(--brand)]" : "")
+              }
+            >
+              <div className="flex items-center gap-2">
+                <div className="font-serif text-[20px] font-semibold">
+                  {plan.name}
+                </div>
+                {plan.featured && (
+                  <span className="auf-chip auf-chip-brand text-[10px]">
+                    Most chosen
+                  </span>
+                )}
+              </div>
+              <div className="text-[22px] font-semibold mt-1">
+                {plan.price}
+                {plan.period && (
+                  <span className="text-[13px] ink-3 font-normal">
+                    {" "}
+                    {plan.period}
+                  </span>
+                )}
+              </div>
+              <div className="text-[13px] brand-fg font-medium mt-0.5">
+                {plan.quota}
+              </div>
+              <p className="text-[13px] ink-2 mt-2">{plan.blurb}</p>
+              <ul className="mt-3 space-y-1 text-[12.5px] ink-2">
+                {plan.features.map((f) => (
+                  <li key={f} className="flex gap-1.5">
+                    <Check size={13} className="mt-[3px] shrink-0 brand-fg" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href={`/contact?topic=employer&plan=${plan.id}`}
+                className={
+                  "mt-4 w-full justify-center auf-btn auf-btn-sm " +
+                  (plan.featured ? "auf-btn-primary" : "auf-btn-outline")
+                }
+              >
+                {plan.cta} <ArrowRight size={13} />
+              </Link>
             </div>
-            <p className="text-[13px] ink-2 mt-2">
-              Pay-as-you-go for one-off hires.
-            </p>
-          </div>
-          <div className="auf-card p-5">
-            <div className="font-serif text-[20px] font-semibold">Growth</div>
-            <div className="text-[22px] font-semibold mt-1">
-              &#8369;5,000
-              <span className="text-[13px] ink-3 font-normal"> /post</span>
-            </div>
-            <p className="text-[13px] ink-2 mt-2">
-              Featured placement plus alumni-match emails.
-            </p>
-          </div>
-          <div className="auf-card p-5">
-            <div className="font-serif text-[20px] font-semibold">Scale</div>
-            <div className="text-[22px] font-semibold mt-1">Custom</div>
-            <p className="text-[13px] ink-2 mt-2">
-              Annual contract for Partner-tier accounts.
-            </p>
-          </div>
+          ))}
         </div>
         <p className="text-[12px] ink-3 mt-4">
-          Pricing shown is illustrative for the v1 launch and is subject to
-          finalization with AUF Career Services.
+          Prices are illustrative for the v1 launch and are finalised with AUF
+          Career Services. Already have an employer account?{" "}
+          <Link href="/employer/billing" className="brand-fg hover:underline">
+            Manage your plan in billing
+          </Link>
+          .
         </p>
       </section>
 

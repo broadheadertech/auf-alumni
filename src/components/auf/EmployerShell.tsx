@@ -28,6 +28,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/lib/convex-api";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -125,7 +126,7 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
             <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
               {title}
             </h1>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
               <NotificationDropdown />
             </div>
@@ -149,6 +150,7 @@ function Sidebar({
   onClose: () => void;
   unreadMessages: number;
 }) {
+  const refreshHome = useSameRouteRefresh("/employer/dashboard");
   return (
     <aside
       className={cn(
@@ -161,7 +163,11 @@ function Sidebar({
       aria-label="Employer"
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <Link href="/employer/dashboard" className="flex items-center gap-2">
+        <Link
+          href="/employer/dashboard"
+          onClick={refreshHome}
+          className="flex items-center gap-2"
+        >
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
             AUF
           </span>

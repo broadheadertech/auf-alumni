@@ -362,12 +362,13 @@ export const browse = query({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .unique();
 
-    const jobs = await ctx.db
+    // Filter by status IN the index, not after a capped take — otherwise
+    // drafts and closed posts eat the window and published roles disappear.
+    const published = await ctx.db
       .query("jobs")
-      .withIndex("by_published")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
       .order("desc")
-      .take(100);
-    const published = jobs.filter((j) => j.status === "published");
+      .collect();
 
     // Which of these the viewer has already applied to — the board marks them
     // and the nav badge counts only the rest.
@@ -420,9 +421,9 @@ export const myAvailableCount = query({
       .unique();
     const jobs = await ctx.db
       .query("jobs")
-      .withIndex("by_published")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
       .order("desc")
-      .take(100);
+      .collect();
     // Same set the Jobs page lists by default, minus the ones already applied
     // to — the badge means "roles still open to you".
     const myApps = await ctx.db
@@ -890,13 +891,13 @@ export const setReviewed = mutation({
 export const publicFeatured = query({
   args: {},
   handler: async (ctx) => {
-    const recent = await ctx.db
+    const live = await ctx.db
       .query("jobs")
-      .withIndex("by_published")
-      .order("desc")
-      .take(50);
-    const published = recent
-      .filter((j) => j.status === "published")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
+      .collect();
+    // by_status_time orders by createdAt; the teaser wants newest *published*.
+    const published = live
+      .sort((a, b) => (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt))
       .slice(0, 3);
     const out: Array<{
       _id: Id<"jobs">;
@@ -928,3 +929,58 @@ export const publicFeatured = query({
 // helpers consumed by privacy lint — declare empty usages
 void (null as unknown as Id<"jobs">);
 void (null as unknown as QueryCtx);
+
+/**
+ * Public, unauthenticated list of every open role — powers /careers, the page
+ * the landing CTA links to.
+ *
+ * "Browse all openings" used to point at /jobs, which is inside the alumni
+ * shell and calls `browse` (auth-only, returns [] with no session). A signed-out
+ * visitor therefore landed on a board reading "0 jobs — No jobs published yet"
+ * while 14 roles were live. Browsing is public; applying still needs a verified
+ * account, which is the conversion the pitch page is aiming for.
+ *
+ * Deliberately excludes match data (there is no viewer to score against) and
+ * postings from suspended employers.
+ */
+export const publicOpenings = query({
+  args: {},
+  handler: async (ctx) => {
+    const published = await ctx.db
+      .query("jobs")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
+      .collect();
+    published.sort(
+      (a, b) => (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt),
+    );
+
+    const orgs = new Map<string, Doc<"employerOrgs">>();
+    const out = [];
+    for (const j of published) {
+      const key = j.employerOrgId as string;
+      if (!orgs.has(key)) {
+        const org = await ctx.db.get(j.employerOrgId);
+        if (org) orgs.set(key, org);
+      }
+      const org = orgs.get(key);
+      if (!org || org.suspendedAt) continue;
+      out.push({
+        _id: j._id as string,
+        title: j.title,
+        employerName: org.name,
+        employerSlug: org.slug,
+        employerTier: org.tier,
+        location: j.location,
+        workMode: j.workMode ?? null,
+        employmentType: j.employmentType,
+        experienceLevel: j.experienceLevel ?? null,
+        salaryMin: j.salaryMin ?? null,
+        salaryMax: j.salaryMax ?? null,
+        salaryCurrency: j.salaryCurrency ?? null,
+        skills: j.skills ?? [],
+        publishedAt: j.publishedAt ?? j.createdAt,
+      });
+    }
+    return out;
+  },
+});

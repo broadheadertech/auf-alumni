@@ -465,3 +465,99 @@ export const run = internalMutation({
     };
   },
 });
+
+/**
+ * Backfills the structured posting sections on jobs that only have a prose
+ * description.
+ *
+ * Every seeded job carried a `description` blob and nothing else, so alumni
+ * reading a posting saw no requirements and no benefits — "the job description
+ * doesn't show what's needed for the job". The employer form has always
+ * captured these fields; only the demo rows were thin. Safe to re-run: it
+ * touches a job only where the field is still empty, and never invents
+ * requirements for a posting an employer actually wrote.
+ *
+ *   npx convex run seedActivity:backfillJobDetails
+ */
+export const backfillJobDetails = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const EXPERIENCE_BY_HINT: Array<[RegExp, string]> = [
+      [/\b(head|director|lead|manager|principal)\b/i, "lead"],
+      [/\b(senior|sr\.?)\b/i, "senior"],
+      [/\b(intern|trainee|graduate|entry|junior|jr\.?|assistant)\b/i, "entry"],
+    ];
+
+    const BENEFITS = [
+      "HMO from day one, plus one dependent after regularisation",
+      "13th month pay and performance bonus",
+      "Paid leave that carries over",
+      "Learning budget and AUF Academy access",
+    ];
+
+    let updated = 0;
+    for (const job of await ctx.db.query("jobs").collect()) {
+      const patch: Record<string, unknown> = {};
+
+      // Work mode — inferrable from the location text employers already write.
+      if (!job.workMode) {
+        const l = job.location.toLowerCase();
+        patch.workMode = l.includes("remote")
+          ? "remote"
+          : l.includes("hybrid")
+            ? "hybrid"
+            : "onsite";
+      }
+
+      if (!job.experienceLevel) {
+        const hit = EXPERIENCE_BY_HINT.find(([re]) => re.test(job.title));
+        patch.experienceLevel = hit ? hit[1] : "mid";
+      }
+
+      const level = (patch.experienceLevel ?? job.experienceLevel) as string;
+      const skills = job.skills ?? [];
+      const programs = job.targetingPrograms ?? [];
+
+      if (!job.requirements?.length) {
+        const years =
+          level === "entry"
+            ? "Open to fresh graduates"
+            : level === "senior"
+              ? "At least 5 years in a comparable role"
+              : level === "lead"
+                ? "At least 7 years, including team leadership"
+                : "At least 2 years in a comparable role";
+        patch.requirements = [
+          programs.length
+            ? `Bachelor's degree — ${programs.slice(0, 2).join(" or ")} preferred`
+            : "Bachelor's degree in a related field",
+          years,
+          skills.length
+            ? `Working knowledge of ${skills.slice(0, 3).join(", ")}`
+            : "Strong written and spoken English",
+          "Able to work onsite in the posted location",
+        ];
+      }
+
+      if (!job.responsibilities?.length) {
+        patch.responsibilities = [
+          `Own the day-to-day work of the ${job.title} role`,
+          "Coordinate with the wider team and report on progress",
+          skills.length
+            ? `Apply ${skills[0]} to deliver work the team can rely on`
+            : "Deliver work to agreed quality and deadlines",
+        ];
+      }
+
+      if (!job.benefits?.length) {
+        patch.benefits = BENEFITS.slice(0, level === "entry" ? 3 : 4);
+      }
+
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(job._id, patch);
+        updated += 1;
+      }
+    }
+    return { jobsUpdated: updated };
+  },
+});

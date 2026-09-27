@@ -22,13 +22,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { jobPostingSections } from "@/lib/job-posting";
 
 type Job = {
   _id: string;
   title: string;
   description: string;
+  responsibilities?: string[];
+  requirements?: string[];
+  benefits?: string[];
   location: string;
+  workMode?: string;
   employmentType: string;
+  experienceLevel?: string;
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
@@ -743,6 +749,25 @@ function FilterChip({
   );
 }
 
+function BulletBlock({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-medium">{title}</h3>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((item) => (
+          <li
+            key={item}
+            className="flex gap-2 text-sm leading-relaxed text-foreground/90"
+          >
+            <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-foreground/40" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function JobDetail({
   job,
   busy,
@@ -753,6 +778,9 @@ function JobDetail({
   onApply: () => void;
 }) {
   const salary = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency);
+  // Responsibilities / requirements / benefits used to be dropped here even
+  // though employers fill them in — see src/lib/job-posting.ts.
+  const posting = jobPostingSections(job);
   const tags = [
     ...(job.targetingSkills ?? []),
     ...(job.targetingPrograms ?? []),
@@ -807,17 +835,27 @@ function JobDetail({
         </div>
 
         <div className="mt-5 border-t border-border pt-4">
-          <h3 className="text-sm font-medium">About the role</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-medium">About the role</h3>
+            {posting.roleMeta.map((m) => (
+              <span
+                key={m}
+                className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
+                {m}
+              </span>
+            ))}
+          </div>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-            {job.description}
+            {posting.overview}
           </p>
         </div>
 
-        {job.skills && job.skills.length > 0 && (
+        {posting.skills.length > 0 && (
           <div className="mt-4">
             <h3 className="text-sm font-medium">Required skills</h3>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {job.skills.map((s) => (
+              {posting.skills.map((s) => (
                 <span
                   key={s}
                   className="rounded-full border border-border px-2 py-0.5 text-xs"
@@ -827,6 +865,16 @@ function JobDetail({
               ))}
             </div>
           </div>
+        )}
+
+        {posting.responsibilities.length > 0 && (
+          <BulletBlock title="Key responsibilities" items={posting.responsibilities} />
+        )}
+        {posting.requirements.length > 0 && (
+          <BulletBlock title="Requirements" items={posting.requirements} />
+        )}
+        {posting.benefits.length > 0 && (
+          <BulletBlock title="Benefits & perks" items={posting.benefits} />
         )}
 
         {tags.length > 0 && (

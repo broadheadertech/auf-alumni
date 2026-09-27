@@ -25,6 +25,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
 import { ConnectButton } from "@/components/auf/ConnectButton";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { jobPostingSections } from "@/lib/job-posting";
 
 type GradKey = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -95,15 +96,6 @@ function gradFor(seed: string): GradKey {
   let h = 0;
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
   return (((Math.abs(h) % 6) + 1) as GradKey);
-}
-
-function parseBullets(description: string): string[] {
-  // Pulls lines that look like bullets (-, *, •, numbered).
-  return description
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => /^([-*•]|\d+[.)])\s+/.test(l))
-    .map((l) => l.replace(/^([-*•]|\d+[.)])\s+/, ""));
 }
 
 function cohortBucket(program?: string): "it" | "business" | "engineering" {
@@ -206,36 +198,14 @@ export default function JobDetailPage() {
     }
   };
 
-  // Use the real posted sections; fall back to parsing the description only
-  // for legacy jobs that predate structured fields.
-  const parsedFromDesc = parseBullets(job.description).slice(0, 8);
-  const respList = job.responsibilities?.length
-    ? job.responsibilities
-    : parsedFromDesc;
-  const reqList = job.requirements ?? [];
-  const benefitList = job.benefits ?? [];
-  const WORK_MODE_LABEL: Record<string, string> = {
-    remote: "Remote",
-    hybrid: "Hybrid",
-    onsite: "Onsite",
-  };
-  const EXP_LABEL: Record<string, string> = {
-    entry: "Entry level",
-    mid: "Mid-level",
-    senior: "Senior",
-    lead: "Lead / manager",
-  };
-  const roleMeta = [
-    job.workMode ? WORK_MODE_LABEL[job.workMode] ?? job.workMode : null,
-    job.experienceLevel ? EXP_LABEL[job.experienceLevel] ?? job.experienceLevel : null,
-    job.closingAt
-      ? `Closes ${new Date(job.closingAt).toLocaleDateString(undefined, {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })}`
-      : null,
-  ].filter(Boolean) as string[];
+  // Shared with the board's detail pane so the two can't drift again.
+  const posting = jobPostingSections(job);
+  const {
+    roleMeta,
+    responsibilities: respList,
+    requirements: reqList,
+    benefits: benefitList,
+  } = posting;
 
   return (
     <div className="mx-auto max-w-[1180px] px-4 sm:px-7 py-6">
@@ -372,15 +342,15 @@ export default function JobDetailPage() {
               )}
             </div>
             <p className="mb-4 whitespace-pre-line text-[14px] leading-[1.6] ink-2">
-              {job.description}
+              {posting.overview}
             </p>
-            {job.skills && job.skills.length > 0 && (
+            {posting.skills.length > 0 && (
               <div className="mt-5">
                 <h4 className="mb-2 text-[13px] font-semibold uppercase tracking-wider ink">
                   Required skills
                 </h4>
                 <div className="flex flex-wrap gap-1.5">
-                  {job.skills.map((s) => (
+                  {posting.skills.map((s) => (
                     <span key={s} className="auf-chip">
                       {s}
                     </span>

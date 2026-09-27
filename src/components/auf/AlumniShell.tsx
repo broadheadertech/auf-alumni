@@ -34,6 +34,7 @@ import { AUFWordmark } from "./AUFMark";
 import { AUFAvatar } from "./AUFAvatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -114,6 +115,7 @@ function Sidebar({
   drawerOpen: boolean;
   onClose: () => void;
 }) {
+  const refreshHome = useSameRouteRefresh("/feed");
   const me = useQuery(api.users.getMe);
   const myProfile = useQuery(api.profiles.getMyProfile);
 
@@ -165,6 +167,7 @@ function Sidebar({
         <Link
           href="/feed"
           aria-label="Home"
+          onClick={refreshHome}
           className="min-w-0 flex-1 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <AUFWordmark />

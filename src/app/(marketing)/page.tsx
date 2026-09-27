@@ -386,7 +386,7 @@ function FeaturedJobs({ jobs, copy }: { jobs: PublicJob[]; copy: Copy }) {
               <Lines text={copy.jobsTitle} />
             </h2>
           </div>
-          <Link href="/jobs" className="auf-btn auf-btn-outline">
+          <Link href="/careers" className="auf-btn auf-btn-outline">
             Browse all openings <ArrowRight size={14} />
           </Link>
         </div>

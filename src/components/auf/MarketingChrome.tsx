@@ -8,20 +8,43 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowRight, Menu, X } from "lucide-react";
+import { useQuery } from "convex/react";
+import { ArrowRight, LayoutDashboard, Menu, X } from "lucide-react";
+import { api } from "@/lib/convex-api";
 import { AUFInlineLockup, AUFLockup } from "./AUFMark";
 import { cn } from "@/lib/utils";
 
 const LINKS: Array<[string, string]> = [
   ["/", "Home"],
-  ["/jobs", "Jobs"],
+  // The public openings board, not the auth-walled alumni one — signed-out
+  // visitors used to land on a board that reported "0 jobs".
+  ["/careers", "Jobs"],
   ["/for-employers", "For employers"],
   ["/about", "About"],
 ];
 
+type Me = { roles?: string[] } | null;
+
+/** Where a signed-in visitor's own app lives. */
+function appHomeFor(me: Me): string {
+  const roles = me?.roles ?? [];
+  if (roles.includes("super-admin") || roles.includes("moderator") || roles.includes("verifier")) {
+    return "/admin/dashboard";
+  }
+  if (roles.some((r) => r.includes("employer"))) return "/employer/dashboard";
+  return "/feed";
+}
+
 export function MarketingNav() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Legal, help and news pages are public routes that signed-in members reach
+  // from inside the app (the feed footer links to /legal/terms). Offering them
+  // "Sign in" and "Get started" with no route back was the reported display
+  // error, so the nav adapts to whoever is actually reading it.
+  const me = useQuery(api.users.getMe) as Me | undefined;
+  const signedIn = me != null;
+  const appHome = appHomeFor(me ?? null);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -59,15 +82,23 @@ export function MarketingNav() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
-          <Link
-            href="/login"
-            className="auf-btn auf-btn-ghost auf-btn-sm hidden sm:inline-flex"
-          >
-            Sign in
-          </Link>
-          <Link href="/signup" className="auf-btn auf-btn-primary auf-btn-sm">
-            Get started <ArrowRight size={13} />
-          </Link>
+          {signedIn ? (
+            <Link href={appHome} className="auf-btn auf-btn-primary auf-btn-sm">
+              <LayoutDashboard size={13} /> Back to the app
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="auf-btn auf-btn-ghost auf-btn-sm hidden sm:inline-flex"
+              >
+                Sign in
+              </Link>
+              <Link href="/signup" className="auf-btn auf-btn-primary auf-btn-sm">
+                Get started <ArrowRight size={13} />
+              </Link>
+            </>
+          )}
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
@@ -105,10 +136,10 @@ export function MarketingNav() {
               );
             })}
             <Link
-              href="/login"
+              href={signedIn ? appHome : "/login"}
               className="sm:hidden py-3 px-2 rounded-md text-[14px] font-medium ink-2 hover:ink hover:bg-[var(--surface-2)]"
             >
-              Sign in
+              {signedIn ? "Back to the app" : "Sign in"}
             </Link>
           </div>
         </nav>
@@ -143,7 +174,7 @@ export function MarketingFooter() {
             { label: "For alumni", href: "/for-alumni" },
             { label: "For employers", href: "/for-employers" },
             { label: "Hiring partners", href: "/companies" },
-            { label: "Jobs board", href: "/jobs" },
+            { label: "Jobs board", href: "/careers" },
             { label: "Mentorship", href: "/mentorship" },
             { label: "Events", href: "/events" },
           ]}
