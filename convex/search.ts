@@ -124,6 +124,12 @@ type Destination = {
 };
 
 const DESTINATIONS: Destination[] = [
+  // Help — searchable from every surface, because "how do I post a job" should
+  // find the walkthrough, not just the page.
+  { label: "Guide: how to use this", href: "/guide", where: "Help", keywords: "help tutorial how to guide walkthrough manual steps instructions getting started training refresher", surfaces: ["alumni"] },
+  { label: "Guide: how to use this", href: "/employer/guide", where: "Help", keywords: "help tutorial how to guide walkthrough manual steps instructions getting started training refresher", surfaces: ["employer"] },
+  { label: "Guide: how to use this", href: "/admin/guide", where: "Help", keywords: "help tutorial how to guide walkthrough manual steps instructions getting started training refresher onboarding staff", surfaces: ["admin"] },
+
   // Alumni
   { label: "My feed", href: "/feed", where: "Alumni", keywords: "home timeline posts", surfaces: ["alumni", "admin"] },
   { label: "Jobs", href: "/jobs", where: "Alumni", keywords: "openings roles vacancies hiring board", surfaces: ["alumni", "admin"] },

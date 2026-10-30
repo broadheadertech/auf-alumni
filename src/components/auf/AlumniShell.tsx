@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Home,
   IdCard,
+  LifeBuoy,
   LogOut,
   Menu,
   MessageCircle,
@@ -34,6 +35,7 @@ import { AUFWordmark } from "./AUFMark";
 import { AUFAvatar } from "./AUFAvatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { PageHelpLink } from "./PageHelpLink";
 import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +54,7 @@ const NAV: NavItem[] = [
   { href: "/events", label: "Events", Icon: Calendar },
   { href: "/messages", label: "Messages", Icon: MessageCircle },
   { href: "/id", label: "Alumni ID", Icon: IdCard },
+  { href: "/guide", label: "Guide", Icon: LifeBuoy },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -312,6 +315,7 @@ function TopBar({
 
         <div className="flex-1 md:hidden" />
 
+        <PageHelpLink surface="alumni" />
         <NotificationDropdown />
         <Link
           href="/messages"

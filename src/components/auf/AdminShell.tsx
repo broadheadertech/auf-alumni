@@ -25,6 +25,7 @@ import {
   Inbox,
   LayoutDashboard,
   LayoutTemplate,
+  LifeBuoy,
   LogOut,
   MapPin,
   Menu,
@@ -41,6 +42,7 @@ import {
 } from "lucide-react";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { PageHelpLink } from "./PageHelpLink";
 import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +92,10 @@ const GROUPS: NavGroup[] = [
       { href: "/admin/reports", label: "Reports", Icon: FileText },
       { href: "/admin/users", label: "Users", Icon: UserCog },
     ],
+  },
+  {
+    label: "Help",
+    items: [{ href: "/admin/guide", label: "How to use this", Icon: LifeBuoy }],
   },
   {
     label: "Content management",
@@ -160,6 +166,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </h1>
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
+              <PageHelpLink surface="admin" />
               <NotificationDropdown />
             </div>
           </div>
