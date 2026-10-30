@@ -109,6 +109,26 @@ const ALUMNI: GuideTopic[] = [
     seeAlso: ["start-alumni", "profile", "alumni-id"],
   },
   {
+    slug: "signing-in",
+    tab: "Signing in and password help",
+    href: "/login",
+    alsoCovers: ["/forgot-password", "/reset-password"],
+    surface: "alumni",
+    group: "First steps",
+    purpose:
+      "Getting back into your account, and what to do when you can't.",
+    steps: [
+      "Sign in with the email address you registered with and your password.",
+      "Forgotten it? Press Forgot password on the sign-in screen and enter your email.",
+      "Open the reset link in the email you receive and choose a new password. The link is single-use and expires, so request a fresh one if it has been sitting a while.",
+      "Still stuck — for example the email never arrives, or you no longer have access to that address — contact the Alumni Relations office through the Contact page rather than making a second account.",
+    ],
+    tips: [
+      "One account per person. A duplicate registration goes back into the verification queue and slows you down rather than speeding you up.",
+    ],
+    seeAlso: ["getting-verified", "settings"],
+  },
+  {
     slug: "viewing-profiles",
     tab: "Someone else's profile",
     href: "/profile/[slug]",
@@ -248,6 +268,7 @@ const ALUMNI: GuideTopic[] = [
     slug: "events",
     tab: "Events",
     href: "/events",
+    alsoCovers: ["/rsvp"],
     surface: "alumni",
     group: "Everyday",
     purpose: "Reunions, webinars and meetups, and your RSVP to each.",
@@ -284,6 +305,7 @@ const ALUMNI: GuideTopic[] = [
     slug: "alumni-id",
     tab: "Alumni ID",
     href: "/id",
+    alsoCovers: ["/how-to-set-up-alumni-id", "/i", "/verify"],
     surface: "alumni",
     group: "Everyday",
     purpose:
@@ -883,6 +905,29 @@ const ADMIN: GuideTopic[] = [
     ],
     tips: ["Nothing is live until you press Save changes."],
     seeAlso: ["admin-articles"],
+  },
+  {
+    slug: "admin-public-site",
+    tab: "The public website",
+    href: "/",
+    alsoCovers: ["/about", "/for-alumni", "/for-employers", "/colleges", "/admissions", "/trust", "/guidelines", "/help", "/legal", "/careers", "/companies", "/news", "/contact", "/report", "/verification"],
+    surface: "admin",
+    group: "Content management",
+    purpose:
+      "What the public site contains, and which parts you can change yourself versus which need a developer.",
+    steps: [
+      "Homepage copy — edit it yourself under Main page. Headline, how-it-works steps, featured-jobs heading and the rest. Save, and the public homepage picks it up on its next load.",
+      "News and announcements — write them yourself under Articles. Published ones appear at /news.",
+      "College and program lists — maintained under Colleges & programs. These feed the public pages as well as profiles and filters.",
+      "Open roles at /careers and hiring partners at /companies are generated from real data. You change what appears there by approving postings and onboarding employers, not by editing the page.",
+      "Pricing on the employer page mirrors the plan tiers in billing. If the plans change, that page changes with them.",
+      "Everything else — About, For alumni, For employers, Trust & safety, Guidelines, Help centre, and the legal pages — is fixed text that needs a developer to change. Raise it with whoever maintains the site.",
+    ],
+    tips: [
+      "Enquiries sent from the public Contact page land in your Enquiries tab, not in someone's personal inbox.",
+      "Before asking for a wording change, check whether the text is on the homepage — if it is, you can edit it yourself in seconds.",
+    ],
+    seeAlso: ["admin-content", "admin-articles", "admin-enquiries"],
   },
   {
     slug: "admin-articles",
