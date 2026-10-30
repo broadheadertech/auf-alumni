@@ -29,6 +29,7 @@ import {
   SURFACE_INTRO,
   SURFACE_LABEL,
   groupsFor,
+  isOpenable,
   topicsFor,
   type GuideTopic,
   type Surface,
@@ -260,9 +261,11 @@ function TopicCard({
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Link href={topic.href} className="auf-btn auf-btn-primary auf-btn-sm">
-              Open {topic.tab} <ArrowRight size={12} />
-            </Link>
+            {isOpenable(topic) && (
+              <Link href={topic.href} className="auf-btn auf-btn-primary auf-btn-sm">
+                Open {topic.tab} <ArrowRight size={12} />
+              </Link>
+            )}
             <button
               type="button"
               onClick={onDone}

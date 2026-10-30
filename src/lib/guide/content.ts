@@ -21,8 +21,18 @@ export type GuideTopic = {
   slug: string;
   /** The tab's label, exactly as it reads in the sidebar. */
   tab: string;
-  /** Where the tab lives, so the guide can link straight to it. */
+  /**
+   * Where the tab lives, so the guide can link straight to it. A dynamic
+   * segment (e.g. /profile/[slug]) marks a screen you reach from elsewhere
+   * rather than open directly — the guide then omits its "Open" button.
+   */
   href: string;
+  /**
+   * Extra path prefixes this walkthrough also answers for, where the tab spans
+   * routes its href doesn't cover — /admin/lists/statuses isn't under
+   * /admin/lists/areas, but it's the same screen.
+   */
+  alsoCovers?: string[];
   surface: Surface;
   /** Which sidebar group this tab sits under. */
   group: string;
@@ -74,6 +84,51 @@ const ALUMNI: GuideTopic[] = [
       "You can reopen this guide at any time from the Guide link in the sidebar.",
     ],
     seeAlso: ["profile", "alumni-id", "jobs"],
+  },
+  {
+    slug: "getting-verified",
+    tab: "Signing up and getting verified",
+    href: "/verification",
+    alsoCovers: ["/verify", "/welcome", "/signup", "/activate-id"],
+    surface: "alumni",
+    group: "First steps",
+    purpose:
+      "How a new account becomes a verified one — the step between signing up and being able to use the network.",
+    steps: [
+      "Sign up with your name, batch year and program. Use the name AUF has on record, not a nickname — it is matched against the registrar.",
+      "Your details are checked against the AUF registrar automatically. A clean match approves you straight away.",
+      "If anything is ambiguous, your account goes to the Alumni Relations office for review, and you may be asked to upload a photo of your student ID, diploma or transcript.",
+      "Watch your email — you are notified at every status change, and you can check progress when you sign in.",
+      "Once approved, sign in and you land on your feed. Fill in your profile next.",
+      "If you asked for a physical Alumni ID, you will get an email link to set a PIN. Open it and choose a PIN you keep private — staff never see it.",
+    ],
+    tips: [
+      "Most accounts are verified within two business days. Reviews needing extra documents can take up to five.",
+      "Graduated before 1990? Older records may not be digitised yet — email alumni@auf.edu.ph so your file can be prioritised.",
+    ],
+    seeAlso: ["start-alumni", "profile", "alumni-id"],
+  },
+  {
+    slug: "viewing-profiles",
+    tab: "Someone else's profile",
+    href: "/profile/[slug]",
+    alsoCovers: ["/profile", "/u"],
+    surface: "alumni",
+    group: "Everyday",
+    purpose:
+      "What you can see and do on another alumnus's profile — and why you sometimes see less than you expect.",
+    steps: [
+      "Open a profile from the feed, the search bar, a mentor card, or a job applicant list.",
+      "Press Connect to send a connection request, or Message to start a conversation.",
+      "Endorse a skill they have listed, if you can vouch for it.",
+      "Use Follow to see their posts without connecting.",
+      "Some fields may be hidden. Each person chooses, field by field, whether something is public, alumni-only, connections-only or private — so a connection sees more than a stranger does.",
+    ],
+    tips: [
+      "If a field you expected is missing, it is almost always their privacy setting rather than an empty profile.",
+      "Your own profile looks the same to others. Check yours with the preview on Edit profile.",
+    ],
+    seeAlso: ["profile", "connections", "messages"],
   },
   {
     slug: "home",
@@ -322,6 +377,7 @@ const ALUMNI: GuideTopic[] = [
     slug: "resume",
     tab: "Resume / CV",
     href: "/settings/resume",
+    alsoCovers: ["/resume/preview"],
     surface: "alumni",
     group: "Your account",
     purpose:
@@ -868,6 +924,7 @@ const ADMIN: GuideTopic[] = [
     slug: "admin-lists",
     tab: "Areas, Statuses, Skill sets",
     href: "/admin/lists/areas",
+    alsoCovers: ["/admin/lists"],
     surface: "admin",
     group: "Content management",
     purpose:
@@ -903,11 +960,25 @@ export function topicBySlug(slug: string): GuideTopic | undefined {
  */
 export function topicForPath(pathname: string, surface: Surface): GuideTopic | undefined {
   let best: GuideTopic | undefined;
+  // Compare against the base that actually matched, not the topic's href — a
+  // topic can match via a short alsoCovers prefix while carrying a long href
+  // (/profile/[slug] matching on "/profile"), and comparing hrefs would let it
+  // outrank the more specific /profile/edit.
+  let bestLength = -1;
   for (const t of GUIDE_TOPICS) {
     if (t.surface !== surface) continue;
     if (t.slug.startsWith("start-")) continue; // never the contextual answer
-    if (pathname === t.href || pathname.startsWith(t.href + "/")) {
-      if (!best || t.href.length > best.href.length) best = t;
+    const paths = [
+      ...(t.href.includes("[") ? [] : [t.href]),
+      ...(t.alsoCovers ?? []),
+    ];
+    for (const base of paths) {
+      if (pathname === base || pathname.startsWith(base + "/")) {
+        if (base.length > bestLength) {
+          best = t;
+          bestLength = base.length;
+        }
+      }
     }
   }
   return best;
@@ -920,4 +991,9 @@ export function groupsFor(surface: Surface): string[] {
     if (!seen.includes(t.group)) seen.push(t.group);
   }
   return seen;
+}
+
+/** False for screens reached from elsewhere (dynamic routes), which can't be opened directly. */
+export function isOpenable(topic: GuideTopic): boolean {
+  return !topic.href.includes("[");
 }
