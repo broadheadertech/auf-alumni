@@ -330,7 +330,8 @@ const ALUMNI: GuideTopic[] = [
     purpose: "The alumni you're connected to, and requests waiting on you.",
     steps: [
       "Open Connections from the sidebar.",
-      "Under the pending tab, Accept or Decline each request waiting for you.",
+      "Incoming shows requests waiting on you — Accept or Decline each one.",
+      "Outgoing shows requests you've sent that haven't been answered yet.",
       "Send a request from anyone's profile with the Connect button.",
       "Once connected you can message each other, and connections-only fields on their profile become visible to you.",
     ],
@@ -350,8 +351,11 @@ const ALUMNI: GuideTopic[] = [
       "Fill in your work: employment status, current role, company, city and country.",
       "Write a short About. Two or three sentences is plenty.",
       "Add your Skills. These drive job matching, so be specific and list the ones you'd actually want to be hired for.",
+      "Add your Experience — the roles you've held, most recent first. This is what a generated CV is built from, so it's worth doing properly even if you're not job hunting.",
+      "Add your Education. Your AUF degree is the one that matters here; add anything since.",
       "Set Open to — mentorship, job referrals, and so on. Adding Mentorship here is what puts you in the mentor list.",
-      "Set the visibility of each field: public, alumni-only, connections-only, or private.",
+      "Under Open to work, turn on the banner and add a line about what you're looking for, if you want employers to see you're available.",
+      "Open Privacy and set the visibility of each field: public, alumni-only, connections-only, or private.",
       "Press Save changes.",
     ],
     tips: [
@@ -509,7 +513,7 @@ const EMPLOYER: GuideTopic[] = [
     purpose:
       "Every candidate who applied to your postings, and the pipeline you move them through.",
     steps: [
-      "Narrow the list with the filter panel: search, posting, stage, college and program, batch year or range, city, CV review state, and applied date range.",
+      "Narrow the list with the filter panel: search, posting, stage, college and program, batch year or range, city, applied date range, and CV review state — CV reviewed, Not yet reviewed, or No CV uploaded.",
       "Open a candidate to read their profile as they chose to share it, plus their cover note and CV.",
       "Move them through the pipeline as you go — the stage is saved and the candidate sees it on their own tracker.",
       "Press Message to contact them directly; they can reply from their Messages tab.",
@@ -641,7 +645,7 @@ const ADMIN: GuideTopic[] = [
     purpose:
       "The full roster of registered alumni with their employment signals — who's hired, who's looking, who's applying to what.",
     steps: [
-      "Filter with the panel: college and program, batch year or range, work status, employment status and more.",
+      "Filter with the panel: college and program, batch year or range, work status, employment status and more. Open to work only is the one to reach for when an employer asks who is currently looking.",
       "Read each row for hired or open-to-work status, what roles they're applying to, whether they have a CV, and their top skills.",
       "Open a record for the full detail on one alumnus.",
       "Press Reset filters to start over.",
@@ -659,7 +663,7 @@ const ADMIN: GuideTopic[] = [
     steps: [
       "Open Approvals. Each entry is one person waiting to be admitted.",
       "Read what they claimed: name, batch year and program.",
-      "Check the registry match and any flags — a name mismatch, no registry match, or a low-quality ID all appear here.",
+      "Check the registry match and any flags — a name mismatch, no registry match, or a low-quality ID all appear here. Filter to Flagged only to deal with the awkward cases in one pass, or No flags to clear the straightforward ones quickly.",
       "Open their uploaded ID or diploma if one was provided.",
       "Decide: Approve to admit them, Reject, or Request more info if something is missing.",
       "Decided entries leave the queue immediately.",
@@ -712,7 +716,7 @@ const ADMIN: GuideTopic[] = [
     purpose:
       "Every employer organisation: who they are, what you've signed with them, and how much hiring they're actually doing.",
     steps: [
-      "Filter by search, trust tier, contract status, industry, HQ city, or whether documents are on file.",
+      "Filter by search, trust tier, contract status, industry, HQ city, or whether documents are on file. The contract filter has an Expiring ≤45d option — that is the one to check before a partner lapses, and Missing MOA / Missing NDA find the paperwork gaps.",
       "Read each row for the contract window, uploaded MOA/NDA, number of postings and number of applicants.",
       "Sort by any column to find, for example, partners whose contracts are about to lapse.",
       "Open an employer for the full record, where you can edit their details and upload documents.",
@@ -731,7 +735,7 @@ const ADMIN: GuideTopic[] = [
     group: "Marketplace",
     purpose: "Every posting across every employer, in one list.",
     steps: [
-      "Filter by search, status, company, employment type, location or posted-date range.",
+      "Filter by search, status, company, employment type, location or posted-date range. A posting is Draft, pending review, Published, Rejected or Closed.",
       "Sort by applicants or by recency to find the roles that matter.",
       "Approve or reject a pending post inline.",
       "Open a posting to read it in full.",
@@ -786,7 +790,7 @@ const ADMIN: GuideTopic[] = [
     group: "Engagement",
     purpose: "Every published event, who it reaches, and who has said yes.",
     steps: [
-      "Filter by search, status, category, or audience — including by college, program and batch.",
+      "Filter by search, status (Upcoming, Past or Cancelled), category, or audience. Audience is either Everyone or targeted — By year, By program, or By year + program.",
       "Read the reach figure: how many verified alumni the audience rules match right now.",
       "Check RSVP counts — going, maybe, and waitlisted.",
       "Press New event to publish one. Set the title, description, date and location, and optionally target it at particular batches or programs.",
@@ -864,8 +868,14 @@ const ADMIN: GuideTopic[] = [
     group: "Trust & operations",
     purpose: "Weekly operating summaries and the scheduled digests that go out.",
     steps: [
-      "Read This week for approvals handled, median turnaround and how that compares with target.",
-      "Check Scheduled summaries to see which recurring reports are set up and their status.",
+      "Read This week. Approved is how many registrations the office admitted in the last seven days.",
+      "Median turnaround is how long a registration waited for its decision — the number an applicant actually feels.",
+      "Target is the turnaround the office is aiming for, and Status says whether you are meeting it. If it slips, the fix is usually the Approvals queue, not this page.",
+      "Check Scheduled summaries for the recurring reports that go out, and whether they are running.",
+      "For anything deeper — hiring performance, colleges, employers, date ranges — use Analytics. This page is the weekly operational check, not the analysis.",
+    ],
+    tips: [
+      "A rising median turnaround is the earliest sign the approval queue is being left too long. It shows here before anyone complains.",
     ],
     seeAlso: ["admin-analytics"],
   },
@@ -878,7 +888,7 @@ const ADMIN: GuideTopic[] = [
     purpose:
       "Account administration — who holds which role, and suspending accounts that abuse the network.",
     steps: [
-      "Filter by search, role or status.",
+      "Filter by search, role or status — Active, Suspended or Deleted. No roles finds accounts that exist but have been granted nothing, which is usually a half-finished registration.",
       "To act on one account, use the row actions.",
       "To act on several, tick them (or use Select all), then choose Suspend, Unsuspend, Grant role or Revoke role.",
       "Give a reason — it goes into the audit log with your name.",
