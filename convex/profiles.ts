@@ -360,6 +360,36 @@ export const getPhotoUrl = query({
  * Create or update the authenticated user's profile (Stories 3.1 + 3.2 + 3.5).
  */
 // @no-audit-required: user self-service mutation; user owns their own profile.
+
+const DISPLAY_NAME_MAX = 80;
+
+/**
+ * Display names reach a public page, including inside a JSON-LD <script>
+ * block. Angle brackets there could close the script early (see
+ * src/lib/json-ld.ts for the escaping that now blocks it) — this is the other
+ * half: don't store markup in the first place. Control characters are stripped
+ * too, since they only ever arrive from a crafted request.
+ */
+function cleanDisplayName(raw: string): string {
+  const value = raw
+    .replace(/[ -]/g, "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (value.length === 0) {
+    throw new ConvexError({
+      code: "validation",
+      message: "Display name is required",
+    });
+  }
+  if (value.length > DISPLAY_NAME_MAX) {
+    throw new ConvexError({
+      code: "validation",
+      message: `Display name must be ${DISPLAY_NAME_MAX} characters or fewer`,
+    });
+  }
+  return value;
+}
 export const createOrUpdateMyProfile = mutation({
   args: {
     displayName: v.string(),
@@ -402,12 +432,7 @@ export const createOrUpdateMyProfile = mutation({
         message: "Sign in required",
       });
     }
-    if (args.displayName.trim().length === 0) {
-      throw new ConvexError({
-        code: "validation",
-        message: "Display name is required",
-      });
-    }
+    const displayName = cleanDisplayName(args.displayName);
     if (args.batch < 1960 || args.batch > new Date().getFullYear()) {
       throw new ConvexError({
         code: "validation",
@@ -421,12 +446,12 @@ export const createOrUpdateMyProfile = mutation({
       .unique();
 
     const now = Date.now();
-    const initials = buildInitials(args.displayName);
+    const initials = buildInitials(displayName);
 
     if (existing) {
       // Existing profile: preserve slug, update fields.
       await ctx.db.patch(existing._id, {
-        displayName: args.displayName,
+        displayName,
         initials,
         batch: args.batch,
         program: args.program,
@@ -452,13 +477,13 @@ export const createOrUpdateMyProfile = mutation({
     }
 
     // New profile: generate a unique slug.
-    const baseSlug = buildSlug(args.displayName);
+    const baseSlug = buildSlug(displayName);
     const slug = await ensureUniqueSlug(ctx, baseSlug);
 
     const profileId = await ctx.db.insert("profiles", {
       userId,
       slug,
-      displayName: args.displayName,
+      displayName,
       initials,
       batch: args.batch,
       program: args.program,

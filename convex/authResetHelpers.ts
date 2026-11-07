@@ -27,6 +27,18 @@ export const findPasswordAccount = internalQuery({
   },
 });
 
+/** How many reset tokens this user has been issued since `since`. */
+export const countRecentResets = internalQuery({
+  args: { userId: v.id("users"), since: v.number() },
+  handler: async (ctx, { userId, since }) => {
+    const rows = await ctx.db
+      .query("passwordResetTokens")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    return rows.filter((r) => r.createdAt >= since).length;
+  },
+});
+
 export const storeResetToken = internalMutation({
   args: {
     userId: v.id("users"),

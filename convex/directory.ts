@@ -10,9 +10,44 @@
  */
 
 import { v } from "convex/values";
+import { ConvexError } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { query, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+
+/**
+ * The roster is members-only.
+ *
+ * `applyPrivacy` already strips fields a stranger may not see, but it was the
+ * ONLY thing standing between an anonymous caller and the whole membership:
+ * these queries had no identity check, so anyone with the deployment URL could
+ * page through every verified alumnus and read an exact member count. Privacy
+ * tiers decide WHICH fields a viewer gets; this decides whether they get to
+ * ask at all.
+ *
+ * Deliberately member-level rather than admin-only: the alumni feed's
+ * suggestion rail and the "alumni at this company" block on a job both read
+ * `list`. `publicMentors` stays public — it is bounded, consent-gated on
+ * `openTo`, and returns stranger-tier fields only.
+ */
+async function requireMember(ctx: QueryCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
+    throw new ConvexError({
+      code: "unauthenticated",
+      message: "Sign in to browse the alumni directory",
+    });
+  }
+  const user = await ctx.db.get(userId);
+  if (!user || user.deletedAt || user.suspendedAt) {
+    throw new ConvexError({
+      code: "forbidden",
+      message: "This account can't browse the directory",
+    });
+  }
+  return userId;
+}
 
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 100;
@@ -146,6 +181,7 @@ export const list = query({
     cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
+    await requireMember(ctx);
     const filters = toFilters(args);
     const pageSize = Math.min(
       args.pageSize ?? PAGE_SIZE_DEFAULT,
@@ -198,6 +234,7 @@ export const list = query({
 export const count = query({
   args: filterArgs,
   handler: async (ctx, args) => {
+    await requireMember(ctx);
     const filters = toFilters(args);
     const [profiles, hidden] = await Promise.all([
       ctx.db.query("profiles").collect(),
@@ -227,6 +264,7 @@ export const count = query({
 export const adjacentSuggestions = query({
   args: filterArgs,
   handler: async (ctx, args) => {
+    await requireMember(ctx);
     const base = toFilters(args);
     const [profiles, hidden] = await Promise.all([
       ctx.db.query("profiles").collect(),
@@ -355,6 +393,7 @@ export const publicMentors = query({
 export const facets = query({
   args: {},
   handler: async (ctx) => {
+    await requireMember(ctx);
     const profiles = await ctx.db.query("profiles").collect();
     const verified = profiles.filter((p) => p.verifiedAt != null);
 
