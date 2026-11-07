@@ -745,6 +745,14 @@ export default defineSchema({
     status: v.string(), // "issued" | "active" | "lost"
     boundAt: v.optional(v.number()),
     updatedAt: v.number(),
+    // Which KDF produced the hashes above. Absent means the original djb2
+    // prototype hash, which is no longer accepted — those cards must be
+    // re-activated. See convex/idCards.ts.
+    hashAlg: v.optional(v.string()), // "pbkdf2-sha256-v1"
+    // Brute-force protection on verify(): a 4-digit PIN is only 10,000
+    // guesses, and alumnaId is printed on the card's own QR code.
+    failedAttempts: v.optional(v.number()),
+    lockedUntil: v.optional(v.number()),
   }).index("by_alumna", ["alumnaId"]),
 
   // Single-use "set your PIN" tokens (30-min TTL). Emailed to the alumna.

@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -49,7 +49,6 @@ export type AlumnaIdInput = {
 };
 
 export function AlumniIdCard({ alumna }: { alumna: AlumnaIdInput }) {
-  const convex = useConvex();
   const card = useQuery(api.idCards.getCard, { alumnaId: alumna.id });
   const bindUid = useMutation(api.idCards.bindUid);
   const setStatus = useMutation(api.idCards.setStatus);
@@ -119,13 +118,26 @@ export function AlumniIdCard({ alumna }: { alumna: AlumnaIdInput }) {
     }
   };
 
+  // verify() became a mutation so it can count failed attempts and lock the
+  // card — a 4-digit PIN with no lockout was brute-forceable in minutes.
+  const verifyCard = useMutation(api.idCards.verify);
   const onVerify = async () => {
-    const ok = await convex.query(api.idCards.verify, {
-      alumnaId: alumna.id,
-      uid: vUid,
-      pin: vPin,
-    });
-    setVResult(ok ? "ok" : "fail");
+    try {
+      const result = await verifyCard({
+        alumnaId: alumna.id,
+        uid: vUid,
+        pin: vPin,
+      });
+      setVResult(result.ok ? "ok" : "fail");
+      if (!result.ok && result.reason === "locked") {
+        toast.error("Too many wrong attempts — this card is locked for 15 minutes");
+      } else if (!result.ok && result.reason === "needs-reactivation") {
+        toast.error("This card predates the current security scheme — re-issue the PIN");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not verify");
+      setVResult("fail");
+    }
   };
 
   return (

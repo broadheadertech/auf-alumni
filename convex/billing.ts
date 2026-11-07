@@ -13,7 +13,7 @@
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 
@@ -147,7 +147,20 @@ export const activateDemoPlan = mutation({
   },
 });
 
-export const recordWebhookEvent = mutation({
+/**
+ * Records a processor webhook event.
+ *
+ * SECURITY — this was a PUBLIC mutation with no authentication and no
+ * signature verification, so anyone able to reach the deployment could insert
+ * arbitrary billing events for any employer org, with any event type and
+ * amount. Harmless while checkout is a placeholder; a fraud vector the moment
+ * a real processor is wired in, and easy to miss at exactly that moment.
+ *
+ * It is now internal. The only way in is POST /billing/webhook in
+ * convex/http.ts, which verifies an HMAC signature first and fails closed when
+ * BILLING_WEBHOOK_SECRET is unset.
+ */
+export const recordWebhookEvent = internalMutation({
   args: {
     employerOrgId: v.id("employerOrgs"),
     processor: v.string(),
