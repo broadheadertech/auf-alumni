@@ -87,10 +87,18 @@ export function FilterPanel({
       aria-label="Filters"
       className={cn(
         "rounded-lg bg-card ring-1 ring-foreground/10",
-        layout === "sidebar" ? "p-4" : "p-3",
+        layout === "sidebar" ? "p-4" : "px-3 py-2",
         className,
       )}
     >
+      {/*
+        In bar mode the controls carry their own names — a select reads
+        "All colleges", a text box "e.g. 2021 or 2018-2022" — so the stacked
+        label above each one was a second copy of the same word and cost a
+        line of height per field. Seven filters became a 250px block above
+        the table it was meant to narrow.
+      */}
+      {layout === "sidebar" && (
       <div className="flex items-center gap-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Filters
@@ -111,6 +119,7 @@ export function FilterPanel({
           <RotateCcw className="h-3 w-3" /> Reset filters
         </Button>
       </div>
+      )}
       {restored && active.length > 0 && (
         <p className="mt-1 text-[11px] text-muted-foreground">
           Kept from your last visit.
@@ -119,18 +128,31 @@ export function FilterPanel({
 
       <div
         className={cn(
-          "mt-3 gap-3",
           layout === "sidebar"
-            ? "flex flex-col"
-            : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4",
+            ? "mt-3 flex flex-col gap-3"
+            : "flex flex-wrap items-center gap-2",
         )}
       >
         {fields.map((f) => {
           const id = `filter-${f.key}`;
           const value = values[f.key] ?? "";
           return (
-            <div key={f.key} className={cn(f.type === "search" && layout === "bar" && "sm:col-span-2")}>
-              <Label htmlFor={id} className="mb-1 block text-[11px] font-medium text-muted-foreground">
+            <div
+              key={f.key}
+              className={cn(
+                layout === "bar" &&
+                  (f.type === "search"
+                    ? "min-w-[200px] flex-1"
+                    : "min-w-[140px]"),
+              )}
+            >
+              <Label
+                htmlFor={id}
+                className={cn(
+                  "mb-1 block text-[11px] font-medium text-muted-foreground",
+                  layout === "bar" && "sr-only",
+                )}
+              >
                 {f.label}
               </Label>
               {f.type === "search" ? (
@@ -142,7 +164,7 @@ export function FilterPanel({
                     value={value}
                     placeholder={f.placeholder}
                     onChange={(e) => onChange(f.key, e.target.value)}
-                    className="h-9 pl-8"
+                    className={cn(layout === "bar" ? "h-8" : "h-9", "pl-8")}
                   />
                 </div>
               ) : f.type === "select" ? (
@@ -167,7 +189,7 @@ export function FilterPanel({
                     maxLength={f.maxLength}
                     list={f.suggestions ? `${id}-list` : undefined}
                     onChange={(e) => onChange(f.key, e.target.value)}
-                    className="h-9"
+                    className={layout === "bar" ? "h-8" : "h-9"}
                   />
                   {f.suggestions && (
                     <datalist id={`${id}-list`}>
@@ -178,16 +200,39 @@ export function FilterPanel({
                   )}
                 </>
               )}
-              {"hint" in f && f.hint && (
+              {"hint" in f && f.hint && layout !== "bar" && (
                 <p className="mt-1 text-[11px] text-muted-foreground">{f.hint}</p>
               )}
             </div>
           );
         })}
+
+        {/* The header (with its Reset) is hidden in bar mode, so the action
+            lives at the end of the control row instead. */}
+        {layout === "bar" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onReset}
+            disabled={active.length === 0}
+            className="h-8 shrink-0 gap-1 px-2 text-xs text-muted-foreground"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Reset{active.length > 0 ? ` (${active.length})` : ""}
+          </Button>
+        )}
       </div>
 
       {active.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-border pt-3">
+        <div
+          className={cn(
+            "flex flex-wrap gap-1.5",
+            layout === "bar"
+              ? "mt-2"
+              : "mt-3 border-t border-border pt-3",
+          )}
+        >
           {active.map((f) => (
             <button
               key={f.key}

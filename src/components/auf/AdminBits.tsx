@@ -27,7 +27,7 @@ export function StageBadge({ stage }: { stage: ApplicationStage }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[stage],
       )}
     >
@@ -47,7 +47,7 @@ export function PostingStatusBadge({ status }: { status: PostingStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[status],
       )}
     >
@@ -90,7 +90,7 @@ export function ContractBadge({ state }: { state: ContractState | "none" }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         cls,
       )}
     >
@@ -109,7 +109,7 @@ export function WorkStatusBadge({ status }: { status: WorkStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[status],
       )}
     >

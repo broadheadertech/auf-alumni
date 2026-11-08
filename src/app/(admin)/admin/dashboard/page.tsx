@@ -30,7 +30,6 @@ import {
   Clock,
   FileWarning,
   GraduationCap,
-  Lightbulb,
   TrendingUp,
   UserPlus,
   Users,
@@ -41,6 +40,7 @@ import { defaultFrom, type AnalyticsRecord } from "@/lib/analytics-filters";
 import { quickLink } from "@/lib/use-url-filters";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { SectionHeading } from "@/components/auf/admin-ui";
 
 type Overview = FunctionReturnType<typeof api.adminData.overview>;
 
@@ -195,31 +195,36 @@ function DashboardBody({ d }: { d: ReturnType<typeof buildMetrics> }) {
 
       {/* 3 · Insights */}
       {d.insights.length > 0 && (
-        <Card className="mt-4">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-amber-500" />
-              <h2 className="text-sm font-medium">Insights</h2>
-            </div>
-            <ul className="mt-3 space-y-2">
-              {d.insights.map((ins, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <span
-                    className={cn(
-                      "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
-                      ins.tone === "good"
-                        ? "bg-emerald-500"
-                        : ins.tone === "warn"
-                          ? "bg-amber-500"
-                          : "bg-muted-foreground/50",
-                    )}
-                  />
-                  <span>{ins.text}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        /*
+          A lightbulb above a bulleted list of colour-dotted sentences is the
+          house style of generated copy, and it made the one genuinely
+          interpretive part of the dashboard look the least trustworthy.
+          These are read as findings now: two columns, a rule between them,
+          and tone carried by a short prefix rather than a decorative dot.
+        */
+        <div className="mt-4 rounded-lg border border-border bg-card p-4">
+          <SectionHeading className="mb-3">What the numbers say</SectionHeading>
+          <ul className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
+            {d.insights.map((ins, i) => (
+              <li key={i} className="flex gap-2 text-[13px] leading-snug">
+                <span
+                  className={cn(
+                    "shrink-0 font-semibold tabular-nums",
+                    ins.tone === "good"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : ins.tone === "warn"
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-muted-foreground/60",
+                  )}
+                  aria-hidden
+                >
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <span>{ins.text}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {/* 4 · Outcomes */}
@@ -505,12 +510,23 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Tile accents.
+ *
+ * Previously every accent tinted the whole tile, which meant a healthy hire
+ * rate was shaded mint and sat beside a pink "contracts expiring" tile — two
+ * different meanings rendered as the same kind of signal. A dashboard where
+ * eleven of fourteen tiles are coloured has no way left to say "look here".
+ *
+ * Colour is now a 2px left edge, used only where something needs a decision.
+ * `emerald` is deliberately uncoloured: a number being good is not an action.
+ */
 const ACCENTS = {
-  emerald: "bg-emerald-500/5 ring-emerald-500/30",
-  amber: "bg-amber-500/5 ring-amber-500/30",
-  red: "bg-destructive/5 ring-destructive/30",
-  muted: "bg-card ring-foreground/10",
-  none: "bg-card ring-foreground/10",
+  emerald: "border-l-transparent",
+  amber: "border-l-amber-500",
+  red: "border-l-destructive",
+  muted: "border-l-transparent",
+  none: "border-l-transparent",
 } as const;
 
 function Tile({
@@ -529,15 +545,25 @@ function Tile({
   accent?: keyof typeof ACCENTS;
 }) {
   const body = (
-    <div className={cn("h-full rounded-lg px-4 py-3 ring-1 transition-colors", ACCENTS[accent], href && "hover:ring-foreground/30")}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+    <div
+      className={cn(
+        "h-full rounded-lg border border-l-2 border-border bg-card px-3.5 py-2.5 transition-colors",
+        ACCENTS[accent],
+        href && "hover:bg-muted/40",
+      )}
+    >
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+        <span className="truncate text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          {label}
+        </span>
       </div>
-      <div className="mt-1 text-2xl font-semibold tracking-tight">{value}</div>
-      {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
+      <div className="mt-1 text-[26px] font-semibold leading-none tracking-tight tabular-nums">
+        {value}
+      </div>
+      {sub && <div className="mt-1 text-[11px] leading-tight text-muted-foreground">{sub}</div>}
       {href && (
-        <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+        <div className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
           View <ArrowRight className="h-3 w-3" />
         </div>
       )}

@@ -29,9 +29,16 @@ import { useCollegePrograms } from "@/lib/use-program-options";
 import { useLookupOptions } from "@/lib/use-lookup-options";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { parseBatchInput } from "@/lib/batch-input";
-import { Card, CardContent } from "@/components/ui/card";
-import { StatTile, WorkStatusBadge } from "@/components/auf/AdminBits";
+import { WorkStatusBadge } from "@/components/auf/AdminBits";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
+import {
+  AdminPage,
+  Callout,
+  DataTable,
+  Stat,
+  StatStrip,
+  THead,
+} from "@/components/auf/admin-ui";
 import {
   ACCOUNT_STATUS_LABEL,
   ACCOUNT_STATUS_TONE,
@@ -258,55 +265,53 @@ export default function AdminAlumniPage() {
   const loading = data === undefined;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Alumni</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Registered graduates, their job-seeking status, applications, and
-        profile assessment.
-      </p>
-
+    <AdminPage
+      title="Alumni"
+      description="Registered graduates, their job-seeking status and applications."
+    >
       {pendingCount > 0 && (
-        <Link
-          href="/admin/alumni/approvals"
-          className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm transition-colors hover:bg-amber-500/10"
+        <Callout
+          action={
+            <Link
+              href="/admin/alumni/approvals"
+              className="shrink-0 text-[12px] font-medium underline underline-offset-2"
+            >
+              Review queue &rarr;
+            </Link>
+          }
         >
-          <span className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-amber-600" />
-            <span className="font-medium">
-              {pendingCount} alumnus registration
-              {pendingCount === 1 ? "" : "s"} awaiting approval
-            </span>
+          <span className="inline-flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            {pendingCount} alumnus registration
+            {pendingCount === 1 ? "" : "s"} awaiting approval
           </span>
-          <span className="text-xs text-muted-foreground">Review queue →</span>
-        </Link>
+        </Callout>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Registered" value={totals.total} hint={`${totals.verified} verified`} />
-        <StatTile label="Open to work" value={totals.open} />
-        <StatTile label="Hired via AUF" value={totals.hired} />
-        <StatTile label="Actively applying" value={totals.applying} />
-      </div>
+      <StatStrip className={pendingCount > 0 ? "mt-3" : ""}>
+        <Stat
+          label="Registered"
+          value={totals.total}
+          hint={`${totals.verified} verified`}
+        />
+        <Stat label="Open to work" value={totals.open} tone="good" />
+        <Stat label="Hired via AUF" value={totals.hired} />
+        <Stat label="Actively applying" value={totals.applying} />
+      </StatStrip>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[270px_1fr]">
-        {/* Filters */}
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <FilterPanel
-            fields={fields}
-            values={values}
-            onChange={onFilterChange}
-            onReset={reset}
-            restored={restored}
-          />
-        </aside>
+      <FilterPanel
+        layout="bar"
+        className="mt-3"
+        fields={fields}
+        values={values}
+        onChange={onFilterChange}
+        onReset={reset}
+        restored={restored}
+      />
 
-        {/* Table */}
-        <section>
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+      <div className="mt-3">
+        <DataTable>
+                <THead>
                     <tr>
                       <Th label="Alumna" sortKey="name" {...{ sort, dir, setSortKey }} />
                       <Th label="Batch" sortKey="batch" {...{ sort, dir, setSortKey }} />
@@ -316,7 +321,7 @@ export default function AdminAlumniPage() {
                       <Th label="Apps" sortKey="applications" align="right" {...{ sort, dir, setSortKey }} />
                       <th className="px-3 py-2" />
                     </tr>
-                  </thead>
+                </THead>
                   <tbody>
                     {loading ? (
                       <tr>
@@ -336,36 +341,34 @@ export default function AdminAlumniPage() {
                       rows.map((a) => (
                         <tr
                           key={a.id}
-                          className="group border-b border-border align-top last:border-0 hover:bg-muted/30"
+                          className="group border-b border-border last:border-0 hover:bg-muted/40"
                         >
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2">
                             <Link
                               href={`/admin/alumni/${a.id}`}
-                              className="flex items-start gap-3"
+                              className="block min-w-0"
                             >
-                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                                {a.initials}
+                              <span className="block truncate font-medium group-hover:underline">
+                                {a.name}
                               </span>
-                              <span className="min-w-0">
-                                <span className="block font-medium group-hover:underline">
-                                  {a.name}
-                                </span>
-                                <span className="block text-xs text-muted-foreground">
-                                  {a.currentRole
-                                    ? `${a.currentRole}${a.currentCompany ? " · " + a.currentCompany : ""}`
-                                    : "No current role"}
-                                </span>
-                                <span className="text-[11px] text-muted-foreground/80">
-                                  {a.college}
+                              {/* Role, employer and college on one line: three
+                                  stacked lines made every row 80px tall and
+                                  put five records on a screen. */}
+                              <span className="block truncate text-[11.5px] text-muted-foreground">
+                                {a.currentRole
+                                  ? `${a.currentRole}${a.currentCompany ? " · " + a.currentCompany : ""}`
+                                  : "No current role"}
+                                <span className="text-muted-foreground/70">
+                                  {" "}· {a.college}
                                 </span>
                               </span>
                             </Link>
                           </td>
-                          <td className="px-3 py-3 tabular-nums text-muted-foreground">
+                          <td className="px-3 py-2 tabular-nums text-muted-foreground">
                             {a.batch}
                           </td>
-                          <td className="px-3 py-3">
-                            <div className="flex flex-col items-start gap-1">
+                          <td className="px-3 py-2 align-middle">
+                            <div className="flex flex-wrap items-center gap-1">
                               {a.accountStatus && (
                                 <span
                                   className={cn(
@@ -379,38 +382,36 @@ export default function AdminAlumniPage() {
                               <WorkStatusBadge status={a.workStatus} />
                             </div>
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-3 py-2 align-middle">
                             {a.applications.length === 0 ? (
                               <span className="text-xs text-muted-foreground">—</span>
                             ) : (
-                              <div className="space-y-0.5">
-                                {a.applications.slice(0, 2).map((ap) => (
-                                  <div key={ap.applicationId} className="text-xs">
-                                    <span className="font-medium">{ap.jobTitle}</span>
-                                    <span className="text-muted-foreground">
-                                      {" "}· {ap.company}
-                                    </span>
-                                  </div>
-                                ))}
-                                {a.applications.length > 2 && (
-                                  <div className="text-[11px] text-muted-foreground">
-                                    +{a.applications.length - 2} more
-                                  </div>
+                              <div className="min-w-0 text-[12px]">
+                                <span className="font-medium">
+                                  {a.applications[0].jobTitle}
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {" "}· {a.applications[0].company}
+                                </span>
+                                {a.applications.length > 1 && (
+                                  <span className="text-muted-foreground/70">
+                                    {" "}+{a.applications.length - 1}
+                                  </span>
                                 )}
                               </div>
                             )}
                           </td>
-                          <td className="px-3 py-3 text-center">
+                          <td className="px-3 py-2 text-center">
                             {a.cv ? (
                               <FileCheck2 className="mx-auto h-4 w-4 text-emerald-600" />
                             ) : (
                               <FileX2 className="mx-auto h-4 w-4 text-muted-foreground" />
                             )}
                           </td>
-                          <td className="px-3 py-3 text-right tabular-nums">
+                          <td className="px-3 py-2 text-right tabular-nums">
                             {a.applications.length}
                           </td>
-                          <td className="px-3 py-3 text-right">
+                          <td className="px-3 py-2 text-right">
                             <Link
                               href={`/admin/alumni/${a.id}`}
                               className="inline-flex text-muted-foreground hover:text-foreground"
@@ -423,19 +424,14 @@ export default function AdminAlumniPage() {
                       ))
                     )}
                   </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-          {!loading && (
-            <p className="mt-3 text-xs italic text-muted-foreground">
-              Showing {rows.length} of {alumni.length} alumni · sorted by {sort}{" "}
-              ({dir}).
-            </p>
-          )}
-        </section>
+        </DataTable>
+        {!loading && (
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            Showing {rows.length} of {alumni.length} alumni · sorted by {sort} ({dir}).
+          </p>
+        )}
       </div>
-    </div>
+    </AdminPage>
   );
 }
 

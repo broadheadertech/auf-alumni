@@ -28,8 +28,6 @@ import {
   ArrowUpRight,
   Award,
   BarChart3,
-  Briefcase,
-  Building2,
   Clock,
   Download,
   Lightbulb,
@@ -54,6 +52,7 @@ import {
 } from "@/lib/analytics-filters";
 import { useCollegePrograms } from "@/lib/use-program-options";
 import { joinList, quickLink, useUrlFilters } from "@/lib/use-url-filters";
+import { SectionHeading } from "@/components/auf/admin-ui";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -352,15 +351,44 @@ export default function AdminAnalyticsPage() {
         <LoadingState />
       ) : (
         <>
-          {/* Network overview (not time-bound) */}
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Kpi icon={Users} label="Alumni" value={overview.alumniRegistered.toLocaleString()} hint={`of ~${overview.alumniTotal.toLocaleString()}`} href={links.alumni} />
-            <Kpi icon={Building2} label="Active employers" value={overview.activeEmployers.toString()} href={links.employers} linkLabel={company !== "all" ? "View employer" : undefined} />
-            <Kpi icon={Briefcase} label="Open postings" value={overview.openPostings.toString()} href={links.postings} />
+          {/*
+            Network size is context, not performance: it does not move with
+            the date filter and nothing on this page is measured against it.
+            It reads as a line of supporting figures so the four time-bound
+            KPIs below can carry the page.
+
+            It also fixes an alignment bug. These two blocks used to be
+            grid-cols-3 above grid-cols-4, so the tiles in one row never lined
+            up with the tiles in the other.
+          */}
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted-foreground">
+            <Link href={links.alumni} className="hover:text-foreground">
+              <span className="font-medium tabular-nums text-foreground">
+                {overview.alumniRegistered.toLocaleString()}
+              </span>{" "}
+              alumni registered
+              <span className="text-muted-foreground/70">
+                {" "}of ~{overview.alumniTotal.toLocaleString()}
+              </span>
+            </Link>
+            <span aria-hidden className="text-border">|</span>
+            <Link href={links.employers} className="hover:text-foreground">
+              <span className="font-medium tabular-nums text-foreground">
+                {overview.activeEmployers}
+              </span>{" "}
+              active employers
+            </Link>
+            <span aria-hidden className="text-border">|</span>
+            <Link href={links.postings} className="hover:text-foreground">
+              <span className="font-medium tabular-nums text-foreground">
+                {overview.openPostings}
+              </span>{" "}
+              open postings
+            </Link>
           </div>
 
-          {/* Hiring KPIs with deltas + targets */}
-          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <SectionHeading className="mt-5">Hiring performance</SectionHeading>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi
               icon={TrendingUp}
               label="Hire rate"

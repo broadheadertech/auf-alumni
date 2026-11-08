@@ -18,7 +18,6 @@ import { Ban, Loader2, ShieldMinus, ShieldPlus, UserCheck } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { runBulk, useBulkSelection } from "@/lib/use-bulk-selection";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -34,6 +33,19 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
 import { cn } from "@/lib/utils";
+import {
+  AdminPage,
+  Chip,
+  DataTable,
+  NoRows,
+  RowActions,
+  Status,
+  THead,
+  Th,
+  Td,
+  Tr,
+  type RowAction,
+} from "@/components/auf/admin-ui";
 
 type UserRow = {
   _id: string;
@@ -92,8 +104,14 @@ export default function AdminUsersPage() {
   const suspendUser = useMutation(api.admin.suspendUser);
   const unsuspendUser = useMutation(api.admin.unsuspendUser);
 
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Tracks which row has a mutation in flight, so run() can ignore a second
+  // click on the same row. The value itself is no longer rendered.
+  const [, setBusyId] = useState<string | null>(null);
   const [suspendReason, setSuspendReason] = useState("");
+  // The single row queued for suspension. A dialog rather than an inline
+  // box per row: the reason is mandatory and the action is irreversible,
+  // so it deserves a deliberate step rather than a stray click.
+  const [suspendTarget, setSuspendTarget] = useState<UserRow | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkDialog, setBulkDialog] = useState<BulkDialog>({ kind: "none" });
   const [bulkReason, setBulkReason] = useState("");
@@ -231,16 +249,12 @@ export default function AdminUsersPage() {
   const unsuspendable = selectedUsers.filter((u) => u.suspendedAt && !u.deletedAt).length;
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
-      <h1 className="text-2xl font-semibold tracking-tight">User management</h1>
-      <p className="text-sm text-muted-foreground">
-        Grant or revoke admin roles. Suspend abusive accounts. Select several
-        users to act on them at once.
-      </p>
-
+    <AdminPage
+      title="User management"
+      description="Grant or revoke admin roles, and suspend abusive accounts. Select several users to act on them at once."
+    >
       <FilterPanel
         layout="bar"
-        className="mt-4"
         fields={fields}
         values={values}
         onChange={(k, v) => set(k as (typeof FILTER_KEYS)[number], v)}
@@ -285,207 +299,202 @@ export default function AdminUsersPage() {
         </Button>
       </BulkActionBar>
 
-      <Card className="mt-3">
-        <CardContent className="p-0">
+      <DataTable className="mt-3">
+        <THead>
+          <tr>
+            <Th width="36px">
+              <SelectCheckbox
+                checked={selection.allSelected}
+                indeterminate={selection.someSelected}
+                onChange={
+                  selection.allSelected
+                    ? selection.unselectAll
+                    : selection.selectAll
+                }
+                label={
+                  selection.allSelected
+                    ? "Unselect all users"
+                    : "Select all users"
+                }
+              />
+            </Th>
+            <Th>User</Th>
+            <Th>Roles</Th>
+            <Th width="110px">Status</Th>
+            <Th width="48px" align="right" />
+          </tr>
+        </THead>
+        <tbody>
           {list.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-              No users match these filters.
-            </div>
+            <NoRows colSpan={5}>No users match these filters.</NoRows>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="w-10 px-3 py-2 text-left">
-                      <SelectCheckbox
-                        checked={selection.allSelected}
-                        indeterminate={selection.someSelected}
-                        onChange={selection.allSelected ? selection.unselectAll : selection.selectAll}
-                        label={selection.allSelected ? "Unselect all users" : "Select all users"}
-                      />
-                    </th>
-                    <th className="px-3 py-2 text-left">Email</th>
-                    <th className="px-3 py-2 text-left">Roles</th>
-                    <th className="px-3 py-2 text-left">Status</th>
-                    <th className="px-3 py-2 text-left">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.map((u) => {
-                    const mine = isMe(u);
-                    const suspended = u.suspendedAt != null;
-                    const deleted = u.deletedAt != null;
-                    const checked = selection.isSelected(u._id);
-                    return (
-                      <tr
-                        key={u._id}
-                        className={cn(
-                          "border-b border-border align-top last:border-0",
-                          checked && "bg-foreground/3",
-                        )}
-                      >
-                        <td className="px-3 py-2.5">
-                          <SelectCheckbox
-                            checked={checked}
-                            onChange={() => selection.toggle(u._id)}
-                            label={`Select ${u.email ?? u.name ?? "user"}`}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="font-medium">
-                            {u.email ?? "—"}
-                            {mine && (
-                              <span className="ml-1.5 rounded bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
-                                you
-                              </span>
-                            )}
-                          </div>
-                          {u.name && (
-                            <div className="text-xs text-muted-foreground">
-                              {u.name}
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-1">
-                            {u.roles.length === 0 && (
-                              <span className="text-xs text-muted-foreground italic">
-                                none
-                              </span>
-                            )}
-                            {u.roles.map((r) => (
-                              <span
-                                key={r}
-                                className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-mono"
-                              >
-                                {r}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-xs">
-                          {deleted ? (
-                            <span className="text-destructive">deleted</span>
-                          ) : suspended ? (
-                            <span className="text-[var(--color-warning)]">
-                              suspended
-                            </span>
-                          ) : (
-                            <span className="text-[var(--color-success)]">
-                              active
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap items-center gap-1">
-                            <select
-                              disabled={busyId === u._id || deleted}
-                              onChange={(e) => {
-                                const role = e.target.value;
-                                if (!role) return;
-                                const has = u.roles.includes(role);
-                                if (mine && role === "super-admin" && has) {
-                                  toast.error(
-                                    "Cannot revoke your own super-admin role",
-                                  );
-                                  e.target.value = "";
-                                  return;
-                                }
-                                void run(
-                                  u._id,
-                                  () =>
-                                    has
-                                      ? revokeRole({
-                                          targetUserId: u._id as unknown as never,
-                                          role,
-                                        })
-                                      : grantRole({
-                                          targetUserId: u._id as unknown as never,
-                                          role,
-                                        }),
-                                  has ? `Revoked ${role}` : `Granted ${role}`,
-                                );
-                                e.target.value = "";
-                              }}
-                              className="rounded border border-border bg-background px-1.5 py-1 text-xs"
-                              defaultValue=""
-                              aria-label={`Change roles for ${u.email ?? "user"}`}
-                            >
-                              <option value="">Role…</option>
-                              {GRANTABLE_ROLES.map((r) => (
-                                <option key={r} value={r}>
-                                  {u.roles.includes(r)
-                                    ? `Revoke ${r}`
-                                    : `Grant ${r}`}
-                                </option>
-                              ))}
-                            </select>
-                            {suspended ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                disabled={busyId === u._id}
-                                onClick={() =>
-                                  run(
-                                    u._id,
-                                    () =>
-                                      unsuspendUser({
-                                        targetUserId: u._id as unknown as never,
-                                      }),
-                                    "Unsuspended",
-                                  )
-                                }
-                              >
-                                Unsuspend
-                              </Button>
-                            ) : (
-                              <>
-                                <Input
-                                  placeholder="Suspend reason"
-                                  value={busyId === u._id ? suspendReason : ""}
-                                  onChange={(e) =>
-                                    setSuspendReason(e.target.value)
-                                  }
-                                  onFocus={() => setBusyId(u._id)}
-                                  className="h-7 w-40 text-xs"
-                                  aria-label={`Suspend reason for ${u.email ?? "user"}`}
-                                />
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={mine || deleted}
-                                  onClick={() => {
-                                    if (!suspendReason.trim()) {
-                                      toast.error("Reason required");
-                                      return;
-                                    }
-                                    void run(
-                                      u._id,
-                                      () =>
-                                        suspendUser({
-                                          targetUserId: u._id as unknown as never,
-                                          reason: suspendReason.trim(),
-                                        }),
-                                      "Suspended",
-                                    );
-                                    setSuspendReason("");
-                                  }}
-                                >
-                                  Suspend
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            list.map((u) => {
+              const mine = isMe(u);
+              const suspended = u.suspendedAt != null;
+              const deleted = u.deletedAt != null;
+              const checked = selection.isSelected(u._id);
+
+              const roleActions: RowAction[] = GRANTABLE_ROLES.map((r) => {
+                const has = u.roles.includes(r);
+                return {
+                  label: has ? `Revoke ${r}` : `Grant ${r}`,
+                  disabled: deleted || (mine && r === "super-admin" && has),
+                  onSelect: () =>
+                    void run(
+                      u._id,
+                      () =>
+                        has
+                          ? revokeRole({
+                              targetUserId: u._id as unknown as never,
+                              role: r,
+                            })
+                          : grantRole({
+                              targetUserId: u._id as unknown as never,
+                              role: r,
+                            }),
+                      has ? `Revoked ${r}` : `Granted ${r}`,
+                    ),
+                };
+              });
+
+              const actions: RowAction[] = [
+                ...roleActions,
+                suspended
+                  ? {
+                      label: "Unsuspend",
+                      disabled: deleted,
+                      onSelect: () =>
+                        void run(
+                          u._id,
+                          () =>
+                            unsuspendUser({
+                              targetUserId: u._id as unknown as never,
+                            }),
+                          "Unsuspended",
+                        ),
+                    }
+                  : {
+                      label: "Suspend\u2026",
+                      destructive: true,
+                      disabled: mine || deleted,
+                      onSelect: () => {
+                        setSuspendReason("");
+                        setSuspendTarget(u);
+                      },
+                    },
+              ];
+
+              return (
+                <Tr key={u._id} className={cn(checked && "bg-muted/50")}>
+                  <Td>
+                    <SelectCheckbox
+                      checked={checked}
+                      onChange={() => selection.toggle(u._id)}
+                      label={`Select ${u.email ?? u.name ?? "user"}`}
+                    />
+                  </Td>
+                  <Td>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <span className="truncate">{u.email ?? "\u2014"}</span>
+                        {mine && <Chip>you</Chip>}
+                      </div>
+                      {u.name && (
+                        <div className="truncate text-[11.5px] text-muted-foreground">
+                          {u.name}
+                        </div>
+                      )}
+                    </div>
+                  </Td>
+                  <Td>
+                    {u.roles.length === 0 ? (
+                      <span className="text-[12px] text-muted-foreground">
+                        none
+                      </span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {u.roles.map((r) => (
+                          <Chip key={r}>{r}</Chip>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  <Td>
+                    {deleted ? (
+                      <Status tone="bad">Deleted</Status>
+                    ) : suspended ? (
+                      <Status tone="warn">Suspended</Status>
+                    ) : (
+                      <Status tone="good">Active</Status>
+                    )}
+                  </Td>
+                  <Td align="right">
+                    <RowActions
+                      actions={actions}
+                      label={`Actions for ${u.email ?? "user"}`}
+                    />
+                  </Td>
+                </Tr>
+              );
+            })
           )}
-        </CardContent>
-      </Card>
+        </tbody>
+      </DataTable>
+
+      {/* Single-row suspend */}
+      <Dialog
+        open={suspendTarget !== null}
+        onOpenChange={(open) => !open && setSuspendTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Suspend {suspendTarget?.email ?? suspendTarget?.name ?? "user"}?
+            </DialogTitle>
+            <DialogDescription>
+              They won&apos;t be able to sign in until you unsuspend them. The
+              reason is recorded in the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label htmlFor="row-reason">Reason</Label>
+            <Input
+              id="row-reason"
+              value={suspendReason}
+              onChange={(e) => setSuspendReason(e.target.value)}
+              placeholder="e.g. Spam messages reported by alumni"
+              className="mt-1.5"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSuspendTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!suspendReason.trim()}
+              onClick={() => {
+                const target = suspendTarget;
+                if (!target) return;
+                void run(
+                  target._id,
+                  () =>
+                    suspendUser({
+                      targetUserId: target._id as unknown as never,
+                      reason: suspendReason.trim(),
+                    }),
+                  "Suspended",
+                );
+                setSuspendTarget(null);
+                setSuspendReason("");
+              }}
+            >
+              Suspend
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Bulk suspend / role dialogs */}
       <Dialog
@@ -563,6 +572,6 @@ export default function AdminUsersPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </AdminPage>
   );
 }
