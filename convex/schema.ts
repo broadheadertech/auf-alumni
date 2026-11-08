@@ -66,6 +66,23 @@ export default defineSchema({
     company: v.optional(v.string()),
     city: v.optional(v.string()),
     country: v.optional(v.string()),
+    // Contact details. All three are privacy-tiered like any other profile
+    // field (see convex/helpers/privacy.ts); `addressLine` defaults to
+    // "private" in the editor because a home address should never become
+    // alumni-visible by omission.
+    phone: v.optional(v.string()),
+    addressLine: v.optional(v.string()),
+    // Social / web presence. Sanitised to http(s) on write — these render
+    // into href attributes. See convex/helpers/links.ts.
+    links: v.optional(
+      v.object({
+        linkedin: v.optional(v.string()),
+        facebook: v.optional(v.string()),
+        instagram: v.optional(v.string()),
+        github: v.optional(v.string()),
+        website: v.optional(v.string()),
+      }),
+    ),
     // Name of an admin-managed "status" reference item (e.g. "Employed").
     employmentStatus: v.optional(v.string()),
     bio: v.optional(v.string()),

@@ -769,3 +769,57 @@ export const backfillDemoExperience = internalMutation({
     return { touched, skippedReal };
   },
 });
+
+/**
+ * Repair privacy tiers left behind by the seeders for fields that did not
+ * exist at the time.
+ *
+ * Both seeders wrote `{ email: "alumni", phone: "alumni" }` into
+ * `privacyTiers` long before the profile schema had either field. That looked
+ * harmless, but the editor hydrates tiers as
+ * `{ ...DEFAULT_TIERS, ...existing.privacyTiers }` — so the moment a real
+ * `phone` field was added, the dormant "alumni" value won over the intended
+ * "connections" default and every seeded alumnus's phone number became
+ * visible to the whole network instead of just their connections.
+ *
+ * Resetting every "alumni" phone tier is safe because the phone field and its
+ * tier control shipped together: nobody has ever been able to choose that
+ * value deliberately, so every one of them is seed residue. `email` is
+ * dropped outright — there is no such profile field, and leaving it sets the
+ * same trap for whoever adds one.
+ *
+ *   npx convex run seedActivity:repairContactTiers
+ */
+export const repairContactTiers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // @no-privacy-required: internal migration repairing stored tier metadata.
+    const profiles = await ctx.db.query("profiles").collect();
+    let phoneReset = 0;
+    let emailDropped = 0;
+    let touched = 0;
+
+    for (const p of profiles) {
+      const tiers = { ...(p.privacyTiers ?? {}) } as Record<string, string>;
+      let changed = false;
+
+      if (tiers.phone === "alumni") {
+        tiers.phone = "connections";
+        phoneReset += 1;
+        changed = true;
+      }
+      if ("email" in tiers) {
+        delete tiers.email;
+        emailDropped += 1;
+        changed = true;
+      }
+
+      if (changed) {
+        await ctx.db.patch(p._id, { privacyTiers: tiers });
+        touched += 1;
+      }
+    }
+
+    return { profiles: profiles.length, touched, phoneReset, emailDropped };
+  },
+});

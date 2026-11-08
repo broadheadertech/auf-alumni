@@ -15,6 +15,9 @@ import {
   ShieldCheck,
   MessageSquare,
   Lock,
+  Phone,
+  Home,
+  LinkIcon,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +35,20 @@ type Education = {
   school: string;
   year: number;
 };
+
+/**
+ * "linkedin.com/in/jaezar" from a stored URL. Display only — the value was
+ * already sanitised to http(s) on write (convex/helpers/links.ts), so this
+ * never has to decide whether a URL is safe to render.
+ */
+function linkDisplay(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+}
 
 export default function ProfilePage() {
   const params = useParams<{ slug: string }>();
@@ -76,6 +93,12 @@ export default function ProfilePage() {
   const batch = p.batch as number | undefined;
   const city = p.city as string | undefined;
   const country = p.country as string | undefined;
+  // Present only when the viewer is entitled to them: applyPrivacy drops the
+  // key entirely rather than nulling it, so "is it here" is the whole check.
+  const phone = p.phone as string | undefined;
+  const addressLine = p.addressLine as string | undefined;
+  const links = (p.links as Record<string, string> | undefined) ?? {};
+  const linkEntries = Object.entries(links).filter(([, v]) => Boolean(v));
   const bio = p.bio as string | undefined;
   const experience = (p.experience as Experience[] | undefined) ?? [];
   const education = (p.education as Education[] | undefined) ?? [];
@@ -172,6 +195,45 @@ export default function ProfilePage() {
                 <p className="text-sm leading-relaxed text-foreground/90">
                   {bio}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {(phone || addressLine || linkEntries.length > 0) && (
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="font-semibold mb-3">Contact</h2>
+                <div className="space-y-2 text-sm">
+                  {phone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <a href={`tel:${phone.replace(/[^+\d]/g, "")}`} className="hover:underline">
+                        {phone}
+                      </a>
+                    </div>
+                  )}
+                  {addressLine && (
+                    <div className="flex items-start gap-2">
+                      <Home className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                      <span>
+                        {[addressLine, city, country].filter(Boolean).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {linkEntries.map(([key, url]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow ugc"
+                        className="hover:underline break-all"
+                      >
+                        {linkDisplay(url)}
+                      </a>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}

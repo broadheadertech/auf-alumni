@@ -31,6 +31,9 @@ function buildProfile(tiers: Record<string, PrivacyTier>): Doc<"profiles"> {
     city: "Manila",
     country: "Philippines",
     bio: "BS IT '18 working in product engineering.",
+    phone: "+63 917 555 0101",
+    addressLine: "12 Rizal St., Barangay Sto. Domingo",
+    links: { linkedin: "https://linkedin.com/in/maria" },
     skills: ["TypeScript", "React"],
     openTo: ["mentorship"],
     experience: [],
@@ -70,6 +73,11 @@ const TIEABLE_FIELDS = [
   "education",
   "batch",
   "program",
+  // Contact details. These are the fields most likely to cause real harm if
+  // they leak, so they are in the exhaustive matrix like everything else.
+  "phone",
+  "addressLine",
+  "links",
 ] as const;
 
 describe("applyPrivacy", () => {
@@ -147,5 +155,94 @@ describe("applyPrivacy", () => {
       const result = applyPrivacy(profile, { kind: "stranger" });
       expect((result as Record<string, unknown>).company).toBe("Globe Telecom");
     });
+  });
+});
+
+/**
+ * The editor's DEFAULT_TIERS ship phone as "connections" and addressLine as
+ * "private". These assert the consequence of those defaults, so a change to
+ * them has to be deliberate: a plain fellow alumnus must not be handed
+ * someone's phone number or home address.
+ */
+describe("contact detail defaults", () => {
+  const profile = buildProfile({
+    phone: "connections",
+    addressLine: "private",
+    links: "alumni",
+  });
+
+  test("a stranger gets none of it", () => {
+    const r = applyPrivacy(profile, { kind: "stranger" });
+    expect(r.phone).toBeUndefined();
+    expect(r.addressLine).toBeUndefined();
+    expect(r.links).toBeUndefined();
+  });
+
+  test("a fellow alumnus gets links but not phone or address", () => {
+    const r = applyPrivacy(profile, { kind: "alumnus", userId: userIdB });
+    expect(r.links).toBeDefined();
+    expect(r.phone).toBeUndefined();
+    expect(r.addressLine).toBeUndefined();
+  });
+
+  test("a connection gets the phone but still not the address", () => {
+    const r = applyPrivacy(profile, { kind: "connection", userId: userIdB });
+    expect(r.phone).toBe("+63 917 555 0101");
+    expect(r.addressLine).toBeUndefined();
+  });
+
+  test("the owner sees everything", () => {
+    const r = applyPrivacy(profile, { kind: "self", userId: userIdA });
+    expect(r.phone).toBe("+63 917 555 0101");
+    expect(r.addressLine).toBe("12 Rizal St., Barangay Sto. Domingo");
+    expect(r.links).toBeDefined();
+  });
+
+  test("an untiered contact field falls back to alumni, not public", () => {
+    // Belt and braces: if someone adds a contact field and forgets to give it
+    // a default tier, it must not default to visible-to-everyone.
+    const untiered = buildProfile({});
+    expect(applyPrivacy(untiered, { kind: "stranger" }).phone).toBeUndefined();
+  });
+});
+
+/**
+ * Regression: a privacy tier stored for a field that does not exist yet is a
+ * live trap, not dead data.
+ *
+ * The seeders wrote `{ email: "alumni", phone: "alumni" }` into privacyTiers
+ * before the schema had either field. The profile editor hydrates as
+ * `{ ...DEFAULT_TIERS, ...existing.privacyTiers }`, so on the day a real
+ * `phone` field was added, that dormant "alumni" silently beat the intended
+ * "connections" default and published every seeded alumnus's phone number to
+ * the whole network.
+ *
+ * This asserts the shape of the bug rather than the seed data, so it still
+ * catches the next field someone pre-tiers.
+ */
+describe("stale tiers for not-yet-existing fields", () => {
+  test("a stored tier is more permissive than the intended default", () => {
+    const intendedDefault: PrivacyTier = "connections";
+    const staleSeedValue: PrivacyTier = "alumni";
+
+    // This is what the editor does when it merges defaults with stored tiers.
+    const hydrated = { phone: intendedDefault, ...{ phone: staleSeedValue } };
+    expect(hydrated.phone).toBe("alumni");
+
+    // ...and the consequence: a plain alumnus can read it.
+    const profile = buildProfile({ phone: hydrated.phone });
+    expect(
+      applyPrivacy(profile, { kind: "alumnus", userId: userIdB }).phone,
+    ).toBeDefined();
+  });
+
+  test("with the tier repaired, a plain alumnus cannot read it", () => {
+    const profile = buildProfile({ phone: "connections" });
+    expect(
+      applyPrivacy(profile, { kind: "alumnus", userId: userIdB }).phone,
+    ).toBeUndefined();
+    expect(
+      applyPrivacy(profile, { kind: "connection", userId: userIdB }).phone,
+    ).toBeDefined();
   });
 });

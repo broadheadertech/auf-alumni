@@ -21,6 +21,7 @@ import { internalMutation, mutation, query, type MutationCtx } from "./_generate
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 import { buildSearchText } from "./helpers/searchText";
 import { normalizeEntry } from "./helpers/experience";
+import { sanitizeAddress, sanitizeLinks, sanitizePhone } from "./helpers/links";
 
 const HARD_DELETE_GRACE_DAYS = 30;
 const VERIFICATION_ARTIFACT_TTL_DAYS = 30;
@@ -424,6 +425,17 @@ export const createOrUpdateMyProfile = mutation({
     city: v.optional(v.string()),
     country: v.optional(v.string()),
     employmentStatus: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    addressLine: v.optional(v.string()),
+    links: v.optional(
+      v.object({
+        linkedin: v.optional(v.string()),
+        facebook: v.optional(v.string()),
+        instagram: v.optional(v.string()),
+        github: v.optional(v.string()),
+        website: v.optional(v.string()),
+      }),
+    ),
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
@@ -491,6 +503,9 @@ export const createOrUpdateMyProfile = mutation({
         city: args.city,
         country: args.country,
         employmentStatus: args.employmentStatus,
+        phone: sanitizePhone(args.phone),
+        addressLine: sanitizeAddress(args.addressLine),
+        links: sanitizeLinks(args.links),
         bio: args.bio,
         skills: args.skills,
         searchText: buildSearchText({
@@ -530,6 +545,9 @@ export const createOrUpdateMyProfile = mutation({
       city: args.city,
       country: args.country,
       employmentStatus: args.employmentStatus,
+      phone: sanitizePhone(args.phone),
+      addressLine: sanitizeAddress(args.addressLine),
+      links: sanitizeLinks(args.links),
       bio: args.bio,
       skills: args.skills,
       searchText: buildSearchText({

@@ -41,6 +41,7 @@ import type * as events from "../events.js";
 import type * as feed from "../feed.js";
 import type * as helpers_audit from "../helpers/audit.js";
 import type * as helpers_experience from "../helpers/experience.js";
+import type * as helpers_links from "../helpers/links.js";
 import type * as helpers_privacy from "../helpers/privacy.js";
 import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   feed: typeof feed;
   "helpers/audit": typeof helpers_audit;
   "helpers/experience": typeof helpers_experience;
+  "helpers/links": typeof helpers_links;
   "helpers/privacy": typeof helpers_privacy;
   "helpers/rbac": typeof helpers_rbac;
   "helpers/registry": typeof helpers_registry;

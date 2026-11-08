@@ -87,6 +87,9 @@ type FormState = {
   openTo: OpenToKind[];
   openToWork: boolean;
   openToWorkNote: string;
+  phone: string;
+  addressLine: string;
+  links: Record<LinkKey, string>;
   experience: ExperienceDraft[];
   education: {
     degree: string;
@@ -98,12 +101,37 @@ type FormState = {
   excludeFromSearchEngines: boolean;
 };
 
+type LinkKey = "linkedin" | "facebook" | "instagram" | "github" | "website";
+
+/** The social fields, in the order they appear in the Contact section. */
+const LINK_FIELDS: { key: LinkKey; label: string; placeholder: string }[] = [
+  { key: "linkedin", label: "LinkedIn", placeholder: "linkedin.com/in/your-name" },
+  { key: "facebook", label: "Facebook", placeholder: "facebook.com/your-name" },
+  { key: "instagram", label: "Instagram", placeholder: "instagram.com/your-name" },
+  { key: "github", label: "GitHub", placeholder: "github.com/your-name" },
+  { key: "website", label: "Website", placeholder: "your-site.com" },
+];
+
+const EMPTY_LINKS: Record<LinkKey, string> = {
+  linkedin: "",
+  facebook: "",
+  instagram: "",
+  github: "",
+  website: "",
+};
+
 const DEFAULT_TIERS: Record<string, PrivacyTier> = {
   currentRole: "alumni",
   company: "alumni",
   city: "alumni",
   country: "public",
   employmentStatus: "alumni",
+  // Contact details start closed. A phone number is for people you have
+  // actually connected with, and a home address is nobody's business by
+  // default — both can be opened up deliberately, but never by omission.
+  phone: "connections",
+  addressLine: "private",
+  links: "alumni",
   bio: "alumni",
   skills: "alumni",
   experience: "alumni",
@@ -123,6 +151,7 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: "identity", label: "Identity" },
   { id: "work", label: "Work" },
   { id: "about", label: "About" },
+  { id: "contact", label: "Contact" },
   { id: "opento", label: "Open to" },
   { id: "skills", label: "Skills" },
   { id: "experience", label: "Experience" },
@@ -145,6 +174,9 @@ const EMPTY: FormState = {
   openTo: [],
   openToWork: false,
   openToWorkNote: "",
+  phone: "",
+  addressLine: "",
+  links: EMPTY_LINKS,
   experience: [],
   education: [],
   privacyTiers: DEFAULT_TIERS,
@@ -200,6 +232,12 @@ export default function ProfileEditPage() {
       openTo: (existing.openTo ?? []) as OpenToKind[],
       openToWork: existing.openToWork ?? false,
       openToWorkNote: existing.openToWorkNote ?? "",
+      phone: (existing.phone as string | undefined) ?? "",
+      addressLine: (existing.addressLine as string | undefined) ?? "",
+      links: {
+        ...EMPTY_LINKS,
+        ...((existing.links as Record<LinkKey, string> | undefined) ?? {}),
+      },
       experience: existing.experience ?? [],
       education: existing.education ?? [],
       privacyTiers: {
@@ -309,6 +347,13 @@ export default function ProfileEditPage() {
         openToWorkNote: state.openToWork
           ? state.openToWorkNote.trim() || undefined
           : undefined,
+        phone: state.phone.trim() || undefined,
+        addressLine: state.addressLine.trim() || undefined,
+        links: Object.fromEntries(
+          LINK_FIELDS.map((f) => [f.key, state.links[f.key].trim()]).filter(
+            ([, v]) => v,
+          ),
+        ),
         experience: state.experience,
         education: state.education,
         privacyTiers: state.privacyTiers,
@@ -924,6 +969,92 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Experience */}
+          <Card id="contact" className={cn(activeTab !== "contact" && "hidden")}>
+            <CardContent className="space-y-4 p-6">
+              <FieldWithPrivacy
+                label="Phone"
+                fieldKey="phone"
+                tier={state.privacyTiers.phone ?? "connections"}
+                onTier={(t) => updateTier("phone", t)}
+                hidden={showHiddenInPreview("phone")}
+              >
+                <Input
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="+63 917 555 0101"
+                  value={state.phone}
+                  onChange={(e) =>
+                    setState((prev) => ({ ...prev, phone: e.target.value }))
+                  }
+                />
+              </FieldWithPrivacy>
+
+              <FieldWithPrivacy
+                label="Address"
+                fieldKey="addressLine"
+                tier={state.privacyTiers.addressLine ?? "private"}
+                onTier={(t) => updateTier("addressLine", t)}
+                hidden={showHiddenInPreview("addressLine")}
+              >
+                <Input
+                  id="addressLine"
+                  placeholder="House / street / barangay"
+                  value={state.addressLine}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      addressLine: e.target.value,
+                    }))
+                  }
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Used for posting your Alumni ID and printed invitations. It
+                  starts visible only to you — open it up only if you want to.
+                  Your city and country are set under Identity.
+                </p>
+              </FieldWithPrivacy>
+
+              <FieldWithPrivacy
+                label="Social links"
+                fieldKey="links"
+                tier={state.privacyTiers.links ?? "alumni"}
+                onTier={(t) => updateTier("links", t)}
+                hidden={showHiddenInPreview("links")}
+              >
+                <div className="space-y-2">
+                  {LINK_FIELDS.map((f) => (
+                    <div key={f.key} className="grid gap-1 sm:grid-cols-[110px_1fr] sm:items-center">
+                      <Label
+                        htmlFor={`link-${f.key}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {f.label}
+                      </Label>
+                      <Input
+                        id={`link-${f.key}`}
+                        inputMode="url"
+                        placeholder={f.placeholder}
+                        value={state.links[f.key]}
+                        onChange={(e) =>
+                          setState((prev) => ({
+                            ...prev,
+                            links: { ...prev.links, [f.key]: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Paste the address or just the handle part — https:// is
+                    added for you. Anything that is not a web address is
+                    dropped when you save.
+                  </p>
+                </div>
+              </FieldWithPrivacy>
+            </CardContent>
+          </Card>
+
           <Card id="experience" className={cn(activeTab !== "experience" && "hidden")}>
             <CardContent className="space-y-3 p-6">
               <FieldWithPrivacy

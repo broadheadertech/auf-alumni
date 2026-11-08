@@ -61,6 +61,17 @@ export const ProfileSchema = z
     company: z.string().max(200).optional(),
     city: z.string().max(120).optional(),
     country: z.string().max(120).optional(),
+    phone: z.string().max(40).optional(),
+    addressLine: z.string().max(200).optional(),
+    links: z
+      .object({
+        linkedin: z.string().max(300).optional(),
+        facebook: z.string().max(300).optional(),
+        instagram: z.string().max(300).optional(),
+        github: z.string().max(300).optional(),
+        website: z.string().max(300).optional(),
+      })
+      .optional(),
     bio: z.string().max(2000).optional(),
     skills: z.array(z.string().min(1).max(60)).max(30),
     openTo: z.array(OpenToKind).max(4),

@@ -246,8 +246,12 @@ export const upsertDemoAccount = internalMutation({
             },
           ],
           privacyTiers: {
-            email: "alumni",
-            phone: "alumni",
+            // Must match DEFAULT_TIERS in the profile editor. A tier here for
+            // a field that does not exist yet is a trap: it lies dormant and
+            // then silently overrides the intended default the day someone
+            // adds that field. "email" used to sit here for exactly that
+            // reason and has been removed.
+            phone: "connections",
             city: "public",
             country: "public",
             company: "connections",
