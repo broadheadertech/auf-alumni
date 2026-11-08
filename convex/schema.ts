@@ -110,10 +110,33 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     excludeFromSearchEngines: v.boolean(),
+    // Denormalised haystack for the search_all index below. Optional so rows
+    // written before it existed stay valid; every profile write refreshes it
+    // and seedActivity:backfillSearchText fills in the rest.
+    searchText: v.optional(v.string()),
   })
     .index("by_slug", ["slug"])
     .index("by_userId", ["userId"])
     .index("by_batch_program", ["batch", "program"])
+    // Text search over the roster.
+    //
+    // `searchText` is a denormalised blob of everything the directory matches
+    // on — display name, role, company, bio and skills — maintained on write
+    // by buildSearchText() in convex/helpers/searchText.ts. One index over it
+    // beats three per-field indexes because the directory treats those fields
+    // as a single haystack, and because `skills` is an array, which cannot be
+    // a searchField by itself. `searchField` is tokenised by Convex and
+    // matched prefix-wise; filterFields are equality-only narrowing applied
+    // inside the index, which is what keeps a filtered search from degrading
+    // into a scan.
+    .searchIndex("search_all", {
+      searchField: "searchText",
+      filterFields: ["batch", "program", "city", "country", "employmentStatus"],
+    })
+    .searchIndex("search_name", {
+      searchField: "displayName",
+      filterFields: ["batch", "program", "city", "country"],
+    })
     .index("by_alumni_id", ["alumniId"]),
 
   // ---------- academic taxonomy (admin-managed reference data) ----------
@@ -192,7 +215,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status_time", ["status", "createdAt"])
-    .index("by_email_time", ["email", "createdAt"]),
+    .index("by_email_time", ["email", "createdAt"])
+    .searchIndex("search_message", {
+      searchField: "message",
+      filterFields: ["status", "topic"],
+    }),
 
   // ---------- CMS: articles (newsroom) ----------
   articles: defineTable({
@@ -209,7 +236,15 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_slug", ["slug"])
-    .index("by_status_published", ["status", "publishedAt"]),
+    .index("by_status_published", ["status", "publishedAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "category"],
+    })
+    .searchIndex("search_body", {
+      searchField: "body",
+      filterFields: ["status"],
+    }),
 
   // ---------- verificationSubmissions (Epic 2 Stories 2.3, 2.4) ----------
   verificationSubmissions: defineTable({
@@ -310,6 +345,14 @@ export default defineSchema({
   })
     .index("by_status_time", ["status", "createdAt"])
     .index("by_employer_time", ["employerOrgId", "createdAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "employmentType", "workMode", "employerOrgId"],
+    })
+    .searchIndex("search_description", {
+      searchField: "description",
+      filterFields: ["status"],
+    })
     .index("by_published", ["publishedAt"]),
 
   applications: defineTable({
@@ -458,7 +501,11 @@ export default defineSchema({
     ),
   })
     .index("by_starts_at", ["startsAt"])
-    .index("by_published_at", ["publishedAt"]),
+    .index("by_published_at", ["publishedAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["category"],
+    }),
 
   rsvps: defineTable({
     eventId: v.id("events"),
@@ -630,7 +677,11 @@ export default defineSchema({
     suspendedKind: v.optional(v.string()), // "deactivated" | "rejected"
   })
     .index("by_slug", ["slug"])
-    .index("by_tier", ["tier"]),
+    .index("by_tier", ["tier"])
+    .searchIndex("search_name", {
+      searchField: "name",
+      filterFields: ["tier", "industry", "hqCity"],
+    }),
 
   // ---------- AUF Academy (Epic 17) ----------
   // On-demand "how to" courses taught by verified alumni instructors.
@@ -653,7 +704,11 @@ export default defineSchema({
     .index("by_slug", ["slug"])
     .index("by_instructor", ["instructorId"])
     .index("by_status_published", ["status", "publishedAt"])
-    .index("by_category_status", ["category", "status"]),
+    .index("by_category_status", ["category", "status"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "category", "level"],
+    }),
 
   academyLessons: defineTable({
     courseId: v.id("academyCourses"),

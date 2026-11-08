@@ -49,6 +49,21 @@ async function requireMember(ctx: QueryCtx) {
   return userId;
 }
 
+/**
+ * How many rows the search index may return before we stop.
+ *
+ * The directory previously `.collect()`ed every profile on every call and
+ * filtered in JavaScript — fine at 71 rows, but the stated budget is p95
+ * under 300ms at 10,000. With a search term we read the `search_all` index
+ * instead, bounded by this cap rather than by table size.
+ *
+ * Without a term there is nothing to search on, and the remaining filters are
+ * multi-valued (programs[], cities[], skills[]) while Convex filterFields are
+ * equality on a single value — so those cannot be pushed into an index and the
+ * scan stays. That is the path to revisit if the roster grows large.
+ */
+const SEARCH_CANDIDATE_CAP = 500;
+
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 100;
 
@@ -100,6 +115,32 @@ function toFilters(args: Filters): Filters {
     statuses: args.statuses,
     companyQuery: args.companyQuery,
   };
+}
+
+/**
+ * Rows the query could possibly match.
+ *
+ * With a search term this reads the `search_all` index — bounded, and matching
+ * the same haystack the scan used (name, role, company, program, bio, skills),
+ * because `searchText` is built from exactly those fields. Without a term
+ * there is nothing to search, so it falls back to the scan.
+ *
+ * Index matching is token-prefix, not substring: "info" finds "Information
+ * Technology", but a fragment starting mid-word does not. For a roster search
+ * that is the behaviour people expect, and it is what makes the query bounded.
+ */
+async function candidateProfiles(
+  ctx: QueryCtx,
+  f: Filters,
+): Promise<Array<Doc<"profiles">>> {
+  const term = (f.search ?? "").trim();
+  if (term.length < 2) {
+    return await ctx.db.query("profiles").collect();
+  }
+  return await ctx.db
+    .query("profiles")
+    .withSearchIndex("search_all", (q) => q.search("searchText", term))
+    .take(SEARCH_CANDIDATE_CAP);
 }
 
 function profileMatches(p: Doc<"profiles">, f: Filters): boolean {
@@ -194,7 +235,7 @@ export const list = query({
     // disagree with `count`. Replaceable with a search index later — the
     // interface is preserved.)
     const [profiles, hidden] = await Promise.all([
-      ctx.db.query("profiles").collect(),
+      candidateProfiles(ctx, filters),
       hiddenUserIds(ctx),
     ]);
     const matched = profiles.filter(
@@ -236,6 +277,10 @@ export const count = query({
   handler: async (ctx, args) => {
     await requireMember(ctx);
     const filters = toFilters(args);
+    // Not candidateProfiles(): `total` is the size of the whole roster, the
+    // denominator in "N of M alumni". Narrowing it to the search hits made the
+    // display read "1 of 9" where it should say "1 of 71". This query returns
+    // two integers and does no per-row privacy work, so the scan is cheap.
     const [profiles, hidden] = await Promise.all([
       ctx.db.query("profiles").collect(),
       hiddenUserIds(ctx),
@@ -267,7 +312,7 @@ export const adjacentSuggestions = query({
     await requireMember(ctx);
     const base = toFilters(args);
     const [profiles, hidden] = await Promise.all([
-      ctx.db.query("profiles").collect(),
+      candidateProfiles(ctx, base),
       hiddenUserIds(ctx),
     ]);
     const verified = profiles.filter((p) => p.verifiedAt != null && !hidden.has(p.userId));

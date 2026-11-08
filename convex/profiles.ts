@@ -19,6 +19,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+import { buildSearchText } from "./helpers/searchText";
 
 const HARD_DELETE_GRACE_DAYS = 30;
 const VERIFICATION_ARTIFACT_TTL_DAYS = 30;
@@ -372,7 +373,7 @@ const DISPLAY_NAME_MAX = 80;
  */
 function cleanDisplayName(raw: string): string {
   const value = raw
-    .replace(/[ -]/g, "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
     .replace(/[<>]/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -463,6 +464,13 @@ export const createOrUpdateMyProfile = mutation({
         employmentStatus: args.employmentStatus,
         bio: args.bio,
         skills: args.skills,
+        searchText: buildSearchText({
+          displayName,
+          currentRole: args.currentRole,
+          company: args.company,
+          bio: args.bio,
+          skills: args.skills,
+        }),
         openTo: args.openTo,
         openToWork: args.openToWork ?? false,
         openToWorkNote: args.openToWorkNote,
@@ -495,6 +503,13 @@ export const createOrUpdateMyProfile = mutation({
       employmentStatus: args.employmentStatus,
       bio: args.bio,
       skills: args.skills,
+      searchText: buildSearchText({
+        displayName,
+        currentRole: args.currentRole,
+        company: args.company,
+        bio: args.bio,
+        skills: args.skills,
+      }),
       openTo: args.openTo,
       openToWork: args.openToWork ?? false,
       openToWorkNote: args.openToWorkNote,

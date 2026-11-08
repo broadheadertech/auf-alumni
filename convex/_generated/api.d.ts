@@ -44,6 +44,7 @@ import type * as helpers_privacy from "../helpers/privacy.js";
 import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
 import type * as helpers_registryStub from "../helpers/registryStub.js";
+import type * as helpers_searchText from "../helpers/searchText.js";
 import type * as helpers_siteContentPages from "../helpers/siteContentPages.js";
 import type * as helpers_taxonomy from "../helpers/taxonomy.js";
 import type * as http from "../http.js";
@@ -109,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/rbac": typeof helpers_rbac;
   "helpers/registry": typeof helpers_registry;
   "helpers/registryStub": typeof helpers_registryStub;
+  "helpers/searchText": typeof helpers_searchText;
   "helpers/siteContentPages": typeof helpers_siteContentPages;
   "helpers/taxonomy": typeof helpers_taxonomy;
   http: typeof http;

@@ -25,6 +25,7 @@ import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { TAXONOMY_SEED } from "./taxonomy";
 import { LOOKUP_SEED } from "./lookups";
+import { buildSearchText } from "./helpers/searchText";
 
 const DAY = 86_400_000;
 const MARKER_SLUG = "demo-alum-001";
@@ -559,5 +560,32 @@ export const backfillJobDetails = internalMutation({
       }
     }
     return { jobsUpdated: updated };
+  },
+});
+
+/**
+ * Backfills `profiles.searchText` for rows written before the field existed.
+ *
+ * The search_all index can only match what has been written to the field, so
+ * until this runs an older profile is invisible to indexed search. Safe to
+ * re-run: it rewrites every profile from its current fields, so it also
+ * repairs any row that drifted.
+ *
+ *   npx convex run seedActivity:backfillSearchText
+ */
+export const backfillSearchText = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let updated = 0;
+    // Maintenance pass over stored fields; nothing is returned to a caller.
+    // @no-privacy-required: no viewer exists, so there is no privacy to apply.
+    for (const p of await ctx.db.query("profiles").collect()) {
+      const next = buildSearchText(p);
+      if (p.searchText !== next) {
+        await ctx.db.patch(p._id, { searchText: next });
+        updated += 1;
+      }
+    }
+    return { profilesUpdated: updated };
   },
 });
