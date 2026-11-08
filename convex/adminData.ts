@@ -645,6 +645,8 @@ export type EventView = {
   rsvpCancelled: number;
   upcoming: boolean;
   cancelled: boolean;
+  /** Shown to logged-out visitors on the marketing home page. */
+  isPublic: boolean;
   createdAt: string;
 };
 
@@ -693,6 +695,7 @@ async function buildEvents(ctx: QueryCtx, now: number, only?: Id<"events">): Pro
         rsvpCancelled: n("cancelled"),
         upcoming: e.startsAt >= now && !e.cancelledAt,
         cancelled: e.cancelledAt != null,
+        isPublic: e.isPublic === true,
         createdAt: isoDate(e.publishedAt),
       };
     })

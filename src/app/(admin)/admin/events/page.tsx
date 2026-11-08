@@ -13,9 +13,9 @@
  * persisted).
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   CalendarPlus,
   ChevronRight,
@@ -46,6 +46,7 @@ import { useUrlFilters } from "@/lib/use-url-filters";
 import { useCollegePrograms } from "@/lib/use-program-options";
 import { parseBatchInput } from "@/lib/batch-input";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const FILTER_KEYS = [
   "q",
@@ -310,6 +311,29 @@ function EventRow({ event }: { event: EventView }) {
   const batches = audienceBatches(event.audience);
   const programs = audiencePrograms(event.audience);
   const status = event.cancelled ? "Cancelled" : event.upcoming ? "Upcoming" : "Past";
+  const setPublic = useMutation(api.events.setEventPublic);
+  const [busy, setBusy] = useState(false);
+
+  // The row is a link to the event, so the toggle has to stop the click from
+  // navigating before it can do anything.
+  const onToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBusy(true);
+    try {
+      const next = !event.isPublic;
+      await setPublic({ eventId: event.id as never, isPublic: next });
+      toast.success(
+        next
+          ? "Now listed on the public home page"
+          : "No longer shown to visitors",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change visibility");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <Link href={`/admin/events/${event.id}`} className="group block">
       <Card className="transition-shadow group-hover:ring-foreground/25">
@@ -318,6 +342,25 @@ function EventRow({ event }: { event: EventView }) {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="font-medium group-hover:underline">{event.title}</h3>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  disabled={busy}
+                  title={
+                    event.isPublic
+                      ? "Visible to logged-out visitors on the home page"
+                      : "Alumni only — not shown to visitors"
+                  }
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-[11px] transition",
+                    event.isPublic
+                      ? "border-emerald-600/40 bg-emerald-600/10 text-emerald-700 dark:text-emerald-400"
+                      : "border-border text-muted-foreground hover:bg-muted",
+                    busy && "opacity-50",
+                  )}
+                >
+                  {event.isPublic ? "Public" : "Alumni only"}
+                </button>
                 <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
                   {eventCategoryLabel(event.category)}
                 </span>

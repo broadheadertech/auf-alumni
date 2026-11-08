@@ -688,3 +688,75 @@ export const getEventPublic = query({
     };
   },
 });
+
+
+/**
+ * Upcoming events for the public marketing site.
+ *
+ * Deliberately narrow: only events an admin has explicitly marked public,
+ * only ones still to happen, and only the fields a stranger needs. Attendee
+ * counts, capacity, the audience filter and the online joining URL are all
+ * withheld — a visitor has no business knowing who is coming, and the join
+ * link is the event's soft access control.
+ */
+export const listPublic = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const now = Date.now();
+    const cap = Math.min(Math.max(limit ?? 6, 1), 24);
+
+    const upcoming = ctx.db
+      .query("events")
+      .withIndex("by_starts_at", (q) => q.gt("startsAt", now))
+      .order("asc");
+
+    const out: Array<{
+      _id: Id<"events">;
+      title: string;
+      description: string;
+      startsAt: number;
+      endsAt: number | null;
+      location: string | null;
+      category: string | null;
+      coverUrl: string | null;
+    }> = [];
+
+    for await (const e of upcoming) {
+      if (e.cancelledAt != null) continue;
+      if (e.isPublic !== true) continue;
+      out.push({
+        _id: e._id,
+        title: e.title,
+        description: e.description,
+        startsAt: e.startsAt,
+        endsAt: e.endsAt ?? null,
+        location: e.locationLabel ?? (e.onlineUrl ? "Online" : null),
+        category: e.category ?? null,
+        coverUrl: e.coverImageStorageId
+          ? await ctx.storage.getUrl(e.coverImageStorageId)
+          : null,
+      });
+      if (out.length >= cap) break;
+    }
+
+    return out;
+  },
+});
+
+/**
+ * Admin toggle for the above. Separate from publishing: an event is
+ * "published" to alumni the moment it exists, whereas this decides whether
+ * the outside world sees it at all.
+ */
+export const setEventPublic = mutation({
+  args: { eventId: v.id("events"), isPublic: v.boolean() },
+  handler: async (ctx, { eventId, isPublic }) => {
+    await requireRole(ctx, ["super-admin", "moderator"]);
+    const event = await ctx.db.get(eventId);
+    if (!event) {
+      throw new ConvexError({ code: "not-found", message: "Event not found" });
+    }
+    await ctx.db.patch(eventId, { isPublic });
+    return { isPublic };
+  },
+});

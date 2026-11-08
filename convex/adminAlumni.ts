@@ -1,8 +1,10 @@
-import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
+import { mutation, query } from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
+import { withAuditLog } from "./helpers/audit";
 import { loadCollegeClassifier } from "./helpers/taxonomy";
 import { accountStatusOf } from "./accountStatus";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * Admin alumni roster (Story 6.x support view).
@@ -198,4 +200,93 @@ export const getAlumna = query({
       applications,
     };
   },
+});
+
+
+/**
+ * Admin override of an alumnus's employment status.
+ *
+ * Employment status was self-serve only: an alumnus set it from their own
+ * profile and nobody else could touch it. That left the Alumni Relations
+ * office unable to act on what it learns off-platform — a graduate who tells
+ * a tracer-study caller they have been employed for a year, or who has
+ * plainly moved on but never updated their profile. Since the status feeds
+ * tracer-study reporting, a roster nobody can correct is a reporting problem
+ * as much as an administrative one.
+ *
+ * The override is deliberately visible rather than silent: it goes through
+ * withAuditLog like every other admin action, and `reason` is required so the
+ * log says why, not just what.
+ *
+ * Passing an empty `status` clears it back to unset.
+ */
+export const setEmploymentStatus = mutation({
+  args: {
+    profileId: v.id("profiles"),
+    status: v.string(),
+    reason: v.string(),
+  },
+  handler: withAuditLog(
+    async (
+      ctx,
+      {
+        profileId,
+        status,
+        reason,
+      }: { profileId: Id<"profiles">; status: string; reason: string },
+    ) => {
+      await requireRole(ctx, ["super-admin", "moderator"]);
+
+      if (!reason || reason.trim().length === 0) {
+        throw new ConvexError({
+          code: "reason-required",
+          message: "A reason is required when overriding employment status",
+        });
+      }
+
+      const profile = await ctx.db.get(profileId);
+      if (!profile) {
+        throw new ConvexError({ code: "not-found", message: "Profile not found" });
+      }
+
+      const next = status.trim();
+      if (next.length > 0) {
+        // Only accept a value from the admin-managed status list, so an
+        // override cannot introduce a status the filters and reports do not
+        // know about.
+        const allowed = await ctx.db
+          .query("referenceItems")
+          .withIndex("by_kind_sort", (q) => q.eq("kind", "status"))
+          .collect();
+        const match = allowed.find(
+          (item) =>
+            item.archivedAt == null &&
+            item.name.toLowerCase() === next.toLowerCase(),
+        );
+        if (!match) {
+          throw new ConvexError({
+            code: "unknown-status",
+            message: `"${next}" is not one of the configured employment statuses`,
+          });
+        }
+      }
+
+      const previous = profile.employmentStatus ?? null;
+      await ctx.db.patch(profileId, {
+        employmentStatus: next.length > 0 ? next : undefined,
+        updatedAt: Date.now(),
+      });
+
+      return {
+        action: "override-employment-status",
+        target: { type: "profile", id: profileId },
+        reason,
+        metadata: {
+          alumna: profile.displayName,
+          from: previous,
+          to: next.length > 0 ? next : null,
+        },
+      };
+    },
+  ),
 });

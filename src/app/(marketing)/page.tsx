@@ -96,8 +96,40 @@ async function safeFetch<T>(p: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+type PublicArticle = {
+  _id: string;
+  slug: string;
+  title: string;
+  excerpt: string | null;
+  category: string | null;
+  publishedAt: number;
+  coverUrl: string | null;
+};
+
+type PublicEvent = {
+  _id: string;
+  title: string;
+  description: string;
+  startsAt: number;
+  endsAt: number | null;
+  location: string | null;
+  category: string | null;
+  coverUrl: string | null;
+};
+
+const DATE_FMT = new Intl.DateTimeFormat("en-PH", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+const TIME_FMT = new Intl.DateTimeFormat("en-PH", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 export default async function HomePage() {
-  const [copy, stats, jobs, mentors] = await Promise.all([
+  const [copy, stats, jobs, mentors, articles, events] = await Promise.all([
     safeFetch(
       fetchQuery(api.siteContent.get, { key: "home" }) as Promise<Copy>,
       DEFAULT_COPY,
@@ -107,6 +139,14 @@ export default async function HomePage() {
     safeFetch(
       fetchQuery(api.directory.publicMentors, {}),
       [] as PublicMentor[],
+    ),
+    safeFetch(
+      fetchQuery(api.articles.listPublished, { limit: 3 }),
+      [] as PublicArticle[],
+    ),
+    safeFetch(
+      fetchQuery(api.events.listPublic, { limit: 3 }),
+      [] as PublicEvent[],
     ),
   ]);
 
@@ -119,6 +159,8 @@ export default async function HomePage() {
       <HowItWorks copy={c} />
       <FeaturedJobs jobs={jobs} copy={c} />
       <MentorSpotlight mentors={mentors} copy={c} />
+      <Newsroom articles={articles} />
+      <UpcomingEvents events={events} />
       <Testimonial copy={c} />
       <FinalCTA copy={c} />
     </div>
@@ -536,6 +578,127 @@ function MentorSpotlight({
               })}
             </div>
           )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * News and articles on the home page.
+ *
+ * The newsroom already existed at /news but nothing on the landing page
+ * pointed at it, so a visitor had no way to discover it. Renders nothing at
+ * all when there is no published article — an empty "latest news" strip reads
+ * worse than no strip.
+ */
+function Newsroom({ articles }: { articles: PublicArticle[] }) {
+  if (articles.length === 0) return null;
+  return (
+    <section className="border-y auf-hairline">
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+          <div>
+            <div className="section-eyebrow brand-fg">Newsroom</div>
+            <h2 className="font-serif text-[28px] md:text-[36px] font-semibold mt-2 leading-tight">
+              News and stories from the network
+            </h2>
+          </div>
+          <Link href="/news" className="auf-btn auf-btn-outline">
+            Read the newsroom <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {articles.map((a) => (
+            <Link
+              key={a._id}
+              href={`/news/${a.slug}`}
+              className="auf-card overflow-hidden hover:shadow-md transition block"
+              style={{ borderColor: "var(--border-soft)" }}
+            >
+              {a.coverUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={a.coverUrl}
+                  alt=""
+                  className="h-40 w-full object-cover"
+                />
+              ) : (
+                <div
+                  className="h-40 w-full"
+                  style={{ background: "var(--surface-2)" }}
+                />
+              )}
+              <div className="p-5">
+                <div className="text-[12px] ink-3">
+                  {a.category ? `${a.category} · ` : ""}
+                  {DATE_FMT.format(new Date(a.publishedAt))}
+                </div>
+                <div className="font-medium text-[16px] mt-1">{a.title}</div>
+                {a.excerpt && (
+                  <p className="text-[13.5px] ink-2 mt-2 line-clamp-3">
+                    {a.excerpt}
+                  </p>
+                )}
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Upcoming events, for visitors who are not signed in.
+ *
+ * Only events an admin has explicitly marked public reach this list (see
+ * events.listPublic) — alumni events can be scoped to particular batches or
+ * programmes, so this is opt-in rather than everything-minus-exceptions.
+ * RSVP needs an account, hence the sign-in call to action rather than a link
+ * into the alumni app that would just bounce to /login.
+ */
+function UpcomingEvents({ events }: { events: PublicEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <section
+      className="border-y auf-hairline"
+      style={{ background: "var(--surface-2)" }}
+    >
+      <div className="max-w-[1240px] mx-auto px-4 sm:px-7 py-12 sm:py-20">
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+          <div>
+            <div className="section-eyebrow brand-fg">What&apos;s on</div>
+            <h2 className="font-serif text-[28px] md:text-[36px] font-semibold mt-2 leading-tight">
+              Upcoming alumni events
+            </h2>
+          </div>
+          <Link href="/login" className="auf-btn auf-btn-outline">
+            Sign in to RSVP <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {events.map((e) => {
+            const start = new Date(e.startsAt);
+            return (
+              <div
+                key={e._id}
+                className="auf-card p-5"
+                style={{ borderColor: "var(--border-soft)" }}
+              >
+                <div className="section-eyebrow brand-fg">
+                  {DATE_FMT.format(start)} · {TIME_FMT.format(start)}
+                </div>
+                <div className="font-medium text-[16px] mt-2">{e.title}</div>
+                {e.location && (
+                  <div className="text-[12.5px] ink-3 mt-1">{e.location}</div>
+                )}
+                <p className="text-[13.5px] ink-2 mt-2 line-clamp-3">
+                  {e.description}
+                </p>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

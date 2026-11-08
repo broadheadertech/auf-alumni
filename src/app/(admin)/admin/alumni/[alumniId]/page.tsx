@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { AccountStatusCard } from "@/components/auf/AccountStatusCard";
+import { EmploymentStatusCard } from "@/components/auf/EmploymentStatusCard";
 import { AlumniIdCard } from "@/components/auf/AlumniIdCard";
 import { StageBadge, StatTile, WorkStatusBadge } from "@/components/auf/AdminBits";
 import type { ApplicationStage, WorkStatus } from "@/lib/mock-admin";
@@ -213,6 +214,12 @@ export default function AlumnaDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <EmploymentStatusCard
+            profileId={a.id}
+            name={a.name}
+            current={a.employmentStatus}
+          />
 
           <AccountStatusCard id={a.id} name={a.name} kind="alumnus" status={a.accountStatus ?? null} />
         </div>

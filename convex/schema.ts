@@ -507,6 +507,11 @@ export default defineSchema({
     publishedBy: v.id("users"),
     publishedAt: v.number(),
     cancelledAt: v.optional(v.number()),
+    // Visible to logged-out visitors on the marketing site. Opt-in, and
+    // absent means private: events can carry an audienceFilter restricting
+    // them to particular batches or programmes, so defaulting the roster to
+    // public would leak alumni-only gatherings the day this shipped.
+    isPublic: v.optional(v.boolean()),
     coverImageStorageId: v.optional(v.id("_storage")),
     category: v.optional(
       v.union(

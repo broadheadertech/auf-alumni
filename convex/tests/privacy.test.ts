@@ -226,7 +226,9 @@ describe("stale tiers for not-yet-existing fields", () => {
     const staleSeedValue: PrivacyTier = "alumni";
 
     // This is what the editor does when it merges defaults with stored tiers.
-    const hydrated = { phone: intendedDefault, ...{ phone: staleSeedValue } };
+    const defaults: Record<string, PrivacyTier> = { phone: intendedDefault };
+    const stored: Record<string, PrivacyTier> = { phone: staleSeedValue };
+    const hydrated = { ...defaults, ...stored };
     expect(hydrated.phone).toBe("alumni");
 
     // ...and the consequence: a plain alumnus can read it.

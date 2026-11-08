@@ -21,6 +21,7 @@
  * marker alumna exists. `clearDemo:run` removes it along with the rest.
  */
 
+import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { TAXONOMY_SEED } from "./taxonomy";
@@ -502,6 +503,21 @@ export const run = internalMutation({
       publishedBy: publisher,
       publishedAt: now - 75 * DAY,
     });
+    // Open to everyone and flagged public: this is the one the marketing home
+    // page shows to logged-out visitors. The other two are deliberately not —
+    // one is in the past, the other is restricted to two programmes.
+    await ctx.db.insert("events", {
+      title: "Alumni Career Fair 2027",
+      description:
+        "Open day for every AUF alumnus and graduating student. Employers on site, CV clinic, and talks from alumni across industries.",
+      startsAt: now + 45 * DAY,
+      locationLabel: "AUF Main Campus, Angeles City",
+      capacity: 800,
+      category: "meetup",
+      isPublic: true,
+      publishedBy: publisher,
+      publishedAt: now - 5 * DAY,
+    });
     await ctx.db.insert("events", {
       title: "IT & CS Career Night",
       description: "Hiring partners meet BS IT and BS CS alumni. Bring your CV.",
@@ -821,5 +837,98 @@ export const repairContactTiers = internalMutation({
     }
 
     return { profiles: profiles.length, touched, phoneReset, emailDropped };
+  },
+});
+
+/**
+ * Demo convenience for the marketing home page's "What's on" strip.
+ *
+ * Does two things, both idempotent:
+ *   1. inserts an open-to-all upcoming event if the demo data has none left
+ *      (the seeded ones are dated relative to when the seed ran, so they go
+ *      stale as real time passes)
+ *   2. marks eligible upcoming events public
+ *
+ * Audience-restricted events are never touched: they are scoped to particular
+ * batches or programmes and showing them to strangers would defeat the point.
+ *
+ *   npx convex run seedActivity:seedUpcomingPublicEvents
+ */
+export const seedUpcomingPublicEvents = internalMutation({
+  args: { count: v.optional(v.number()) },
+  handler: async (ctx, { count }) => {
+    const now = Date.now();
+    const want = Math.min(Math.max(count ?? 3, 1), 12);
+
+    const isRestricted = (e: Doc<"events">) =>
+      (e.audienceFilter?.batches?.length ?? 0) > 0 ||
+      (e.audienceFilter?.programs?.length ?? 0) > 0;
+
+    let upcoming = await ctx.db
+      .query("events")
+      .withIndex("by_starts_at", (q) => q.gt("startsAt", now))
+      .order("asc")
+      .collect();
+
+    let created = 0;
+    const openUpcoming = upcoming.filter(
+      (e) => e.cancelledAt == null && !isRestricted(e),
+    );
+
+    if (openUpcoming.length === 0) {
+      // Borrow a publisher from an existing event so this works on any
+      // database without needing to know which user seeded it.
+      const any = await ctx.db.query("events").first();
+      const publisher =
+        any?.publishedBy ??
+        (await ctx.db.query("users").first())?._id;
+      if (!publisher) return { error: "no users to attribute the event to" };
+
+      const DAY = 24 * 60 * 60 * 1000;
+      await ctx.db.insert("events", {
+        title: "Alumni Career Fair 2027",
+        description:
+          "Open day for every AUF alumnus and graduating student. Employers on site, CV clinic, and talks from alumni across industries.",
+        startsAt: now + 45 * DAY,
+        locationLabel: "AUF Main Campus, Angeles City",
+        capacity: 800,
+        category: "meetup",
+        isPublic: true,
+        publishedBy: publisher,
+        publishedAt: now,
+      });
+      created += 1;
+
+      await ctx.db.insert("events", {
+        title: "Homecoming Weekend",
+        description:
+          "Batch tables, campus tours and the awards night. Families welcome.",
+        startsAt: now + 90 * DAY,
+        locationLabel: "AUF Main Campus, Angeles City",
+        capacity: 500,
+        category: "reunion",
+        isPublic: true,
+        publishedBy: publisher,
+        publishedAt: now,
+      });
+      created += 1;
+
+      upcoming = await ctx.db
+        .query("events")
+        .withIndex("by_starts_at", (q) => q.gt("startsAt", now))
+        .order("asc")
+        .collect();
+    }
+
+    let marked = 0;
+    for (const e of upcoming) {
+      if (marked >= want) break;
+      if (e.cancelledAt != null) continue;
+      if (isRestricted(e)) continue;
+      if (e.isPublic !== true) await ctx.db.patch(e._id, { isPublic: true });
+      marked += 1;
+    }
+
+    return { upcoming: upcoming.length, created, marked };
   },
 });
