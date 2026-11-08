@@ -40,6 +40,7 @@ import type * as enquiries from "../enquiries.js";
 import type * as events from "../events.js";
 import type * as feed from "../feed.js";
 import type * as helpers_audit from "../helpers/audit.js";
+import type * as helpers_experience from "../helpers/experience.js";
 import type * as helpers_privacy from "../helpers/privacy.js";
 import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
@@ -106,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   events: typeof events;
   feed: typeof feed;
   "helpers/audit": typeof helpers_audit;
+  "helpers/experience": typeof helpers_experience;
   "helpers/privacy": typeof helpers_privacy;
   "helpers/rbac": typeof helpers_rbac;
   "helpers/registry": typeof helpers_registry;

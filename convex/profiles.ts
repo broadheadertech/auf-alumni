@@ -20,6 +20,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 import { buildSearchText } from "./helpers/searchText";
+import { normalizeEntry } from "./helpers/experience";
 
 const HARD_DELETE_GRACE_DAYS = 30;
 const VERIFICATION_ARTIFACT_TTL_DAYS = 30;
@@ -58,6 +59,27 @@ async function ensureUniqueSlug(
 /**
  * Get the current authenticated user's profile, with full self-view.
  */
+/**
+ * Recompute each entry's display label from its structured dates so `years`
+ * can never drift from the start/end fields a client sent. A client could
+ * otherwise post "2015 - 2019" alongside startYear 2022 and every surface
+ * that renders `years` would show the lie.
+ */
+function normalizeExperience(
+  entries: Array<{
+    role: string;
+    company: string;
+    years: string;
+    startYear?: number;
+    startMonth?: number;
+    endYear?: number;
+    endMonth?: number;
+    current?: boolean;
+  }>,
+) {
+  return entries.map((e) => normalizeEntry(e));
+}
+
 export const getMyProfile = query({
   args: {},
   handler: async (ctx) => {
@@ -411,7 +433,14 @@ export const createOrUpdateMyProfile = mutation({
       v.object({
         role: v.string(),
         company: v.string(),
+        // Accepted but not trusted: `years` is recomputed from the structured
+        // fields below before storage. See normalizeExperience().
         years: v.string(),
+        startYear: v.optional(v.number()),
+        startMonth: v.optional(v.number()),
+        endYear: v.optional(v.number()),
+        endMonth: v.optional(v.number()),
+        current: v.optional(v.boolean()),
       }),
     ),
     education: v.array(
@@ -475,7 +504,7 @@ export const createOrUpdateMyProfile = mutation({
         openToWork: args.openToWork ?? false,
         openToWorkNote: args.openToWorkNote,
         openToWorkUpdatedAt: now,
-        experience: args.experience,
+        experience: normalizeExperience(args.experience),
         education: args.education,
         privacyTiers: args.privacyTiers,
         excludeFromSearchEngines: args.excludeFromSearchEngines ?? false,
@@ -514,7 +543,7 @@ export const createOrUpdateMyProfile = mutation({
       openToWork: args.openToWork ?? false,
       openToWorkNote: args.openToWorkNote,
       openToWorkUpdatedAt: now,
-      experience: args.experience,
+      experience: normalizeExperience(args.experience),
       education: args.education,
       privacyTiers: args.privacyTiers,
       verifiedAt: undefined,

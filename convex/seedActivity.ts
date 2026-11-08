@@ -26,6 +26,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { TAXONOMY_SEED } from "./taxonomy";
 import { LOOKUP_SEED } from "./lookups";
 import { buildSearchText } from "./helpers/searchText";
+import { normalizeEntry, parseLegacyPeriod } from "./helpers/experience";
 
 const DAY = 86_400_000;
 const MARKER_SLUG = "demo-alum-001";
@@ -246,6 +247,82 @@ export const run = internalMutation({
           ).name
         : undefined;
       const city = areas.length ? r.pick(areas).name : "Angeles City";
+
+      // Employment history with real start/end months, so tenure,
+      // time-to-employment and work anniversaries have something to compute
+      // from. Profiles used to be seeded with `experience: []` even when they
+      // had a current role, which left every one of those surfaces empty.
+      const roleTitle = employed
+        ? r.pick(["Associate", "Specialist", "Analyst", "Engineer", "Coordinator", "Officer"])
+        : undefined;
+      const employerName = employed
+        ? r.pick(["Accenture", "Concentrix", "SM Supermalls", "Clark Development Corp.", "Holy Angel Medical Center", "TaskUs"])
+        : undefined;
+
+      const experience: Array<{
+        role: string;
+        company: string;
+        years: string;
+        startYear?: number;
+        startMonth?: number;
+        endYear?: number;
+        endMonth?: number;
+        current?: boolean;
+      }> = [];
+
+      if (employed && roleTitle && employerName) {
+        // Months between graduating (assume June of `batch`) and first job.
+        const gapMonths = r.int(0, 18);
+        const firstStartAbs = batch * 12 + 5 + gapMonths;
+        const nowAbs = new Date(now).getUTCFullYear() * 12 + new Date(now).getUTCMonth();
+        const fromAbs = (abs: number) => ({
+          year: Math.floor(abs / 12),
+          month: (abs % 12) + 1,
+        });
+
+        // Roughly half have moved on from a first employer.
+        const hasPrior = firstStartAbs + 24 < nowAbs && r.chance(0.5);
+        if (hasPrior) {
+          const priorEnd = Math.min(firstStartAbs + r.int(12, 36), nowAbs - 1);
+          const a = fromAbs(firstStartAbs);
+          const b = fromAbs(priorEnd);
+          experience.push(
+            normalizeEntry({
+              role: r.pick(["Junior Associate", "Trainee", "Assistant"]),
+              company: r.pick(["Teleperformance", "Alorica", "Sitel", "iQor"]),
+              years: "",
+              startYear: a.year,
+              startMonth: a.month,
+              endYear: b.year,
+              endMonth: b.month,
+            }),
+          );
+          const c = fromAbs(Math.min(priorEnd + 1, nowAbs));
+          experience.push(
+            normalizeEntry({
+              role: roleTitle,
+              company: employerName,
+              years: "",
+              startYear: c.year,
+              startMonth: c.month,
+              current: true,
+            }),
+          );
+        } else {
+          const a = fromAbs(Math.min(firstStartAbs, nowAbs));
+          experience.push(
+            normalizeEntry({
+              role: roleTitle,
+              company: employerName,
+              years: "",
+              startYear: a.year,
+              startMonth: a.month,
+              current: true,
+            }),
+          );
+        }
+      }
+
       const profileId = await ctx.db.insert("profiles", {
         userId,
         slug,
@@ -254,15 +331,15 @@ export const run = internalMutation({
         batch,
         program: program.name,
         degree: "Bachelor of Science",
-        currentRole: employed ? r.pick(["Associate", "Specialist", "Analyst", "Engineer", "Coordinator", "Officer"]) : undefined,
-        company: employed ? r.pick(["Accenture", "Concentrix", "SM Supermalls", "Clark Development Corp.", "Holy Angel Medical Center", "TaskUs"]) : undefined,
+        currentRole: roleTitle,
+        company: employerName,
         city,
         country: "Philippines",
         employmentStatus: statusName,
         skills: skillsFor(program.name),
         openTo: r.chance(0.4) ? ["Mentorship"] : [],
         openToWork,
-        experience: [],
+        experience,
         education: [{ degree: "Bachelor of Science", program: program.name, school: "Angeles University Foundation", year: batch }],
         privacyTiers: { city: "alumni", company: "alumni", skills: "alumni" },
         verifiedAt: registeredAt + r.int(1, 48) * 3_600_000,
@@ -587,5 +664,108 @@ export const backfillSearchText = internalMutation({
       }
     }
     return { profilesUpdated: updated };
+  },
+});
+
+/**
+ * One-off migration: parse the legacy free-text `experience[].years` string
+ * into structured start/end fields.
+ *
+ * Run with:  npx convex run seedActivity:backfillExperienceDates
+ *
+ * Idempotent - an entry that already has a startYear is left alone. Entries
+ * whose text could not be parsed keep their original string and are counted in
+ * `unparsed` so the gap is visible rather than silent.
+ */
+export const backfillExperienceDates = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // @no-privacy-required: internal migration rewriting stored fields; no viewer-facing read.
+    const profiles = await ctx.db.query("profiles").collect();
+    let profilesTouched = 0;
+    let entriesParsed = 0;
+    let unparsed = 0;
+
+    for (const p of profiles) {
+      const entries = p.experience ?? [];
+      if (entries.length === 0) continue;
+      let changed = false;
+
+      const next = entries.map((e) => {
+        if (e.startYear != null) return e;
+        const parsed = parseLegacyPeriod(e.years);
+        if (!parsed) {
+          unparsed += 1;
+          return e;
+        }
+        changed = true;
+        entriesParsed += 1;
+        return normalizeEntry({ ...e, ...parsed });
+      });
+
+      if (changed) {
+        await ctx.db.patch(p._id, { experience: next });
+        profilesTouched += 1;
+      }
+    }
+
+    return { profiles: profiles.length, profilesTouched, entriesParsed, unparsed };
+  },
+});
+
+/**
+ * Demo-data only: give seeded alumni who have a current role but an empty
+ * employment history a plausible structured one.
+ *
+ * The bulk seeder used to insert `experience: []` for every generated profile,
+ * even when it had just given that person a role and an employer. It no longer
+ * does, but rows created before that fix are still empty, and re-running the
+ * seeder would discard the rest of the demo data.
+ *
+ * Deliberately scoped to the `demo-alum-` slug prefix: this INVENTS employment
+ * history, which is only acceptable for fixtures. It will not touch a real
+ * alumnus's profile.
+ *
+ *   npx convex run seedActivity:backfillDemoExperience
+ */
+export const backfillDemoExperience = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    // @no-privacy-required: internal demo-fixture migration; no viewer-facing read.
+    const profiles = await ctx.db.query("profiles").collect();
+    const now = Date.now();
+    const nowAbs = new Date(now).getUTCFullYear() * 12 + new Date(now).getUTCMonth();
+    let touched = 0;
+    let skippedReal = 0;
+
+    for (const p of profiles) {
+      if (!p.slug.startsWith("demo-alum-")) {
+        if ((p.experience ?? []).length === 0 && p.company) skippedReal += 1;
+        continue;
+      }
+      if ((p.experience ?? []).length > 0) continue;
+      if (!p.currentRole || !p.company) continue;
+
+      // Deterministic per-profile offset so repeated runs are stable.
+      const seed = p.slug.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+      const gapMonths = seed % 19; // 0-18 months to first job
+      const startAbs = Math.min(p.batch * 12 + 5 + gapMonths, nowAbs);
+
+      await ctx.db.patch(p._id, {
+        experience: [
+          normalizeEntry({
+            role: p.currentRole,
+            company: p.company,
+            years: "",
+            startYear: Math.floor(startAbs / 12),
+            startMonth: (startAbs % 12) + 1,
+            current: true,
+          }),
+        ],
+      });
+      touched += 1;
+    }
+
+    return { touched, skippedReal };
   },
 });

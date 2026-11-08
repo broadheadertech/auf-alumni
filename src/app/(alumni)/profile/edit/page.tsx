@@ -22,6 +22,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  MONTH_OPTIONS,
+  formatPeriod,
+  periodError,
+  yearOptions,
+  type ExperienceDraft,
+} from "@/lib/experience";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -79,7 +87,7 @@ type FormState = {
   openTo: OpenToKind[];
   openToWork: boolean;
   openToWorkNote: string;
-  experience: { role: string; company: string; years: string }[];
+  experience: ExperienceDraft[];
   education: {
     degree: string;
     program: string;
@@ -101,6 +109,10 @@ const DEFAULT_TIERS: Record<string, PrivacyTier> = {
   experience: "alumni",
   education: "alumni",
 };
+
+/** Sentinel for an unset month/year (Select items need a non-empty value). */
+const NONE = "__none";
+const YEAR_CHOICES = yearOptions();
 
 /** Select sentinel for "no employment status" (Select items need a value). */
 const NO_STATUS = "__none__";
@@ -922,66 +934,200 @@ export default function ProfileEditPage() {
                 hidden={showHiddenInPreview("experience")}
               >
                 <div className="space-y-3">
-                  {state.experience.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-md border border-border p-3"
-                    >
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <Input
-                          placeholder="Role"
-                          value={entry.role}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, role: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                        <Input
-                          placeholder="Company"
-                          value={entry.company}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, company: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                        <Input
-                          placeholder="Years (e.g. 2020 – 2023)"
-                          value={entry.years}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, years: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 text-muted-foreground"
-                        onClick={() =>
-                          setState((s) => ({
-                            ...s,
-                            experience: s.experience.filter((_, i) => i !== idx),
-                          }))
-                        }
+                  {state.experience.map((entry, idx) => {
+                    const patch = (fields: Partial<ExperienceDraft>) =>
+                      setState((prev) => {
+                        const next = [...prev.experience];
+                        next[idx] = { ...next[idx], ...fields };
+                        next[idx].years = formatPeriod(next[idx]);
+                        return { ...prev, experience: next };
+                      });
+                    const err = periodError(entry);
+                    const monthItems = (
+                      <>
+                        <SelectItem value={NONE}>Month</SelectItem>
+                        {MONTH_OPTIONS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </>
+                    );
+                    const yearItems = (
+                      <>
+                        <SelectItem value={NONE}>Year</SelectItem>
+                        {YEAR_CHOICES.map((y) => (
+                          <SelectItem key={y} value={String(y)}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </>
+                    );
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-md border border-border p-3"
                       >
-                        <X className="mr-1 h-3.5 w-3.5" />
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            placeholder="Role"
+                            value={entry.role}
+                            onChange={(e) => patch({ role: e.target.value })}
+                          />
+                          <Input
+                            placeholder="Company"
+                            value={entry.company}
+                            onChange={(e) => patch({ company: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              From
+                            </Label>
+                            <div className="mt-1 flex gap-2">
+                              <Select
+                                value={
+                                  entry.startMonth
+                                    ? String(entry.startMonth)
+                                    : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    startMonth:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Month" />
+                                </SelectTrigger>
+                                <SelectContent>{monthItems}</SelectContent>
+                              </Select>
+                              <Select
+                                value={
+                                  entry.startYear
+                                    ? String(entry.startYear)
+                                    : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    startYear:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Year" />
+                                </SelectTrigger>
+                                <SelectContent>{yearItems}</SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              To
+                            </Label>
+                            <div className="mt-1 flex gap-2">
+                              <Select
+                                disabled={entry.current === true}
+                                value={
+                                  entry.endMonth ? String(entry.endMonth) : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    endMonth:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Month" />
+                                </SelectTrigger>
+                                <SelectContent>{monthItems}</SelectContent>
+                              </Select>
+                              <Select
+                                disabled={entry.current === true}
+                                value={
+                                  entry.endYear ? String(entry.endYear) : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    endYear:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue
+                                    placeholder={
+                                      entry.current ? "Present" : "Year"
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>{yearItems}</SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="mt-2 flex w-fit items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={entry.current === true}
+                            onCheckedChange={(v) =>
+                              patch(
+                                v === true
+                                  ? {
+                                      current: true,
+                                      endYear: undefined,
+                                      endMonth: undefined,
+                                    }
+                                  : { current: false },
+                              )
+                            }
+                          />
+                          I currently work here
+                        </label>
+
+                        {err ? (
+                          <p className="mt-2 text-xs text-destructive">{err}</p>
+                        ) : entry.years ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Shows as: {entry.years}
+                          </p>
+                        ) : null}
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2 text-muted-foreground"
+                          onClick={() =>
+                            setState((prev) => ({
+                              ...prev,
+                              experience: prev.experience.filter(
+                                (_, i) => i !== idx,
+                              ),
+                            }))
+                          }
+                        >
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      </div>
+                    );
+                  })}
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      setState((s) => ({
-                        ...s,
+                      setState((prev) => ({
+                        ...prev,
                         experience: [
-                          ...s.experience,
+                          ...prev.experience,
                           { role: "", company: "", years: "" },
                         ],
                       }))

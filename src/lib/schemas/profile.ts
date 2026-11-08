@@ -7,9 +7,29 @@ const ExperienceEntry = z
   .object({
     role: z.string().min(1).max(200),
     company: z.string().min(1).max(200),
-    years: z.string().min(1).max(50),
+    // Display label. The server recomputes this from the structured fields
+    // on write (convex/helpers/experience.ts), so it is allowed to be empty
+    // here for a row that has a start date.
+    years: z.string().max(50),
+    startYear: z.number().int().min(1900).max(CURRENT_YEAR + 1).optional(),
+    startMonth: z.number().int().min(1).max(12).optional(),
+    endYear: z.number().int().min(1900).max(CURRENT_YEAR + 1).optional(),
+    endMonth: z.number().int().min(1).max(12).optional(),
+    current: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((e) => e.startYear != null || e.years.trim().length > 0, {
+    message: "Add the year you started",
+  })
+  .refine(
+    (e) =>
+      e.startYear == null ||
+      e.current ||
+      e.endYear == null ||
+      e.endYear * 12 + ((e.endMonth ?? 12) - 1) >=
+        e.startYear * 12 + ((e.startMonth ?? 1) - 1),
+    { message: "The end date is before the start date" },
+  );
 
 const EducationEntry = z
   .object({

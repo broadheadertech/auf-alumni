@@ -71,11 +71,22 @@ export default defineSchema({
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
+    // Employment history. `years` is the DERIVED display label (recomputed
+    // server-side from the structured fields on every write) so existing
+    // render sites keep working; the start/end fields are what reporting and
+    // the work-anniversary cron actually read. Structured fields are optional
+    // because rows predating the migration may not have parsed.
+    // See convex/helpers/experience.ts.
     experience: v.array(
       v.object({
         role: v.string(),
         company: v.string(),
         years: v.string(),
+        startYear: v.optional(v.number()),
+        startMonth: v.optional(v.number()), // 1-12
+        endYear: v.optional(v.number()),
+        endMonth: v.optional(v.number()),
+        current: v.optional(v.boolean()),
       }),
     ),
     education: v.array(
