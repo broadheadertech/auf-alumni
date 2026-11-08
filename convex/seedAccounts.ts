@@ -41,18 +41,46 @@ type DemoAccount = {
   };
 };
 
-const ACCOUNTS: DemoAccount[] = [
+/**
+ * Demo passwords come from the Convex environment, never from this file.
+ *
+ * They used to be literals here, which put working credentials for
+ * tech@broadheader.com — an account holding super-admin, moderator and
+ * verifier — into the repository and its history. Set them once with:
+ *
+ *   npx convex env set DEMO_ADMIN_PASSWORD '<value>'
+ *   npx convex env set DEMO_ALUMNA_PASSWORD '<value>'
+ *   npx convex env set DEMO_EMPLOYER_PASSWORD '<value>'
+ *   npx convex env set DEMO_RECRUITER_PASSWORD '<value>'
+ *
+ * Accounts already in the database are unaffected — only re-seeding needs
+ * these. The previously committed password is in git history and should be
+ * rotated regardless of this change.
+ */
+function requirePassword(envVar: string): string {
+  const value = process.env[envVar];
+  if (!value || value.length < 8) {
+    throw new Error(
+      `${envVar} is not set (or is shorter than 8 characters). ` +
+        `Set it with: npx convex env set ${envVar} '<value>'`,
+    );
+  }
+  return value;
+}
+
+function demoAccounts(): DemoAccount[] {
+  return [
   {
     key: "admin",
     email: "tech@broadheader.com",
-    password: "@Broadheader_8080",
+    password: requirePassword("DEMO_ADMIN_PASSWORD"),
     name: "Broadheader Admin",
     roles: ["super-admin", "moderator", "verifier"],
   },
   {
     key: "alumna",
     email: "bellojaezarjohn@broadheader.com",
-    password: "@Broadheader_8080",
+    password: requirePassword("DEMO_ALUMNA_PASSWORD"),
     name: "Jaezar John Bello",
     roles: ["alumnus"],
     alumnaProfile: {
@@ -80,18 +108,19 @@ const ACCOUNTS: DemoAccount[] = [
   {
     key: "employer",
     email: "employer@demo.auf.local",
-    password: "Demo1234",
+    password: requirePassword("DEMO_EMPLOYER_PASSWORD"),
     name: "Broadheader Hiring",
     roles: ["partner-employer-admin"],
   },
   {
     key: "employer",
     email: "employer@broadheader.com",
-    password: "@Broadheader_8080",
+    password: requirePassword("DEMO_RECRUITER_PASSWORD"),
     name: "Broadheader Recruiter",
     roles: ["partner-employer-admin"],
   },
-];
+  ];
+}
 
 export const run = internalAction({
   args: {},
@@ -106,7 +135,7 @@ export const run = internalAction({
       password: string;
       action: string;
     }> = [];
-    for (const a of ACCOUNTS) {
+    for (const a of demoAccounts()) {
       const hash = await new Scrypt().hash(a.password);
       const r = await ctx.runMutation(
         internal.seedAccountsHelpers.upsertDemoAccount,
