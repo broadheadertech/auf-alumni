@@ -390,6 +390,29 @@ export default defineSchema({
     profileSnapshot: v.any(), // privacy-filtered snapshot at submission time
     stage: v.string(), // "new" | "screening" | "interview" | "offered" | "hired" | "not-selected"
     referredBy: v.optional(v.id("users")),
+    // Screening appointment. The pipeline had an "interview" stage but no
+    // interview: no date, no place, and nothing the applicant could see or
+    // respond to, so scheduling happened off-platform or not at all.
+    //
+    // `respondedAt`/`response` are the applicant's side — an appointment
+    // nobody confirmed is not a booking, and an employer needs to know the
+    // difference between "not seen it yet" and "can't make it".
+    interview: v.optional(
+      v.object({
+        startsAt: v.number(),
+        durationMinutes: v.optional(v.number()),
+        mode: v.string(), // "onsite" | "online" | "phone"
+        // Address for onsite, joining link for online, number for phone.
+        location: v.optional(v.string()),
+        note: v.optional(v.string()),
+        scheduledBy: v.id("users"),
+        scheduledAt: v.number(),
+        cancelledAt: v.optional(v.number()),
+        response: v.optional(v.string()), // "accepted" | "declined"
+        responseNote: v.optional(v.string()),
+        respondedAt: v.optional(v.number()),
+      }),
+    ),
     // Explicit, employer-triggered "CV reviewed" marker. Independent of stage —
     // an employer marks the CV reviewed by a deliberate action, and analytics
     // count reviews from this field rather than inferring from stage movement.

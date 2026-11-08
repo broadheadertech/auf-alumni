@@ -22,6 +22,8 @@ import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { cn } from "@/lib/utils";
+import { InterviewInvite } from "@/components/auf/InterviewInvite";
+import type { Interview } from "@/lib/interview";
 
 type Application = {
   _id: string;
@@ -32,6 +34,7 @@ type Application = {
   employerName: string;
   stage: string;
   reviewedAt: number | null;
+  interview?: Interview | null;
   resumeFilename?: string;
   createdAt: number;
   updatedAt: number;
@@ -227,6 +230,14 @@ function ApplicationRow({ application: a }: { application: Application }) {
             )}
           </div>
         </div>
+
+        {a.interview && (
+          <InterviewInvite
+            applicationId={a._id}
+            employerName={a.employerName}
+            interview={a.interview}
+          />
+        )}
       </CardContent>
     </Card>
   );

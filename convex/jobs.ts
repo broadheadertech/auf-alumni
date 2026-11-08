@@ -20,6 +20,7 @@ import {
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy } from "./helpers/privacy";
+import { maybeInsertNotification } from "./notifications";
 
 const STAGES = [
   "new",
@@ -670,6 +671,7 @@ export const myApplicants = query({
             resumeFilename: a.resumeFilename,
             snapshot: a.profileSnapshot,
             reviewedAt: a.reviewedAt,
+            interview: a.interview ?? null,
             createdAt: a.createdAt,
           });
         }
@@ -709,6 +711,7 @@ export const myApplications = query({
         employerName: org?.name ?? "—",
         stage: a.stage,
         reviewedAt: a.reviewedAt ?? null,
+        interview: a.interview ?? null,
         resumeFilename: a.resumeFilename,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
@@ -982,5 +985,203 @@ export const publicOpenings = query({
       });
     }
     return out;
+  },
+});
+
+
+/** Interview delivery modes. Kept in step with INTERVIEW_MODE_LABEL in the UI. */
+export const INTERVIEW_MODES = ["onsite", "online", "phone"] as const;
+
+/**
+ * Schedule (or reschedule) a screening appointment for an applicant.
+ *
+ * The pipeline already had an "interview" stage, but nothing behind it: no
+ * date, no place, and nothing the applicant could see. Employers were either
+ * arranging screenings off-platform or not at all, and "Set appointment for
+ * screening" was the one employer capability the role matrix asked for that
+ * did not exist.
+ *
+ * Scheduling moves the application to the interview stage, because an
+ * appointment that leaves someone sitting in "new" misrepresents the pipeline
+ * to both sides. Rescheduling clears any previous response: a confirmation of
+ * a time that no longer exists is worse than no confirmation.
+ */
+export const scheduleInterview = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    startsAt: v.number(),
+    durationMinutes: v.optional(v.number()),
+    mode: v.string(),
+    location: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    { applicationId, startsAt, durationMinutes, mode, location, note },
+  ) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    if (!INTERVIEW_MODES.includes(mode as (typeof INTERVIEW_MODES)[number])) {
+      throw new ConvexError({
+        code: "invalid-mode",
+        message: `Mode must be one of: ${INTERVIEW_MODES.join(", ")}`,
+      });
+    }
+    if (!Number.isFinite(startsAt) || startsAt <= Date.now()) {
+      throw new ConvexError({
+        code: "invalid-time",
+        message: "Pick a date and time in the future",
+      });
+    }
+
+    const app = await ctx.db.get(applicationId);
+    if (!app) {
+      throw new ConvexError({ code: "not-found", message: "Application not found" });
+    }
+    const job = await ctx.db.get(app.jobId);
+    if (!job || job.createdBy !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the posting employer can schedule this interview",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: {
+        startsAt,
+        durationMinutes: durationMinutes ?? 45,
+        mode,
+        location: location?.trim() || undefined,
+        note: note?.trim() || undefined,
+        scheduledBy: userId,
+        scheduledAt: now,
+      },
+      stage: "interview",
+      stageChangedAt: app.stage !== "interview" ? now : app.stageChangedAt,
+      updatedAt: now,
+    });
+
+    const org = job.employerOrgId ? await ctx.db.get(job.employerOrgId) : null;
+    const when = new Date(startsAt).toUTCString();
+    await maybeInsertNotification(ctx, app.applicantId, "interviewInApp", {
+      kind: "interview-scheduled",
+      title: `Interview scheduled — ${job.title}`,
+      body: `${org?.name ?? "The employer"} proposed ${when}. Confirm whether you can make it.`,
+      href: "/applications",
+    });
+
+    return { ok: true };
+  },
+});
+
+/** Employer cancels a scheduled interview. The slot is kept for the record. */
+export const cancelInterview = mutation({
+  args: { applicationId: v.id("applications"), reason: v.optional(v.string()) },
+  handler: async (ctx, { applicationId, reason }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    const app = await ctx.db.get(applicationId);
+    if (!app?.interview) {
+      throw new ConvexError({ code: "not-found", message: "No interview scheduled" });
+    }
+    const job = await ctx.db.get(app.jobId);
+    if (!job || job.createdBy !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the posting employer can cancel this interview",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: { ...app.interview, cancelledAt: now },
+      updatedAt: now,
+    });
+
+    await maybeInsertNotification(ctx, app.applicantId, "interviewInApp", {
+      kind: "interview-cancelled",
+      title: `Interview cancelled — ${job.title}`,
+      body: reason?.trim() || "The employer cancelled this interview.",
+      href: "/applications",
+    });
+
+    return { ok: true };
+  },
+});
+
+/**
+ * The applicant's side: confirm or decline a proposed time.
+ *
+ * Only the applicant may call this. A declined interview deliberately does
+ * NOT move the stage backwards — declining a time is not withdrawing from the
+ * process, and an employer who re-proposes should find the candidate where
+ * they left them.
+ */
+export const respondToInterview = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    response: v.string(), // "accepted" | "declined"
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { applicationId, response, note }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    if (response !== "accepted" && response !== "declined") {
+      throw new ConvexError({
+        code: "invalid-response",
+        message: 'Response must be "accepted" or "declined"',
+      });
+    }
+    const app = await ctx.db.get(applicationId);
+    if (!app?.interview) {
+      throw new ConvexError({ code: "not-found", message: "No interview to respond to" });
+    }
+    if (app.applicantId !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the applicant can respond to this interview",
+      });
+    }
+    if (app.interview.cancelledAt) {
+      throw new ConvexError({
+        code: "cancelled",
+        message: "This interview was cancelled",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: {
+        ...app.interview,
+        response,
+        responseNote: note?.trim() || undefined,
+        respondedAt: now,
+      },
+      updatedAt: now,
+    });
+
+    const job = await ctx.db.get(app.jobId);
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+
+    if (job) {
+      await maybeInsertNotification(ctx, job.createdBy, "interviewInApp", {
+        kind: "interview-response",
+        title: `${profile?.displayName ?? "An applicant"} ${response} the interview`,
+        body: `${job.title}${note?.trim() ? ` — "${note.trim()}"` : ""}`,
+        href: "/employer/applicants",
+      });
+    }
+
+    return { ok: true };
   },
 });

@@ -19,6 +19,8 @@ import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StageBadge, StatTile } from "@/components/auf/employer-ui";
+import { InterviewScheduler } from "@/components/auf/InterviewScheduler";
+import { interviewState, INTERVIEW_STATE_LABEL, type Interview } from "@/lib/interview";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { STAGE_ORDER, STAGE_LABEL, fmtDate } from "@/lib/employer-format";
 import { useUrlFilters } from "@/lib/use-url-filters";
@@ -49,6 +51,7 @@ type Applicant = {
   coverNote?: string;
   resumeFilename?: string;
   reviewedAt?: number;
+  interview?: Interview | null;
   createdAt: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   snapshot: any;
@@ -388,6 +391,7 @@ function ApplicantRow({
   const snap = a.snapshot ?? {};
   const skills: string[] = snap.skills ?? [];
   const reviewed = Boolean(a.reviewedAt);
+  const ivState = interviewState(a.interview);
   return (
     <Card>
       <CardContent className="p-0">
@@ -413,6 +417,9 @@ function ApplicantRow({
             </div>
             <div className="truncate text-xs text-muted-foreground">
               {a.jobTitle} · applied {fmtDate(a.createdAt)}
+              {ivState !== "none" && (
+                <> · interview {INTERVIEW_STATE_LABEL[ivState].toLowerCase()}</>
+              )}
             </div>
           </div>
           {reviewed && (
@@ -476,6 +483,12 @@ function ApplicantRow({
                     <div className="text-sm">{a.coverNote}</div>
                   </div>
                 ) : null}
+
+                <InterviewScheduler
+                  applicationId={a._id}
+                  applicantName={snap.displayName ?? "the candidate"}
+                  interview={a.interview ?? null}
+                />
               </div>
 
               <div className="flex flex-col items-start gap-2 sm:items-end">
