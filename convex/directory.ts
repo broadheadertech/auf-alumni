@@ -15,6 +15,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { query, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+import { hiddenUserIds, verifiedProfiles } from "./helpers/indexedReads";
 
 /**
  * The roster is members-only.
@@ -82,12 +83,6 @@ type Filters = {
   companyQuery?: string;
 };
 
-/** Users an admin deactivated, rejected, suspended or deleted — never listed. */
-async function hiddenUserIds(ctx: QueryCtx): Promise<Set<string>> {
-  const users = await ctx.db.query("users").collect();
-  return new Set(users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string));
-}
-
 /** Shared validator for every filterable directory query — one shape everywhere. */
 const filterArgs = {
   search: v.optional(v.string()),
@@ -135,7 +130,9 @@ async function candidateProfiles(
 ): Promise<Array<Doc<"profiles">>> {
   const term = (f.search ?? "").trim();
   if (term.length < 2) {
-    return await ctx.db.query("profiles").collect();
+    // profileMatches() drops unverified rows anyway, so reading them was pure
+    // waste on the directory's default (no-term) load.
+    return await verifiedProfiles(ctx);
   }
   return await ctx.db
     .query("profiles")
@@ -279,16 +276,17 @@ export const count = query({
     const filters = toFilters(args);
     // Not candidateProfiles(): `total` is the size of the whole roster, the
     // denominator in "N of M alumni". Narrowing it to the search hits made the
-    // display read "1 of 9" where it should say "1 of 71". This query returns
-    // two integers and does no per-row privacy work, so the scan is cheap.
+    // display read "1 of 9" where it should say "1 of 71". Reading the
+    // verified rows by index gives the same denominator, since the loop below
+    // discarded the unverified ones regardless.
     const [profiles, hidden] = await Promise.all([
-      ctx.db.query("profiles").collect(),
+      verifiedProfiles(ctx),
       hiddenUserIds(ctx),
     ]);
     let matched = 0;
     let total = 0;
     for (const p of profiles) {
-      if (p.verifiedAt == null || hidden.has(p.userId)) continue;
+      if (hidden.has(p.userId)) continue;
       total += 1;
       if (profileMatches(p, filters)) matched += 1;
     }
@@ -316,6 +314,8 @@ export const adjacentSuggestions = query({
       hiddenUserIds(ctx),
     ]);
     const verified = profiles.filter((p) => p.verifiedAt != null && !hidden.has(p.userId));
+    // (candidateProfiles may return unverified rows on the search path, so
+    // the verifiedAt check stays.)
 
     const countWith = (f: Filters) =>
       verified.reduce((n, p) => (profileMatches(p, f) ? n + 1 : n), 0);
@@ -397,10 +397,8 @@ export const adjacentSuggestions = query({
 export const publicMentors = query({
   args: {},
   handler: async (ctx) => {
-    // @no-privacy-required: only public-tier fields returned; openTo signal is opt-in.
-    const profiles = await ctx.db.query("profiles").collect();
+    const profiles = await verifiedProfiles(ctx);
     const candidates = profiles.filter((p) => {
-      if (p.verifiedAt == null) return false;
       if (p.excludeFromSearchEngines) return false;
       const tags = (p.openTo ?? []).map((t) => t.toLowerCase());
       return tags.some((t) => t.includes("mentor"));
@@ -439,8 +437,7 @@ export const facets = query({
   args: {},
   handler: async (ctx) => {
     await requireMember(ctx);
-    const profiles = await ctx.db.query("profiles").collect();
-    const verified = profiles.filter((p) => p.verifiedAt != null);
+    const verified = await verifiedProfiles(ctx);
 
     const batches = new Map<number, number>();
     const programs = new Map<string, number>();

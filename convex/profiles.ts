@@ -22,6 +22,7 @@ import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 import { buildSearchText } from "./helpers/searchText";
 import { normalizeEntry } from "./helpers/experience";
 import { sanitizeAddress, sanitizeLinks, sanitizePhone } from "./helpers/links";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 const HARD_DELETE_GRACE_DAYS = 30;
 const VERIFICATION_ARTIFACT_TTL_DAYS = 30;
@@ -360,9 +361,9 @@ export const ensureMyAlumniId = mutation({
 export const listIndexableSlugs = query({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query("profiles").collect();
+    const rows = await verifiedProfiles(ctx);
     return rows
-      .filter((p) => p.verifiedAt != null && !p.excludeFromSearchEngines)
+      .filter((p) => !p.excludeFromSearchEngines)
       .map((p) => ({ slug: p.slug, updatedAt: p.updatedAt ?? p.createdAt }));
   },
 });

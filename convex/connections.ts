@@ -23,6 +23,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { isChannelEnabled, maybeInsertNotification } from "./notifications";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 const NOTE_MAX_LENGTH = 200;
 const REQUESTS_PER_DAY = 50;
@@ -515,11 +516,9 @@ export const mentorsAvailableCount = query({
   args: {},
   handler: async (ctx) => {
     // @no-privacy-required: aggregate count only; no per-alumna data returned.
-    const profiles = await ctx.db.query("profiles").collect();
-    return profiles.filter(
-      (p) =>
-        p.verifiedAt != null &&
-        (p.openTo ?? []).some((tag) => tag.toLowerCase().includes("mentor")),
+    const profiles = await verifiedProfiles(ctx);
+    return profiles.filter((p) =>
+      (p.openTo ?? []).some((tag) => tag.toLowerCase().includes("mentor")),
     ).length;
   },
 });

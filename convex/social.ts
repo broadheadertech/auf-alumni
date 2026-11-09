@@ -227,9 +227,12 @@ export const removeEndorsement = mutation({
 export const listEndorsements = query({
   args: { profileUserId: v.id("users") },
   handler: async (ctx, { profileUserId }) => {
+    // by_profile_skill is (profileUserId, skill); an eq on just the first
+    // field is a valid prefix, so this reads only the subject's endorsements
+    // instead of scanning every endorsement in the system.
     const rows = await ctx.db
       .query("endorsements")
-      .filter((q) => q.eq(q.field("profileUserId"), profileUserId))
+      .withIndex("by_profile_skill", (q) => q.eq("profileUserId", profileUserId))
       .collect();
     const me = await getAuthUserId(ctx);
     // Aggregate by skill with count + 3 recent endorser names.

@@ -7,6 +7,7 @@
 
 import { query } from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -18,10 +19,10 @@ export const dashboard = query({
     const monthAgo = now - 30 * MS_PER_DAY;
 
     const users = await ctx.db.query("users").collect();
+    // The unverified rows were only ever filtered back out, so read past them.
     // @no-privacy-required: aggregate counts only; no per-alumna field reaches the response.
-    const profiles = await ctx.db.query("profiles").collect();
-    const verifiedProfiles = profiles.filter((p) => p.verifiedAt != null);
-    const newThisMonth = verifiedProfiles.filter(
+    const verifiedRows = await verifiedProfiles(ctx);
+    const newThisMonth = verifiedRows.filter(
       (p) => p.verifiedAt! > monthAgo,
     ).length;
 
@@ -42,18 +43,18 @@ export const dashboard = query({
     const openJobs = jobs.filter((j) => j.status === "published").length;
     const applicationsThisMonth = await ctx.db
       .query("applications")
-      .filter((q) => q.gt(q.field("createdAt"), monthAgo))
+      .withIndex("by_created", (q) => q.gt("createdAt", monthAgo))
       .collect();
 
     const connections = await ctx.db.query("connections").collect();
     const connectedRows = connections.filter((c) => c.status === "connected");
     const avgConnections =
-      verifiedProfiles.length === 0
+      verifiedRows.length === 0
         ? 0
-        : (connectedRows.length * 2) / verifiedProfiles.length;
+        : (connectedRows.length * 2) / verifiedRows.length;
 
     return {
-      verifiedTotal: verifiedProfiles.length,
+      verifiedTotal: verifiedRows.length,
       verifiedNewThisMonth: newThisMonth,
       mauMonthly: mau,
       employersPartner: activePartners,
@@ -73,9 +74,8 @@ export const publicStats = query({
   args: {},
   handler: async (ctx) => {
     // @no-privacy-required: aggregate count only; no per-alumna data.
-    const profiles = await ctx.db.query("profiles").collect();
-    const verified = profiles.filter(
-      (p) => p.verifiedAt != null && !p.excludeFromSearchEngines,
+    const verified = (await verifiedProfiles(ctx)).filter(
+      (p) => !p.excludeFromSearchEngines,
     );
     const verifiedAlumni = verified.length;
 
@@ -109,8 +109,7 @@ export const anonymisedExport = query({
   handler: async (ctx) => {
     await requireRole(ctx, ["super-admin"]);
     // @no-privacy-required: k-anonymity collapse below; only aggregate counts are returned.
-    const profiles = await ctx.db.query("profiles").collect();
-    const verified = profiles.filter((p) => p.verifiedAt != null);
+    const verified = await verifiedProfiles(ctx);
 
     // Group by program × batch
     const grouped = new Map<string, number>();

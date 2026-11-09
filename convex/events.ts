@@ -595,11 +595,14 @@ export const sendDueReminders = internalMutation({
     const hour = 60 * 60 * 1000;
     const day = 24 * hour;
 
-    // Window: events starting between now and now + 25h
+    // Window: events starting between now and now + 25h.
+    // As an index range this reads only the window; as a .filter() it read
+    // every event ever created, once an hour, forever.
     const upcoming = await ctx.db
       .query("events")
-      .filter((q) => q.gt(q.field("startsAt"), now))
-      .filter((q) => q.lt(q.field("startsAt"), now + 25 * hour))
+      .withIndex("by_starts_at", (q) =>
+        q.gt("startsAt", now).lt("startsAt", now + 25 * hour),
+      )
       .collect();
 
     let sent = 0;

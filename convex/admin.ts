@@ -254,11 +254,8 @@ export const dashboardMetrics = query({
     const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
     const approvedThisWeek = await ctx.db
       .query("verificationSubmissions")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("status"), "approved"),
-          q.gte(q.field("decidedAt"), oneWeekAgo),
-        ),
+      .withIndex("by_status_decided", (q) =>
+        q.eq("status", "approved").gte("decidedAt", oneWeekAgo),
       )
       .collect();
     const turnarounds = approvedThisWeek

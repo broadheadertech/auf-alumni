@@ -50,7 +50,15 @@ export default defineSchema({
         messagesPerDay: v.optional(v.number()),
       }),
     ),
-  }).index("email", ["email"]),
+  })
+    .index("email", ["email"])
+    // Every directory read has to know which accounts are hidden. Without
+    // these it collected the whole users table to find the handful that are
+    // switched off. Both fields are optional, and Convex orders `undefined`
+    // below every number, so a `.gt(field, 0)` range reads only the rows
+    // where the field is actually set — i.e. exactly the hidden accounts.
+    .index("by_suspended", ["suspendedAt"])
+    .index("by_deleted", ["deletedAt"]),
 
   // ---------- profiles ----------
   profiles: defineTable({
@@ -165,7 +173,14 @@ export default defineSchema({
       searchField: "displayName",
       filterFields: ["batch", "program", "city", "country"],
     })
-    .index("by_alumni_id", ["alumniId"]),
+    .index("by_alumni_id", ["alumniId"])
+    // `verifiedAt == null` is the gate on almost every profiles read: the
+    // directory, facets, suggestions, digests and the public slices all drop
+    // unverified rows. Indexing it turns "collect everything, then filter"
+    // into a range read over just the verified rows. Same `undefined`-sorts-
+    // first trick as the users indexes above; see verifiedProfiles() in
+    // convex/helpers/indexedReads.ts.
+    .index("by_verified", ["verifiedAt"]),
 
   // ---------- academic taxonomy (admin-managed reference data) ----------
   // Colleges and their courses/programs, managed from the admin settings page
@@ -265,6 +280,9 @@ export default defineSchema({
   })
     .index("by_slug", ["slug"])
     .index("by_status_published", ["status", "publishedAt"])
+    // The admin list is ordered most-recently-edited first, which was being
+    // done by collecting every article and sorting in memory.
+    .index("by_updated", ["updatedAt"])
     .searchIndex("search_title", {
       searchField: "title",
       filterFields: ["status", "category"],
@@ -304,7 +322,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_user", ["userId"])
-    .index("by_status_time", ["status", "updatedAt"]),
+    .index("by_status_time", ["status", "updatedAt"])
+    // by_status_time is keyed on updatedAt, but the admin throughput panel
+    // asks "approved, decided since X" — a different field, so it was
+    // scanning the table.
+    .index("by_status_decided", ["status", "decidedAt"]),
 
   // ---------- connections (Epic 5) ----------
   // One row per directed request. When status becomes "connected", that single
@@ -440,7 +462,11 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_job_stage", ["jobId", "stage"])
-    .index("by_applicant_time", ["applicantId", "createdAt"]),
+    .index("by_applicant_time", ["applicantId", "createdAt"])
+    // by_applicant_time needs an applicant to narrow on. The analytics
+    // dashboard wants every application in a time window regardless of who
+    // filed it, which that index cannot answer.
+    .index("by_created", ["createdAt"]),
 
   // ---------- mentorshipRequests (Epic 14) ----------
   mentorshipRequests: defineTable({

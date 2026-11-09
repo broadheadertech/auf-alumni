@@ -13,6 +13,7 @@
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { query } from "./_generated/server";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 function norm(s: string | undefined | null): string {
   return (s ?? "").trim().toLowerCase();
@@ -74,13 +75,10 @@ export const getBySlug = query({
 
     // Verified alumni whose `company` field matches this org's name.
     // @no-privacy-required: public-tier fields only; aggregate counts.
-    const profiles = await ctx.db.query("profiles").collect();
+    const profiles = await verifiedProfiles(ctx);
     const orgKey = norm(org.name);
     const matched = profiles.filter(
-      (p) =>
-        p.verifiedAt != null &&
-        !p.excludeFromSearchEngines &&
-        norm(p.company) === orgKey,
+      (p) => !p.excludeFromSearchEngines && norm(p.company) === orgKey,
     );
 
     const alumniHere: AlumnusCard[] = matched.slice(0, 12).map((p) => ({
@@ -155,10 +153,9 @@ export const list = query({
     // One-shot profile fetch for company-name counting. The lint annotation
     // must sit on the immediately-prior line.
     // @no-privacy-required: public-tier fields only; aggregate counts.
-    const profiles = await ctx.db.query("profiles").collect();
+    const profiles = await verifiedProfiles(ctx);
     const alumniByCompany = new Map<string, number>();
     for (const p of profiles) {
-      if (p.verifiedAt == null) continue;
       if (p.excludeFromSearchEngines) continue;
       const key = norm(p.company);
       if (!key) continue;

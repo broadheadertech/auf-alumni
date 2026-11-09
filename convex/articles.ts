@@ -131,8 +131,13 @@ export const adminList = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, [...ADMIN_ROLES]);
-    const rows = await ctx.db.query("articles").collect();
-    rows.sort((a, b) => b.updatedAt - a.updatedAt);
+    // by_updated gives the most-recently-edited-first order the list wants,
+    // so neither the full read nor the in-memory sort is needed.
+    const rows = await ctx.db
+      .query("articles")
+      .withIndex("by_updated")
+      .order("desc")
+      .collect();
     return rows.map((a) => ({
       _id: a._id,
       slug: a.slug,
