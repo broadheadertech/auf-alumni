@@ -88,7 +88,7 @@ export default function NewCoursePage() {
           Create a course
         </h1>
         <p className="mt-1.5 text-[13.5px] ink-2">
-          Start with the framing — you'll add lessons after the draft is saved.
+          Start with the framing — you&apos;ll add lessons after the draft is saved.
         </p>
       </div>
 

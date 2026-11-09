@@ -1,0 +1,101 @@
+name: CI
+
+# Runs on every push and every pull request. Until now nothing ran these
+# checks automatically — the test suite, the privacy lint and the admin-audit
+# lint only ran when someone remembered to type the command. Those two lint
+# scripts exist precisely because the invariants they guard are easy to break
+# silently, which makes "someone remembers" the wrong enforcement mechanism.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push to the same branch cancels the first run rather than queueing
+# behind it: only the latest commit's result is worth waiting for.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Both halves. `tsc --noEmit` alone covers src/ only — convex/ has its
+      # own tsconfig, and a Convex function that does not compile will deploy
+      # and then fail at runtime.
+      - name: Typecheck (src)
+        run: npx tsc --noEmit
+
+      - name: Typecheck (convex)
+        run: npx tsc --noEmit -p convex/tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      # Each of these guards an invariant that is invisible in review:
+      #   privacy — every profile read passes through applyPrivacy
+      #   admin   — every admin mutation has requireRole + withAuditLog
+      #   tours   — every tour step points at an anchor that exists
+      - name: Privacy lint
+        run: npm run lint:privacy
+
+      - name: Admin-mutation lint
+        run: npm run lint:admin
+
+      - name: Tour-anchor lint
+        run: npm run lint:tours
+
+      - name: Tests
+        run: npm run test
+
+      # The build is the last gate because it is the slowest, and because a
+      # type or lint failure tells you more about what broke than a build log.
+      # Convex URLs are read at build time; these are placeholders, since the
+      # build only needs them to be present and well-formed.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CONVEX_URL: https://example-ci.convex.cloud
+          NEXT_PUBLIC_CONVEX_SITE_URL: https://example-ci.convex.site
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Reports every level so the output is useful, but only fails the run on
+      # critical. The repo currently carries two criticals in @auth/core that
+      # need a major version bump and the whole auth flow re-tested, so this
+      # job is expected to be red until that lands — deliberately, rather than
+      # being tuned down to green and forgotten.
+      - name: Audit (report)
+        run: npm audit --audit-level=low || true
+
+      - name: Audit (fail on critical)
+        run: npm audit --audit-level=critical

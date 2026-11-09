@@ -16,7 +16,6 @@ import { toast } from "sonner";
 import {
   ArrowRight,
   Briefcase,
-  Calendar,
   Loader2,
   MessageCircle,
   Send,

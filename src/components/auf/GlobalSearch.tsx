@@ -215,9 +215,16 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
   // Which chips to offer: only kinds this viewer actually has results in.
   // Counts come from the unfiltered pass, so keep the last full set around
   // while a chip is active, otherwise the chips would vanish on click.
-  const allCountsRef = useRef<Record<string, number>>({});
-  if (data && kind === null) allCountsRef.current = data.counts;
-  const chipKinds = KIND_ORDER.filter((k) => (allCountsRef.current[k] ?? 0) > 0);
+  // Held in state rather than a ref. A ref written and read during render is
+  // invisible to React: it will not re-render when the counts change, and the
+  // chips could show a stale set until something else happened to re-render.
+  // Setting state during render is the supported way to derive from incoming
+  // data — React discards the in-progress render and immediately retries.
+  const [allCounts, setAllCounts] = useState<Record<string, number>>({});
+  if (data && kind === null && data.counts !== allCounts) {
+    setAllCounts(data.counts);
+  }
+  const chipKinds = KIND_ORDER.filter((k) => (allCounts[k] ?? 0) > 0);
 
   const sections = useMemo(() => {
     const by = new Map<Kind, Hit[]>();
@@ -349,7 +356,7 @@ export function GlobalSearch({ variant = "topbar" }: { variant?: Variant }) {
                     >
                       <Icon size={11} />
                       {plural}
-                      <span className="ml-0.5 ink-3">{allCountsRef.current[k]}</span>
+                      <span className="ml-0.5 ink-3">{allCounts[k]}</span>
                     </Chip>
                   );
                 })}

@@ -55,7 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { DetailPage, Stat } from "@/components/auf/admin-ui";
+import { DetailPage } from "@/components/auf/admin-ui";
 
 const FILTER_KEYS = ["q", "flags", "college", "program", "batch", "from", "to"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];

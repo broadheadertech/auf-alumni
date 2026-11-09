@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -60,9 +60,15 @@ export function SiteNav({ role }: SiteNavProps) {
   const items = NAV_BY_ROLE[role];
   const [menuOpen, setMenuOpen] = useState(false);
 
-  useEffect(() => {
+  // Close on navigation, derived during render rather than in an effect.
+  // An effect runs *after* the new route has painted, so the menu was briefly
+  // visible over the page you had just navigated to. Comparing against the
+  // last rendered path closes it in the same render instead.
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
     setMenuOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">

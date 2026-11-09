@@ -68,7 +68,7 @@ export default function TeachDashboardPage() {
         ) : !courses || courses.length === 0 ? (
           <div className="auf-card brand-50 mx-auto max-w-xl p-8 text-center">
             <h3 className="font-serif text-[20px] font-semibold">
-              You haven't created a course yet
+              You haven&apos;t created a course yet
             </h3>
             <p className="mt-2 text-[13.5px] ink-2">
               Share a practical skill — career tips, healthcare workflows,

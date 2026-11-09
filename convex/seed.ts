@@ -292,6 +292,7 @@ export const runAcademy = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     const userIdBySlug = new Map<string, Id<"users">>();
+    // @no-privacy-required: internal seed building a slug -> userId map; reads no viewer-facing field and returns nothing.
     const allProfiles = await ctx.db.query("profiles").collect();
     for (const p of allProfiles) {
       userIdBySlug.set(p.slug, p.userId);
