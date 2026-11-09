@@ -65,6 +65,7 @@ export function FilterPanel({
   restored = false,
   layout = "sidebar",
   className,
+  "data-tour": dataTour,
 }: {
   fields: FilterField[];
   values: Record<string, string>;
@@ -74,6 +75,8 @@ export function FilterPanel({
   restored?: boolean;
   layout?: "sidebar" | "bar";
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   const active = fields.filter((f) => values[f.key]);
   const chipText = (f: FilterField) => {
@@ -84,6 +87,7 @@ export function FilterPanel({
 
   return (
     <section
+      data-tour={dataTour}
       aria-label="Filters"
       className={cn(
         "rounded-lg bg-card ring-1 ring-foreground/10",

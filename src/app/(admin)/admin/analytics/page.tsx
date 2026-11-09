@@ -388,7 +388,7 @@ export default function AdminAnalyticsPage() {
           </div>
 
           <SectionHeading className="mt-5">Hiring performance</SectionHeading>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div data-tour="analytics-kpis" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi
               icon={TrendingUp}
               label="Hire rate"

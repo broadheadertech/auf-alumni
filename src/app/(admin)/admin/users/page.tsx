@@ -254,6 +254,7 @@ export default function AdminUsersPage() {
       description="Grant or revoke admin roles, and suspend abusive accounts. Select several users to act on them at once."
     >
       <FilterPanel
+        data-tour="users-filters"
         layout="bar"
         fields={fields}
         values={values}
@@ -263,6 +264,7 @@ export default function AdminUsersPage() {
       />
 
       <BulkActionBar
+        data-tour="users-bulk"
         className="mt-4"
         noun="user"
         count={selection.count}
@@ -299,7 +301,7 @@ export default function AdminUsersPage() {
         </Button>
       </BulkActionBar>
 
-      <DataTable className="mt-3">
+      <DataTable data-tour="users-table" className="mt-3">
         <THead>
           <tr>
             <Th width="36px">

@@ -36,6 +36,7 @@ import { AUFAvatar } from "./AUFAvatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { PageHelpLink } from "./PageHelpLink";
+import { Tour } from "./Tour";
 import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
@@ -316,6 +317,7 @@ function TopBar({
         <div className="flex-1 md:hidden" />
 
         <PageHelpLink surface="alumni" />
+              <Tour surface="alumni" />
         <NotificationDropdown />
         <Link
           href="/messages"

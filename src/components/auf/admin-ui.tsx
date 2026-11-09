@@ -187,12 +187,16 @@ export function Stat({
 export function StatStrip({
   children,
   className,
+  "data-tour": dataTour,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   return (
     <div
+      data-tour={dataTour}
       className={cn(
         "grid grid-cols-2 divide-x divide-border rounded-lg border border-border bg-card sm:grid-cols-3 lg:grid-cols-4",
         "[&>*]:border-t [&>*]:border-border [&>*:nth-child(-n+2)]:border-t-0",
@@ -284,12 +288,16 @@ export function Chip({
 export function DataTable({
   children,
   className,
+  "data-tour": dataTour,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   return (
     <div
+      data-tour={dataTour}
       className={cn(
         "overflow-x-auto rounded-lg border border-border bg-card",
         className,

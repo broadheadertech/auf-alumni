@@ -288,7 +288,7 @@ export default function AdminAlumniPage() {
         </Callout>
       )}
 
-      <StatStrip className={pendingCount > 0 ? "mt-3" : ""}>
+      <StatStrip data-tour="roster-stats" className={pendingCount > 0 ? "mt-3" : ""}>
         <Stat
           label="Registered"
           value={totals.total}
@@ -300,6 +300,7 @@ export default function AdminAlumniPage() {
       </StatStrip>
 
       <FilterPanel
+        data-tour="roster-filters"
         layout="bar"
         className="mt-3"
         fields={fields}
@@ -310,7 +311,7 @@ export default function AdminAlumniPage() {
       />
 
       <div className="mt-3">
-        <DataTable>
+        <DataTable data-tour="roster-table">
                 <THead>
                     <tr>
                       <Th label="Alumna" sortKey="name" {...{ sort, dir, setSortKey }} />

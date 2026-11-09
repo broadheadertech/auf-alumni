@@ -516,6 +516,7 @@ function Trigger({
     <>
       <button
         type="button"
+        data-tour="global-search"
         onClick={onOpen}
         aria-label="Open search"
         aria-expanded={open}
