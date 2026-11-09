@@ -378,16 +378,29 @@ export const auditLog = query({
  * User listing for admin role-management surface (Story 6.7). Limited fields.
  */
 export const listUsers = query({
-  args: { search: v.optional(v.string()), limit: v.optional(v.number()) },
-  handler: async (ctx, { search, limit }) => {
+  args: {
+    search: v.optional(v.string()),
+    /** Only users holding this role; "none" = users with no roles. */
+    role: v.optional(v.string()),
+    /** "active" | "suspended" | "deleted" */
+    status: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { search, role, status, limit }) => {
     await requireRole(ctx, ["super-admin"]);
-    const rows = await ctx.db.query("users").take(limit ?? 100);
-    const filtered = search
-      ? rows.filter((u) =>
-          (u.email ?? "").toLowerCase().includes(search.toLowerCase()),
-        )
-      : rows;
-    return filtered.map((u) => ({
+    // Filter the whole table, then cap. (Capping first meant search only saw
+    // the first 100 users, so results disagreed with what's in the database.)
+    const rows = await ctx.db.query("users").collect();
+    const q = (search ?? "").trim().toLowerCase();
+    const filtered = rows.filter((u) => {
+      if (q && !`${u.email ?? ""} ${u.name ?? ""}`.toLowerCase().includes(q)) return false;
+      const roles = u.roles ?? [];
+      if (role === "none" ? roles.length > 0 : role && !roles.includes(role)) return false;
+      const state = u.deletedAt ? "deleted" : u.suspendedAt ? "suspended" : "active";
+      if (status && state !== status) return false;
+      return true;
+    });
+    return filtered.slice(0, Math.min(Math.max(limit ?? 200, 1), 1000)).map((u) => ({
       _id: u._id,
       email: u.email ?? null,
       name: u.name ?? null,
@@ -464,6 +477,7 @@ export const suspendUser = mutation({
     await ctx.db.patch(targetUserId, {
       suspendedAt: Date.now(),
       suspendedReason: reason,
+      suspendedKind: "suspended",
     });
     return {
       action: "suspend-user",
@@ -484,6 +498,7 @@ export const unsuspendUser = mutation({
     await ctx.db.patch(targetUserId, {
       suspendedAt: undefined,
       suspendedReason: undefined,
+      suspendedKind: undefined,
     });
     return {
       action: "unsuspend-user",

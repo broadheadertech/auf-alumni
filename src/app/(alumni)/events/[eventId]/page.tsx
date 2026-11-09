@@ -269,6 +269,14 @@ export default function EventDetailPage() {
               >
                 {e.myRsvpStatus === "waitlist" ? "On waitlist" : "Going"}
               </span>
+              {/* Let people change their mind without cancelling first. */}
+              <button
+                type="button"
+                className="auf-btn auf-btn-outline auf-btn-sm"
+                onClick={() => onRsvp("maybe")}
+              >
+                Switch to Maybe
+              </button>
               <button
                 type="button"
                 className="auf-btn auf-btn-outline auf-btn-sm"

@@ -19,6 +19,7 @@ import { notFound } from "next/navigation";
 import { fetchQuery } from "convex/nextjs";
 import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server";
 import { api } from "@/lib/convex-api";
+import { jsonLd } from "@/lib/json-ld";
 import { Card, CardContent } from "@/components/ui/card";
 import { VerifiedBadge } from "@/components/auf/VerifiedBadge";
 import {
@@ -128,7 +129,7 @@ export default async function PublicProfilePage({
     <div className="mx-auto max-w-3xl px-6 py-10">
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        dangerouslySetInnerHTML={{ __html: jsonLd(structuredData) }}
       />
 
       {/* Open-to banners — read-only, toggled from /settings */}

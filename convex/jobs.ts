@@ -11,10 +11,16 @@ import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type QueryCtx } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy } from "./helpers/privacy";
+import { maybeInsertNotification } from "./notifications";
 
 const STAGES = [
   "new",
@@ -25,27 +31,147 @@ const STAGES = [
   "not-selected",
 ] as const;
 
-function jobMatches(
+/**
+ * How well a job fits an alumna, 0-100, with the reasons shown on the card.
+ *
+ * Employer targeting used to be a hard filter: one non-matching field hid the
+ * job completely, so the board showed a fraction of what was open. Targeting
+ * now *ranks* instead — every published role is listed, best fit first, and
+ * each card explains why it does or doesn't fit.
+ *
+ * Weights: program 35, skills 35, batch 15, city 15. A facet the employer left
+ * open scores neutral (0.5) rather than counting for or against.
+ */
+export type JobMatch = {
+  score: number;
+  strong: boolean;
+  reasons: string[];
+  gaps: string[];
+};
+
+const STRONG_MATCH = 60;
+
+export function scoreJob(
   job: Doc<"jobs">,
   profile: Doc<"profiles"> | null,
-): boolean {
-  if (job.status !== "published") return false;
-  if (!profile) return false;
-  if (job.targetingBatches && job.targetingBatches.length > 0) {
-    if (!job.targetingBatches.includes(profile.batch)) return false;
+): JobMatch {
+  if (!profile) return { score: 0, strong: false, reasons: [], gaps: [] };
+  const reasons: string[] = [];
+  const gaps: string[] = [];
+
+  const programs = job.targetingPrograms ?? [];
+  let programFit = 0.5;
+  if (programs.length) {
+    if (programs.includes(profile.program)) {
+      programFit = 1;
+      reasons.push("Open to your program");
+    } else {
+      programFit = 0;
+      gaps.push(`Aimed at ${programs.slice(0, 2).join(", ")}${programs.length > 2 ? "…" : ""}`);
+    }
   }
-  if (job.targetingPrograms && job.targetingPrograms.length > 0) {
-    if (!job.targetingPrograms.includes(profile.program)) return false;
+
+  const batches = job.targetingBatches ?? [];
+  let batchFit = 0.5;
+  if (batches.length) {
+    if (batches.includes(profile.batch)) {
+      batchFit = 1;
+      reasons.push("Your batch");
+    } else {
+      batchFit = 0;
+      gaps.push(`Aimed at batch ${batches.slice(0, 3).join(", ")}`);
+    }
   }
-  if (job.targetingSkills && job.targetingSkills.length > 0) {
-    const skillSet = new Set((profile.skills ?? []).map((s) => s.toLowerCase()));
-    const ok = job.targetingSkills.some((s) => skillSet.has(s.toLowerCase()));
-    if (!ok) return false;
+
+  const wanted = [...new Set([...(job.targetingSkills ?? []), ...(job.skills ?? [])])];
+  let skillFit = 0.5;
+  if (wanted.length) {
+    const have = new Set((profile.skills ?? []).map((sk) => sk.toLowerCase()));
+    const hits = wanted.filter((sk) => have.has(sk.toLowerCase()));
+    skillFit = hits.length / wanted.length;
+    if (hits.length > 0) {
+      reasons.push(`${hits.length} of ${wanted.length} skills match`);
+    } else {
+      gaps.push(`Wants ${wanted.slice(0, 2).join(", ")}${wanted.length > 2 ? "…" : ""}`);
+    }
   }
-  if (job.targetingCity && job.targetingCity.length > 0) {
-    if ((profile.city ?? "") !== job.targetingCity) return false;
+
+  let cityFit = 0.5;
+  if (job.targetingCity) {
+    if ((profile.city ?? "") === job.targetingCity) {
+      cityFit = 1;
+      reasons.push("In your city");
+    } else {
+      cityFit = 0;
+      gaps.push(`Based in ${job.targetingCity}`);
+    }
   }
-  return true;
+
+  const score = Math.round(
+    (programFit * 35 + skillFit * 35 + batchFit * 15 + cityFit * 15),
+  );
+  return { score, strong: score >= STRONG_MATCH, reasons, gaps };
+}
+
+/** Trim, drop empties, cap each entry to 300 chars and the list to 30 items. */
+function cleanBullets(list: string[] | undefined): string[] | undefined {
+  if (!list) return undefined;
+  const cleaned = list
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => s.slice(0, 300))
+    .slice(0, 30);
+  return cleaned.length ? cleaned : undefined;
+}
+
+const JOB_SKILLS_MAX = 15;
+const JOB_SKILL_NAME_MAX = 60;
+
+/**
+ * Validate + normalise a job's required skills. Trims (collapsing inner
+ * whitespace), drops empties, dedupes case-insensitively, enforces ≤ 15 skills
+ * and ≤ 60 chars each. Free-text skills are allowed (the admin-managed
+ * referenceItems "skill" list is suggestions), but when a skill matches a
+ * canonical list item case-insensitively the canonical casing is stored.
+ */
+async function cleanJobSkills(
+  ctx: MutationCtx,
+  raw: string[] | undefined,
+): Promise<string[] | undefined> {
+  if (!raw) return undefined;
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const s of raw) {
+    const value = s.trim().replace(/\s+/g, " ");
+    if (!value) continue;
+    if (value.length > JOB_SKILL_NAME_MAX) {
+      throw new ConvexError({
+        code: "validation",
+        message: `Each skill must be ${JOB_SKILL_NAME_MAX} characters or fewer`,
+      });
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  if (unique.length > JOB_SKILLS_MAX) {
+    throw new ConvexError({
+      code: "validation",
+      message: `Add at most ${JOB_SKILLS_MAX} skills`,
+    });
+  }
+  if (unique.length === 0) return undefined;
+
+  const canonical = new Map<string, string>();
+  const rows = await ctx.db
+    .query("referenceItems")
+    .withIndex("by_kind_sort", (q) => q.eq("kind", "skill"))
+    .collect();
+  for (const r of rows) {
+    if (r.archivedAt == null) canonical.set(r.name.toLowerCase(), r.name);
+  }
+  return unique.map((s) => canonical.get(s.toLowerCase()) ?? s);
 }
 
 // @no-audit-required: user (employer-admin) self-service post creation; admin moderation IS audited.
@@ -54,11 +180,17 @@ export const createJob = mutation({
     employerOrgId: v.id("employerOrgs"),
     title: v.string(),
     description: v.string(),
+    responsibilities: v.optional(v.array(v.string())),
+    requirements: v.optional(v.array(v.string())),
+    benefits: v.optional(v.array(v.string())),
     location: v.string(),
+    workMode: v.optional(v.string()),
     employmentType: v.string(),
+    experienceLevel: v.optional(v.string()),
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    skills: v.optional(v.array(v.string())),
     targetingBatches: v.optional(v.array(v.number())),
     targetingPrograms: v.optional(v.array(v.string())),
     targetingSkills: v.optional(v.array(v.string())),
@@ -105,20 +237,30 @@ export const createJob = mutation({
       });
     }
 
+    const skills = await cleanJobSkills(ctx, args.skills);
+
     const now = Date.now();
     const id = await ctx.db.insert("jobs", {
       employerOrgId: args.employerOrgId,
       title: args.title.trim(),
       description: args.description.trim(),
+      responsibilities: cleanBullets(args.responsibilities),
+      requirements: cleanBullets(args.requirements),
+      benefits: cleanBullets(args.benefits),
       location: args.location.trim(),
+      workMode: args.workMode?.trim() || undefined,
       employmentType: args.employmentType,
+      experienceLevel: args.experienceLevel?.trim() || undefined,
       salaryMin: args.salaryMin,
       salaryMax: args.salaryMax,
       salaryCurrency: args.salaryCurrency ?? "PHP",
-      targetingBatches: args.targetingBatches,
-      targetingPrograms: args.targetingPrograms,
-      targetingSkills: args.targetingSkills,
-      targetingCity: args.targetingCity,
+      skills,
+      targetingBatches: args.targetingBatches?.length
+        ? args.targetingBatches
+        : undefined,
+      targetingPrograms: cleanBullets(args.targetingPrograms),
+      targetingSkills: cleanBullets(args.targetingSkills),
+      targetingCity: args.targetingCity?.trim() || undefined,
       aufOnly: true, // partner-tier locks this on; v1 default
       status: "pending-moderation",
       createdBy: userId,
@@ -207,8 +349,13 @@ export const rejectJob = mutation({
  * the targeting. Optional opt-out via showUnmatched=true.
  */
 export const browse = query({
-  args: { showUnmatched: v.optional(v.boolean()) },
-  handler: async (ctx, { showUnmatched }) => {
+  args: {
+    /** Kept for older callers; the board now lists every published role. */
+    showUnmatched: v.optional(v.boolean()),
+    /** Only roles that fit this alumna well (score ≥ 60). */
+    onlyStrong: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { onlyStrong }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
     const profile = await ctx.db
@@ -216,26 +363,85 @@ export const browse = query({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .unique();
 
-    const jobs = await ctx.db
+    // Filter by status IN the index, not after a capped take — otherwise
+    // drafts and closed posts eat the window and published roles disappear.
+    const published = await ctx.db
       .query("jobs")
-      .withIndex("by_published")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
       .order("desc")
-      .take(100);
-    const published = jobs.filter((j) => j.status === "published");
-    const filtered = showUnmatched
-      ? published
-      : published.filter((j) => jobMatches(j, profile));
+      .collect();
+
+    // Which of these the viewer has already applied to — the board marks them
+    // and the nav badge counts only the rest.
+    const myApps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", userId))
+      .collect();
+    const appliedTo = new Set(myApps.map((a) => a.jobId as string));
 
     const out = [];
-    for (const j of filtered) {
+    for (const j of published) {
       const org = await ctx.db.get(j.employerOrgId);
+      if (org?.suspendedAt) continue; // deactivated / rejected employer
+      const match = scoreJob(j, profile);
+      if (onlyStrong && !match.strong) continue;
       out.push({
         ...j,
         employerName: org?.name ?? "—",
         employerTier: org?.tier ?? "unverified",
+        applied: appliedTo.has(j._id as string),
+        matchScore: match.score,
+        strongMatch: match.strong,
+        matchReasons: match.reasons,
+        matchGaps: match.gaps,
       });
     }
+    // Best fit first, then newest.
+    out.sort(
+      (a, b) =>
+        b.matchScore - a.matchScore ||
+        (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt),
+    );
     return out;
+  },
+});
+
+/**
+ * Lightweight count of jobs available (matched) to the signed-in alumna, for
+ * the Jobs nav badge: strong matches (score >= 60) not yet applied to.
+ * No employer joins — just the number.
+ */
+export const myAvailableCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return 0;
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+    const jobs = await ctx.db
+      .query("jobs")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
+      .order("desc")
+      .collect();
+    // Same set the Jobs page lists by default, minus the ones already applied
+    // to — the badge means "roles still open to you".
+    const myApps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", userId))
+      .collect();
+    const appliedTo = new Set(myApps.map((a) => a.jobId as string));
+    let count = 0;
+    for (const j of jobs) {
+      if (j.status !== "published") continue;
+      if (appliedTo.has(j._id as string)) continue;
+      if (!scoreJob(j, profile).strong) continue;
+      const org = await ctx.db.get(j.employerOrgId);
+      if (org?.suspendedAt) continue; // deactivated / rejected employer
+      count += 1;
+    }
+    return count;
   },
 });
 
@@ -414,6 +620,7 @@ export const listMyOrgJobs = query({
           salaryMin: j.salaryMin,
           salaryMax: j.salaryMax,
           salaryCurrency: j.salaryCurrency,
+          skills: j.skills,
           targetingPrograms: j.targetingPrograms,
           targetingSkills: j.targetingSkills,
           createdAt: j.createdAt,
@@ -454,6 +661,7 @@ export const myApplicants = query({
         for (const a of apps) {
           out.push({
             _id: a._id,
+            applicantId: a.applicantId,
             jobId: j._id,
             jobTitle: j.title,
             employerName: org.name,
@@ -463,6 +671,7 @@ export const myApplicants = query({
             resumeFilename: a.resumeFilename,
             snapshot: a.profileSnapshot,
             reviewedAt: a.reviewedAt,
+            interview: a.interview ?? null,
             createdAt: a.createdAt,
           });
         }
@@ -502,6 +711,7 @@ export const myApplications = query({
         employerName: org?.name ?? "—",
         stage: a.stage,
         reviewedAt: a.reviewedAt ?? null,
+        interview: a.interview ?? null,
         resumeFilename: a.resumeFilename,
         createdAt: a.createdAt,
         updatedAt: a.updatedAt,
@@ -606,9 +816,13 @@ export const moveApplication = mutation({
         message: "Only the posting employer can move this application",
       });
     }
+    const now = Date.now();
     await ctx.db.patch(applicationId, {
       stage,
-      updatedAt: Date.now(),
+      updatedAt: now,
+      stageChangedAt: stage !== app.stage ? now : app.stageChangedAt,
+      // Keep the first hire time; clear it if the hire is undone.
+      hiredAt: stage === "hired" ? (app.hiredAt ?? now) : undefined,
     });
 
     // Referral attribution: mark hired
@@ -680,13 +894,13 @@ export const setReviewed = mutation({
 export const publicFeatured = query({
   args: {},
   handler: async (ctx) => {
-    const recent = await ctx.db
+    const live = await ctx.db
       .query("jobs")
-      .withIndex("by_published")
-      .order("desc")
-      .take(50);
-    const published = recent
-      .filter((j) => j.status === "published")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
+      .collect();
+    // by_status_time orders by createdAt; the teaser wants newest *published*.
+    const published = live
+      .sort((a, b) => (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt))
       .slice(0, 3);
     const out: Array<{
       _id: Id<"jobs">;
@@ -718,3 +932,256 @@ export const publicFeatured = query({
 // helpers consumed by privacy lint — declare empty usages
 void (null as unknown as Id<"jobs">);
 void (null as unknown as QueryCtx);
+
+/**
+ * Public, unauthenticated list of every open role — powers /careers, the page
+ * the landing CTA links to.
+ *
+ * "Browse all openings" used to point at /jobs, which is inside the alumni
+ * shell and calls `browse` (auth-only, returns [] with no session). A signed-out
+ * visitor therefore landed on a board reading "0 jobs — No jobs published yet"
+ * while 14 roles were live. Browsing is public; applying still needs a verified
+ * account, which is the conversion the pitch page is aiming for.
+ *
+ * Deliberately excludes match data (there is no viewer to score against) and
+ * postings from suspended employers.
+ */
+export const publicOpenings = query({
+  args: {},
+  handler: async (ctx) => {
+    const published = await ctx.db
+      .query("jobs")
+      .withIndex("by_status_time", (q) => q.eq("status", "published"))
+      .collect();
+    published.sort(
+      (a, b) => (b.publishedAt ?? b.createdAt) - (a.publishedAt ?? a.createdAt),
+    );
+
+    const orgs = new Map<string, Doc<"employerOrgs">>();
+    const out = [];
+    for (const j of published) {
+      const key = j.employerOrgId as string;
+      if (!orgs.has(key)) {
+        const org = await ctx.db.get(j.employerOrgId);
+        if (org) orgs.set(key, org);
+      }
+      const org = orgs.get(key);
+      if (!org || org.suspendedAt) continue;
+      out.push({
+        _id: j._id as string,
+        title: j.title,
+        employerName: org.name,
+        employerSlug: org.slug,
+        employerTier: org.tier,
+        location: j.location,
+        workMode: j.workMode ?? null,
+        employmentType: j.employmentType,
+        experienceLevel: j.experienceLevel ?? null,
+        salaryMin: j.salaryMin ?? null,
+        salaryMax: j.salaryMax ?? null,
+        salaryCurrency: j.salaryCurrency ?? null,
+        skills: j.skills ?? [],
+        publishedAt: j.publishedAt ?? j.createdAt,
+      });
+    }
+    return out;
+  },
+});
+
+
+/** Interview delivery modes. Kept in step with INTERVIEW_MODE_LABEL in the UI. */
+export const INTERVIEW_MODES = ["onsite", "online", "phone"] as const;
+
+/**
+ * Schedule (or reschedule) a screening appointment for an applicant.
+ *
+ * The pipeline already had an "interview" stage, but nothing behind it: no
+ * date, no place, and nothing the applicant could see. Employers were either
+ * arranging screenings off-platform or not at all, and "Set appointment for
+ * screening" was the one employer capability the role matrix asked for that
+ * did not exist.
+ *
+ * Scheduling moves the application to the interview stage, because an
+ * appointment that leaves someone sitting in "new" misrepresents the pipeline
+ * to both sides. Rescheduling clears any previous response: a confirmation of
+ * a time that no longer exists is worse than no confirmation.
+ */
+export const scheduleInterview = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    startsAt: v.number(),
+    durationMinutes: v.optional(v.number()),
+    mode: v.string(),
+    location: v.optional(v.string()),
+    note: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    { applicationId, startsAt, durationMinutes, mode, location, note },
+  ) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    if (!INTERVIEW_MODES.includes(mode as (typeof INTERVIEW_MODES)[number])) {
+      throw new ConvexError({
+        code: "invalid-mode",
+        message: `Mode must be one of: ${INTERVIEW_MODES.join(", ")}`,
+      });
+    }
+    if (!Number.isFinite(startsAt) || startsAt <= Date.now()) {
+      throw new ConvexError({
+        code: "invalid-time",
+        message: "Pick a date and time in the future",
+      });
+    }
+
+    const app = await ctx.db.get(applicationId);
+    if (!app) {
+      throw new ConvexError({ code: "not-found", message: "Application not found" });
+    }
+    const job = await ctx.db.get(app.jobId);
+    if (!job || job.createdBy !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the posting employer can schedule this interview",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: {
+        startsAt,
+        durationMinutes: durationMinutes ?? 45,
+        mode,
+        location: location?.trim() || undefined,
+        note: note?.trim() || undefined,
+        scheduledBy: userId,
+        scheduledAt: now,
+      },
+      stage: "interview",
+      stageChangedAt: app.stage !== "interview" ? now : app.stageChangedAt,
+      updatedAt: now,
+    });
+
+    const org = job.employerOrgId ? await ctx.db.get(job.employerOrgId) : null;
+    const when = new Date(startsAt).toUTCString();
+    await maybeInsertNotification(ctx, app.applicantId, "interviewInApp", {
+      kind: "interview-scheduled",
+      title: `Interview scheduled — ${job.title}`,
+      body: `${org?.name ?? "The employer"} proposed ${when}. Confirm whether you can make it.`,
+      href: "/applications",
+    });
+
+    return { ok: true };
+  },
+});
+
+/** Employer cancels a scheduled interview. The slot is kept for the record. */
+export const cancelInterview = mutation({
+  args: { applicationId: v.id("applications"), reason: v.optional(v.string()) },
+  handler: async (ctx, { applicationId, reason }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    const app = await ctx.db.get(applicationId);
+    if (!app?.interview) {
+      throw new ConvexError({ code: "not-found", message: "No interview scheduled" });
+    }
+    const job = await ctx.db.get(app.jobId);
+    if (!job || job.createdBy !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the posting employer can cancel this interview",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: { ...app.interview, cancelledAt: now },
+      updatedAt: now,
+    });
+
+    await maybeInsertNotification(ctx, app.applicantId, "interviewInApp", {
+      kind: "interview-cancelled",
+      title: `Interview cancelled — ${job.title}`,
+      body: reason?.trim() || "The employer cancelled this interview.",
+      href: "/applications",
+    });
+
+    return { ok: true };
+  },
+});
+
+/**
+ * The applicant's side: confirm or decline a proposed time.
+ *
+ * Only the applicant may call this. A declined interview deliberately does
+ * NOT move the stage backwards — declining a time is not withdrawing from the
+ * process, and an employer who re-proposes should find the candidate where
+ * they left them.
+ */
+export const respondToInterview = mutation({
+  args: {
+    applicationId: v.id("applications"),
+    response: v.string(), // "accepted" | "declined"
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, { applicationId, response, note }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError({ code: "unauthenticated", message: "Sign in required" });
+    }
+    if (response !== "accepted" && response !== "declined") {
+      throw new ConvexError({
+        code: "invalid-response",
+        message: 'Response must be "accepted" or "declined"',
+      });
+    }
+    const app = await ctx.db.get(applicationId);
+    if (!app?.interview) {
+      throw new ConvexError({ code: "not-found", message: "No interview to respond to" });
+    }
+    if (app.applicantId !== userId) {
+      throw new ConvexError({
+        code: "forbidden",
+        message: "Only the applicant can respond to this interview",
+      });
+    }
+    if (app.interview.cancelledAt) {
+      throw new ConvexError({
+        code: "cancelled",
+        message: "This interview was cancelled",
+      });
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(applicationId, {
+      interview: {
+        ...app.interview,
+        response,
+        responseNote: note?.trim() || undefined,
+        respondedAt: now,
+      },
+      updatedAt: now,
+    });
+
+    const job = await ctx.db.get(app.jobId);
+    const profile = await ctx.db
+      .query("profiles")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .unique();
+
+    if (job) {
+      await maybeInsertNotification(ctx, job.createdBy, "interviewInApp", {
+        kind: "interview-response",
+        title: `${profile?.displayName ?? "An applicant"} ${response} the interview`,
+        body: `${job.title}${note?.trim() ? ` — "${note.trim()}"` : ""}`,
+        href: "/employer/applicants",
+      });
+    }
+
+    return { ok: true };
+  },
+});

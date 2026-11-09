@@ -22,16 +22,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { jobPostingSections } from "@/lib/job-posting";
 
 type Job = {
   _id: string;
   title: string;
   description: string;
+  responsibilities?: string[];
+  requirements?: string[];
+  benefits?: string[];
   location: string;
+  workMode?: string;
   employmentType: string;
+  experienceLevel?: string;
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  skills?: string[];
   targetingBatches?: number[];
   targetingPrograms?: string[];
   targetingSkills?: string[];
@@ -39,6 +46,13 @@ type Job = {
   closingAt?: number;
   employerName: string;
   employerTier: string;
+  /** True when the viewer has already applied — matches the Jobs nav badge. */
+  applied?: boolean;
+  /** 0–100 fit with your profile; see scoreJob in convex/jobs.ts. */
+  matchScore?: number;
+  strongMatch?: boolean;
+  matchReasons?: string[];
+  matchGaps?: string[];
 };
 
 function formatSalary(min?: number, max?: number, ccy?: string): string | null {
@@ -69,8 +83,10 @@ function workMode(location: string): string {
 }
 
 export default function JobsBoardPage() {
-  const [showUnmatched, setShowUnmatched] = useState(false);
-  const jobs = useQuery(api.jobs.browse, { showUnmatched });
+  // The board lists every published role, best fit first; this narrows it to
+  // strong matches instead of hiding the rest by default.
+  const [onlyStrong, setOnlyStrong] = useState(false);
+  const jobs = useQuery(api.jobs.browse, { onlyStrong });
   type SavedResume = {
     filename: string;
     uploadedAt: number | null;
@@ -100,7 +116,8 @@ export default function JobsBoardPage() {
   const [modes, setModes] = useState<string[]>([]);
   const [minSalary, setMinSalary] = useState("");
   const [company, setCompany] = useState("all");
-  const [sort, setSort] = useState<"recent" | "salary">("recent");
+  // Default to the server's ranking (best fit for your profile first).
+  const [sort, setSort] = useState<"match" | "recent" | "salary">("match");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const list = (jobs ?? []) as Job[];
@@ -130,6 +147,12 @@ export default function JobsBoardPage() {
     .sort((a, b) => {
       if (sort === "salary") {
         return (b.salaryMax ?? b.salaryMin ?? 0) - (a.salaryMax ?? a.salaryMin ?? 0);
+      }
+      if (sort === "match") {
+        return (
+          (b.matchScore ?? 0) - (a.matchScore ?? 0) ||
+          (b.publishedAt ?? 0) - (a.publishedAt ?? 0)
+        );
       }
       return (b.publishedAt ?? 0) - (a.publishedAt ?? 0);
     });
@@ -237,6 +260,16 @@ export default function JobsBoardPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Roles posted by verified employers. Filter to find your fit.
           </p>
+          {list.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {list.length} role{list.length === 1 ? "" : "s"} ·{" "}
+              {list.filter((j) => j.strongMatch).length} strong match
+              {list.filter((j) => j.strongMatch).length === 1 ? "" : "es"} ·{" "}
+              {list.filter((j) => !j.applied).length}{" "}
+              you haven&apos;t applied to
+              {/* The Jobs badge in the sidebar counts the not-yet-applied ones. */}
+            </p>
+          )}
         </div>
         <Link
           href="/jobs/applications"
@@ -264,6 +297,7 @@ export default function JobsBoardPage() {
             onChange={(e) => setSort(e.target.value as "recent" | "salary")}
             className="rounded-md border border-border bg-background px-2.5 py-2 text-sm"
           >
+            <option value="match">Best match</option>
             <option value="recent">Most recent</option>
             <option value="salary">Salary (high to low)</option>
           </select>
@@ -311,12 +345,12 @@ export default function JobsBoardPage() {
           <label className="ml-1 inline-flex cursor-pointer items-center gap-1.5">
             <input
               type="checkbox"
-              checked={showUnmatched}
-              onChange={(e) => setShowUnmatched(e.target.checked)}
+              checked={onlyStrong}
+              onChange={(e) => setOnlyStrong(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-border"
             />
-            <span className={showUnmatched ? "font-medium" : "text-muted-foreground"}>
-              All jobs
+            <span className={onlyStrong ? "font-medium" : "text-muted-foreground"}>
+              Best matches only
             </span>
           </label>
           {(query || activeFilters > 0) && (
@@ -344,16 +378,16 @@ export default function JobsBoardPage() {
         <EmptyState
           message={
             list.length === 0
-              ? showUnmatched
-                ? "No jobs published yet"
-                : "No matched jobs right now"
+              ? onlyStrong
+                ? "No strong matches right now"
+                : "No jobs published yet"
               : "No jobs match your filters"
           }
           description={
             list.length === 0
-              ? showUnmatched
-                ? "Once employers start posting, opportunities will appear here."
-                : "Toggle 'All jobs' to see roles outside your profile match."
+              ? onlyStrong
+                ? "Untick “Best matches only” to see every open role."
+                : "Once employers start posting, opportunities will appear here."
               : "Try widening your search or clearing filters."
           }
         />
@@ -381,7 +415,30 @@ export default function JobsBoardPage() {
                       {initialsOf(j.employerName)}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{j.title}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate font-medium">{j.title}</span>
+                        {j.applied && (
+                          <span className="shrink-0 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                            Applied
+                          </span>
+                        )}
+                        {typeof j.matchScore === "number" && (
+                          <span
+                            title={
+                              [...(j.matchReasons ?? []), ...(j.matchGaps ?? [])].join(" · ") ||
+                              "Based on your program, skills, batch and city"
+                            }
+                            className={cn(
+                              "ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                              j.strongMatch
+                                ? "bg-primary/10 text-primary"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {j.matchScore}% match
+                          </span>
+                        )}
+                      </div>
                       <div className="truncate text-xs text-muted-foreground">
                         {j.employerName} ·{" "}
                         <span className="rounded bg-muted px-1 py-0.5 text-[10px]">
@@ -397,6 +454,23 @@ export default function JobsBoardPage() {
                       </div>
                       {salary && (
                         <div className="mt-1 text-xs font-medium">{salary}</div>
+                      )}
+                      {j.skills && j.skills.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {j.skills.slice(0, 4).map((s) => (
+                            <span
+                              key={s}
+                              className="rounded-full border border-border px-1.5 py-0.5 text-[10px]"
+                            >
+                              {s}
+                            </span>
+                          ))}
+                          {j.skills.length > 4 && (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                              +{j.skills.length - 4}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -675,6 +749,25 @@ function FilterChip({
   );
 }
 
+function BulletBlock({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-medium">{title}</h3>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((item) => (
+          <li
+            key={item}
+            className="flex gap-2 text-sm leading-relaxed text-foreground/90"
+          >
+            <span aria-hidden className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-foreground/40" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function JobDetail({
   job,
   busy,
@@ -685,6 +778,9 @@ function JobDetail({
   onApply: () => void;
 }) {
   const salary = formatSalary(job.salaryMin, job.salaryMax, job.salaryCurrency);
+  // Responsibilities / requirements / benefits used to be dropped here even
+  // though employers fill them in — see src/lib/job-posting.ts.
+  const posting = jobPostingSections(job);
   const tags = [
     ...(job.targetingSkills ?? []),
     ...(job.targetingPrograms ?? []),
@@ -739,11 +835,47 @@ function JobDetail({
         </div>
 
         <div className="mt-5 border-t border-border pt-4">
-          <h3 className="text-sm font-medium">About the role</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-medium">About the role</h3>
+            {posting.roleMeta.map((m) => (
+              <span
+                key={m}
+                className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+              >
+                {m}
+              </span>
+            ))}
+          </div>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-            {job.description}
+            {posting.overview}
           </p>
         </div>
+
+        {posting.skills.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-sm font-medium">Required skills</h3>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {posting.skills.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-full border border-border px-2 py-0.5 text-xs"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {posting.responsibilities.length > 0 && (
+          <BulletBlock title="Key responsibilities" items={posting.responsibilities} />
+        )}
+        {posting.requirements.length > 0 && (
+          <BulletBlock title="Requirements" items={posting.requirements} />
+        )}
+        {posting.benefits.length > 0 && (
+          <BulletBlock title="Benefits & perks" items={posting.benefits} />
+        )}
 
         {tags.length > 0 && (
           <div className="mt-4">

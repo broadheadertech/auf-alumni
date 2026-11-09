@@ -14,16 +14,19 @@ import {
   MapPin,
   ShieldCheck,
   MessageSquare,
-  UserPlus,
   Lock,
+  Phone,
+  Home,
+  LinkIcon,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { VerifiedBadge } from "@/components/auf/VerifiedBadge";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 
 type Experience = { role: string; company: string; years: string };
 type Education = {
@@ -33,9 +36,24 @@ type Education = {
   year: number;
 };
 
+/**
+ * "linkedin.com/in/jaezar" from a stored URL. Display only — the value was
+ * already sanitised to http(s) on write (convex/helpers/links.ts), so this
+ * never has to decide whether a URL is safe to render.
+ */
+function linkDisplay(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "") + u.pathname.replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+}
+
 export default function ProfilePage() {
   const params = useParams<{ slug: string }>();
   const profile = useQuery(api.profiles.getBySlug, { slug: params.slug });
+  const me = useQuery(api.users.getMe);
 
   if (profile === undefined) {
     return (
@@ -63,15 +81,24 @@ export default function ProfilePage() {
   }
 
   const p = profile as Record<string, unknown>;
+  const profileUserId = (p.userId as string | undefined) ?? null;
+  const isMe = !!profileUserId && me?._id === profileUserId;
   const displayName = (p.displayName as string) ?? "Alumnus";
   const initials =
     (p.initials as string) ?? displayName.slice(0, 2).toUpperCase();
+  const photoUrl = (p.photoUrl as string | null | undefined) ?? null;
   const currentRole = p.currentRole as string | undefined;
   const company = p.company as string | undefined;
   const program = p.program as string | undefined;
   const batch = p.batch as number | undefined;
   const city = p.city as string | undefined;
   const country = p.country as string | undefined;
+  // Present only when the viewer is entitled to them: applyPrivacy drops the
+  // key entirely rather than nulling it, so "is it here" is the whole check.
+  const phone = p.phone as string | undefined;
+  const addressLine = p.addressLine as string | undefined;
+  const links = (p.links as Record<string, string> | undefined) ?? {};
+  const linkEntries = Object.entries(links).filter(([, v]) => Boolean(v));
   const bio = p.bio as string | undefined;
   const experience = (p.experience as Experience[] | undefined) ?? [];
   const education = (p.education as Education[] | undefined) ?? [];
@@ -101,6 +128,7 @@ export default function ProfilePage() {
         <CardContent className="px-6 pb-6 -mt-12">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <Avatar className="h-24 w-24 border-4 border-background bg-muted">
+              {photoUrl && <AvatarImage src={photoUrl} alt="" />}
               <AvatarFallback className="text-2xl font-semibold">
                 {initials}
               </AvatarFallback>
@@ -134,14 +162,25 @@ export default function ProfilePage() {
               </div>
             </div>
             <div className="flex gap-2 sm:flex-col lg:flex-row">
-              <Button size="sm" className="gap-1.5">
-                <UserPlus className="h-4 w-4" />
-                Connect
-              </Button>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <MessageSquare className="h-4 w-4" />
-                Message
-              </Button>
+              {profileUserId && !isMe ? (
+                <>
+                  <ConnectButton otherUserId={profileUserId} />
+                  <Link
+                    href={`/messages?to=${profileUserId}`}
+                    className={buttonVariants({ size: "sm", variant: "outline" }) + " gap-1.5"}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Message
+                  </Link>
+                </>
+              ) : isMe ? (
+                <Link
+                  href="/profile/edit"
+                  className={buttonVariants({ size: "sm", variant: "outline" }) + " gap-1.5"}
+                >
+                  Edit profile
+                </Link>
+              ) : null}
             </div>
           </div>
         </CardContent>
@@ -156,6 +195,45 @@ export default function ProfilePage() {
                 <p className="text-sm leading-relaxed text-foreground/90">
                   {bio}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {(phone || addressLine || linkEntries.length > 0) && (
+            <Card>
+              <CardContent className="p-6">
+                <h2 className="font-semibold mb-3">Contact</h2>
+                <div className="space-y-2 text-sm">
+                  {phone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      <a href={`tel:${phone.replace(/[^+\d]/g, "")}`} className="hover:underline">
+                        {phone}
+                      </a>
+                    </div>
+                  )}
+                  {addressLine && (
+                    <div className="flex items-start gap-2">
+                      <Home className="mt-0.5 h-4 w-4 text-muted-foreground" />
+                      <span>
+                        {[addressLine, city, country].filter(Boolean).join(", ")}
+                      </span>
+                    </div>
+                  )}
+                  {linkEntries.map(([key, url]) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <LinkIcon className="h-4 w-4 text-muted-foreground" />
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow ugc"
+                        className="hover:underline break-all"
+                      >
+                        {linkDisplay(url)}
+                      </a>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}

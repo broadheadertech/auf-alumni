@@ -14,17 +14,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
   BarChart3,
+  Building2,
   ClipboardList,
   FileText,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   Menu,
   MessageCircle,
   Users,
   X,
 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "@/lib/convex-api";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { PageHelpLink } from "./PageHelpLink";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -42,6 +48,12 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: "Company",
+    items: [
+      { href: "/employer/company", label: "Company profile", Icon: Building2 },
+    ],
+  },
+  {
     label: "Hiring",
     items: [
       { href: "/employer/jobs", label: "Job postings", Icon: ClipboardList },
@@ -54,6 +66,12 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/employer/analytics", label: "Analytics", Icon: BarChart3 },
       { href: "/employer/reports", label: "Reports", Icon: FileText },
+    ],
+  },
+  {
+    label: "Help",
+    items: [
+      { href: "/employer/guide", label: "How to use this", Icon: LifeBuoy },
     ],
   },
 ];
@@ -78,6 +96,11 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const active = useMemo(() => activeHref(pathname), [pathname]);
+  // Unread count for the Messages nav item (same source as the alumni shell).
+  const threads = useQuery(api.messaging.listMyThreads) as
+    | Array<{ unread: number }>
+    | undefined;
+  const unreadMessages = (threads ?? []).reduce((sum, t) => sum + (t.unread ?? 0), 0);
   const title = ALL_ITEMS.find((i) => i.href === active)?.label ?? "Employer";
 
   return (
@@ -94,6 +117,7 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
         active={active}
         drawerOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
+        unreadMessages={unreadMessages}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -110,8 +134,9 @@ export function EmployerShell({ children }: { children: React.ReactNode }) {
             <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
               {title}
             </h1>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
+              <PageHelpLink surface="employer" />
               <NotificationDropdown />
             </div>
           </div>
@@ -127,11 +152,14 @@ function Sidebar({
   active,
   drawerOpen,
   onClose,
+  unreadMessages,
 }: {
   active: string | null;
   drawerOpen: boolean;
   onClose: () => void;
+  unreadMessages: number;
 }) {
+  const refreshHome = useSameRouteRefresh("/employer/dashboard");
   return (
     <aside
       className={cn(
@@ -144,7 +172,11 @@ function Sidebar({
       aria-label="Employer"
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <Link href="/employer/dashboard" className="flex items-center gap-2">
+        <Link
+          href="/employer/dashboard"
+          onClick={refreshHome}
+          className="flex items-center gap-2"
+        >
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
             AUF
           </span>
@@ -186,7 +218,19 @@ function Sidebar({
                     )}
                   >
                     <item.Icon size={16} className="shrink-0" />
-                    <span className="truncate">{item.label}</span>
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {item.href === "/employer/messages" && unreadMessages > 0 && (
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                          isActive
+                            ? "bg-background text-foreground"
+                            : "bg-primary text-primary-foreground",
+                        )}
+                      >
+                        {unreadMessages > 99 ? "99+" : unreadMessages}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

@@ -23,6 +23,7 @@ import {
   GraduationCap,
   Home,
   IdCard,
+  LifeBuoy,
   LogOut,
   Menu,
   MessageCircle,
@@ -34,6 +35,8 @@ import { AUFWordmark } from "./AUFMark";
 import { AUFAvatar } from "./AUFAvatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { PageHelpLink } from "./PageHelpLink";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -45,12 +48,13 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { href: "/feed", label: "Home", Icon: Home },
-  { href: "/jobs", label: "Jobs", Icon: Briefcase, badge: 4 },
+  { href: "/jobs", label: "Jobs", Icon: Briefcase },
   { href: "/mentorship", label: "Mentorship", Icon: GraduationCap },
   { href: "/academy", label: "Academy", Icon: BookOpen },
   { href: "/events", label: "Events", Icon: Calendar },
-  { href: "/messages", label: "Messages", Icon: MessageCircle, badge: 2 },
+  { href: "/messages", label: "Messages", Icon: MessageCircle },
   { href: "/id", label: "Alumni ID", Icon: IdCard },
+  { href: "/guide", label: "Guide", Icon: LifeBuoy },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -114,8 +118,26 @@ function Sidebar({
   drawerOpen: boolean;
   onClose: () => void;
 }) {
+  const refreshHome = useSameRouteRefresh("/feed");
   const me = useQuery(api.users.getMe);
   const myProfile = useQuery(api.profiles.getMyProfile);
+
+  // Live nav badges (replace the old hardcoded placeholders).
+  const availableJobs = useQuery(api.jobs.myAvailableCount) as
+    | number
+    | undefined;
+  const threads = useQuery(api.messaging.listMyThreads) as
+    | Array<{ unread: number }>
+    | undefined;
+  const unreadMessages = (threads ?? []).reduce(
+    (sum, t) => sum + (t.unread ?? 0),
+    0,
+  );
+  const badgeFor = (href: string): number | undefined => {
+    if (href === "/jobs") return availableJobs;
+    if (href === "/messages") return unreadMessages;
+    return undefined;
+  };
 
   type ProfileSnapshot = {
     displayName?: string;
@@ -145,7 +167,14 @@ function Sidebar({
       aria-label="Primary"
     >
       <div className="px-3 pt-3 pb-3 flex items-center justify-between">
-        <AUFWordmark />
+        <Link
+          href="/feed"
+          aria-label="Home"
+          onClick={refreshHome}
+          className="min-w-0 flex-1 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <AUFWordmark />
+        </Link>
         <button
           type="button"
           onClick={onClose}
@@ -159,6 +188,7 @@ function Sidebar({
       <nav className="px-3 flex flex-col gap-0.5 mt-1">
         {NAV.map((n) => {
           const active = pathname === n.href || pathname.startsWith(n.href + "/");
+          const badge = badgeFor(n.href);
           return (
             <Link
               key={n.href}
@@ -167,9 +197,9 @@ function Sidebar({
             >
               <n.Icon size={18} />
               <span className="flex-1">{n.label}</span>
-              {n.badge ? (
+              {badge && badge > 0 ? (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full brand-bg text-white">
-                  {n.badge}
+                  {badge > 99 ? "99+" : badge}
                 </span>
               ) : null}
             </Link>
@@ -285,6 +315,7 @@ function TopBar({
 
         <div className="flex-1 md:hidden" />
 
+        <PageHelpLink surface="alumni" />
         <NotificationDropdown />
         <Link
           href="/messages"

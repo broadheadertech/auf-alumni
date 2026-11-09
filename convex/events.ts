@@ -17,6 +17,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { isChannelEnabled, maybeInsertNotification } from "./notifications";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
@@ -624,7 +625,25 @@ export const sendDueReminders = internalMutation({
         }
         if (!kind) continue;
         const user = await ctx.db.get(r.userId);
-        if (!user?.email) continue;
+        const whenLabel = kind === "24h" ? "24 hours" : "1 hour";
+        await maybeInsertNotification(ctx, r.userId, "eventReminderInApp", {
+          kind: "event-reminder",
+          title: `${event.title} starts in about ${whenLabel}`,
+          body: event.locationLabel ?? (event.onlineUrl ? "Online event" : ""),
+          href: `/events/${event._id}`,
+        });
+        if (
+          !user?.email ||
+          !(await isChannelEnabled(ctx, r.userId, "eventReminderEmail"))
+        ) {
+          // Still stamp the reminder so the in-app notice isn't repeated.
+          await ctx.db.patch(r._id, {
+            remindedAt24h: kind === "24h" ? Date.now() : r.remindedAt24h,
+            remindedAt1h: kind === "1h" ? Date.now() : r.remindedAt1h,
+          });
+          sent += 1;
+          continue;
+        }
         await ctx.scheduler.runAfter(
           0,
           internal.actions.email.send,
@@ -647,5 +666,97 @@ export const sendDueReminders = internalMutation({
       }
     }
     return { sent };
+  },
+});
+
+/**
+ * Public, minimal event summary for the no-login RSVP confirmation page
+ * (/rsvp?e=<eventId>). Accepts the raw id string from the URL so a malformed
+ * or stale link returns null instead of throwing. Title/time/place only.
+ */
+export const getEventPublic = query({
+  args: { id: v.string() },
+  handler: async (ctx, { id }) => {
+    const eventId = ctx.db.normalizeId("events", id);
+    if (!eventId) return null;
+    const event = await ctx.db.get(eventId);
+    if (!event || event.cancelledAt) return null;
+    return {
+      title: event.title,
+      startsAt: event.startsAt,
+      location: event.locationLabel ?? (event.onlineUrl ? "Online" : null),
+    };
+  },
+});
+
+
+/**
+ * Upcoming events for the public marketing site.
+ *
+ * Deliberately narrow: only events an admin has explicitly marked public,
+ * only ones still to happen, and only the fields a stranger needs. Attendee
+ * counts, capacity, the audience filter and the online joining URL are all
+ * withheld — a visitor has no business knowing who is coming, and the join
+ * link is the event's soft access control.
+ */
+export const listPublic = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    const now = Date.now();
+    const cap = Math.min(Math.max(limit ?? 6, 1), 24);
+
+    const upcoming = ctx.db
+      .query("events")
+      .withIndex("by_starts_at", (q) => q.gt("startsAt", now))
+      .order("asc");
+
+    const out: Array<{
+      _id: Id<"events">;
+      title: string;
+      description: string;
+      startsAt: number;
+      endsAt: number | null;
+      location: string | null;
+      category: string | null;
+      coverUrl: string | null;
+    }> = [];
+
+    for await (const e of upcoming) {
+      if (e.cancelledAt != null) continue;
+      if (e.isPublic !== true) continue;
+      out.push({
+        _id: e._id,
+        title: e.title,
+        description: e.description,
+        startsAt: e.startsAt,
+        endsAt: e.endsAt ?? null,
+        location: e.locationLabel ?? (e.onlineUrl ? "Online" : null),
+        category: e.category ?? null,
+        coverUrl: e.coverImageStorageId
+          ? await ctx.storage.getUrl(e.coverImageStorageId)
+          : null,
+      });
+      if (out.length >= cap) break;
+    }
+
+    return out;
+  },
+});
+
+/**
+ * Admin toggle for the above. Separate from publishing: an event is
+ * "published" to alumni the moment it exists, whereas this decides whether
+ * the outside world sees it at all.
+ */
+export const setEventPublic = mutation({
+  args: { eventId: v.id("events"), isPublic: v.boolean() },
+  handler: async (ctx, { eventId, isPublic }) => {
+    await requireRole(ctx, ["super-admin", "moderator"]);
+    const event = await ctx.db.get(eventId);
+    if (!event) {
+      throw new ConvexError({ code: "not-found", message: "Event not found" });
+    }
+    await ctx.db.patch(eventId, { isPublic });
+    return { isPublic };
   },
 });

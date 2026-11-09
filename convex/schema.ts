@@ -38,6 +38,8 @@ export default defineSchema({
     deletedAtHardDeleteScheduledFor: v.optional(v.number()),
     suspendedAt: v.optional(v.number()),
     suspendedReason: v.optional(v.string()),
+    // Why the account is off: "suspended" | "deactivated" | "rejected".
+    suspendedKind: v.optional(v.string()),
     consentAcknowledgedAt: v.optional(v.number()),
     consentVersion: v.optional(v.string()),
     planTier: v.optional(v.string()),
@@ -64,14 +66,44 @@ export default defineSchema({
     company: v.optional(v.string()),
     city: v.optional(v.string()),
     country: v.optional(v.string()),
+    // Contact details. All three are privacy-tiered like any other profile
+    // field (see convex/helpers/privacy.ts); `addressLine` defaults to
+    // "private" in the editor because a home address should never become
+    // alumni-visible by omission.
+    phone: v.optional(v.string()),
+    addressLine: v.optional(v.string()),
+    // Social / web presence. Sanitised to http(s) on write — these render
+    // into href attributes. See convex/helpers/links.ts.
+    links: v.optional(
+      v.object({
+        linkedin: v.optional(v.string()),
+        facebook: v.optional(v.string()),
+        instagram: v.optional(v.string()),
+        github: v.optional(v.string()),
+        website: v.optional(v.string()),
+      }),
+    ),
+    // Name of an admin-managed "status" reference item (e.g. "Employed").
+    employmentStatus: v.optional(v.string()),
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
+    // Employment history. `years` is the DERIVED display label (recomputed
+    // server-side from the structured fields on every write) so existing
+    // render sites keep working; the start/end fields are what reporting and
+    // the work-anniversary cron actually read. Structured fields are optional
+    // because rows predating the migration may not have parsed.
+    // See convex/helpers/experience.ts.
     experience: v.array(
       v.object({
         role: v.string(),
         company: v.string(),
         years: v.string(),
+        startYear: v.optional(v.number()),
+        startMonth: v.optional(v.number()), // 1-12
+        endYear: v.optional(v.number()),
+        endMonth: v.optional(v.number()),
+        current: v.optional(v.boolean()),
       }),
     ),
     education: v.array(
@@ -106,10 +138,33 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     excludeFromSearchEngines: v.boolean(),
+    // Denormalised haystack for the search_all index below. Optional so rows
+    // written before it existed stay valid; every profile write refreshes it
+    // and seedActivity:backfillSearchText fills in the rest.
+    searchText: v.optional(v.string()),
   })
     .index("by_slug", ["slug"])
     .index("by_userId", ["userId"])
     .index("by_batch_program", ["batch", "program"])
+    // Text search over the roster.
+    //
+    // `searchText` is a denormalised blob of everything the directory matches
+    // on — display name, role, company, bio and skills — maintained on write
+    // by buildSearchText() in convex/helpers/searchText.ts. One index over it
+    // beats three per-field indexes because the directory treats those fields
+    // as a single haystack, and because `skills` is an array, which cannot be
+    // a searchField by itself. `searchField` is tokenised by Convex and
+    // matched prefix-wise; filterFields are equality-only narrowing applied
+    // inside the index, which is what keeps a filtered search from degrading
+    // into a scan.
+    .searchIndex("search_all", {
+      searchField: "searchText",
+      filterFields: ["batch", "program", "city", "country", "employmentStatus"],
+    })
+    .searchIndex("search_name", {
+      searchField: "displayName",
+      filterFields: ["batch", "program", "city", "country"],
+    })
     .index("by_alumni_id", ["alumniId"]),
 
   // ---------- academic taxonomy (admin-managed reference data) ----------
@@ -138,6 +193,86 @@ export default defineSchema({
   })
     .index("by_college", ["collegeId"])
     .index("by_sort", ["sortOrder"]),
+
+  // ---------- CMS: reference lists (admin-managed) ----------
+  // One table for the simple admin-editable pick lists: areas (locations),
+  // employment statuses, and skill sets. `kind` partitions them; `group` is an
+  // optional grouping label (region for areas, category for skills). Like
+  // programs, values are stored on profiles by name — these rows are the
+  // canonical source for pickers and filters.
+  referenceItems: defineTable({
+    kind: v.string(), // "area" | "status" | "skill"
+    name: v.string(),
+    group: v.optional(v.string()),
+    description: v.optional(v.string()),
+    sortOrder: v.number(),
+    archivedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_kind_sort", ["kind", "sortOrder"]),
+
+  // ---------- CMS: editable page copy ----------
+  // One row per page (`key`, e.g. "home"). `fields` is a flat map of
+  // field-key → text; the server whitelists keys per page and merges with
+  // built-in defaults, so an empty table still renders the original copy.
+  siteContent: defineTable({
+    key: v.string(),
+    fields: v.record(v.string(), v.string()),
+    updatedAt: v.number(),
+    updatedBy: v.optional(v.id("users")),
+  }).index("by_key", ["key"]),
+
+  // ---------- contact enquiries (public forms) ----------
+  // Every "contact us" path writes here so nothing depends on the visitor
+  // having a mail client and the Office of Alumni Relations can triage from
+  // the admin console. See convex/enquiries.ts.
+  enquiries: defineTable({
+    topic: v.string(), // "employer" | "support" | "general" | "privacy" | "security"
+    name: v.string(),
+    email: v.string(),
+    organisation: v.optional(v.string()),
+    message: v.string(),
+    sourcePath: v.optional(v.string()),
+    // Set when the sender was signed in.
+    submittedBy: v.optional(v.id("users")),
+    status: v.string(), // "new" | "in-progress" | "closed"
+    adminNotes: v.optional(v.string()),
+    handledBy: v.optional(v.id("users")),
+    handledAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status_time", ["status", "createdAt"])
+    .index("by_email_time", ["email", "createdAt"])
+    .searchIndex("search_message", {
+      searchField: "message",
+      filterFields: ["status", "topic"],
+    }),
+
+  // ---------- CMS: articles (newsroom) ----------
+  articles: defineTable({
+    title: v.string(),
+    slug: v.string(),
+    excerpt: v.optional(v.string()),
+    body: v.string(), // plain text; blank lines separate paragraphs
+    category: v.optional(v.string()),
+    coverStorageId: v.optional(v.id("_storage")),
+    status: v.string(), // "draft" | "published" | "archived"
+    publishedAt: v.optional(v.number()),
+    authorId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_status_published", ["status", "publishedAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "category"],
+    })
+    .searchIndex("search_body", {
+      searchField: "body",
+      filterFields: ["status"],
+    }),
 
   // ---------- verificationSubmissions (Epic 2 Stories 2.3, 2.4) ----------
   verificationSubmissions: defineTable({
@@ -204,12 +339,24 @@ export default defineSchema({
   jobs: defineTable({
     employerOrgId: v.id("employerOrgs"),
     title: v.string(),
-    description: v.string(),
+    description: v.string(), // overview / "about the role"
+    // Structured posting sections (each a list of bullet points). Optional so
+    // legacy/seeded jobs without them still render (the UI falls back to
+    // parsing the description).
+    responsibilities: v.optional(v.array(v.string())),
+    requirements: v.optional(v.array(v.string())),
+    benefits: v.optional(v.array(v.string())),
     location: v.string(),
+    workMode: v.optional(v.string()), // "remote" | "hybrid" | "onsite"
     employmentType: v.string(), // "full-time" | "part-time" | "contract" | "internship"
+    experienceLevel: v.optional(v.string()), // "entry" | "mid" | "senior" | "lead"
     salaryMin: v.optional(v.number()),
     salaryMax: v.optional(v.number()),
     salaryCurrency: v.optional(v.string()),
+    // Required skill sets for the role, picked by the employer. Stores skill
+    // NAMES (canonical casing from referenceItems kind "skill" when matched;
+    // free-text allowed). Optional so legacy jobs stay valid.
+    skills: v.optional(v.array(v.string())),
     targetingBatches: v.optional(v.array(v.number())),
     targetingPrograms: v.optional(v.array(v.string())),
     targetingSkills: v.optional(v.array(v.string())),
@@ -226,6 +373,14 @@ export default defineSchema({
   })
     .index("by_status_time", ["status", "createdAt"])
     .index("by_employer_time", ["employerOrgId", "createdAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "employmentType", "workMode", "employerOrgId"],
+    })
+    .searchIndex("search_description", {
+      searchField: "description",
+      filterFields: ["status"],
+    })
     .index("by_published", ["publishedAt"]),
 
   applications: defineTable({
@@ -235,6 +390,29 @@ export default defineSchema({
     profileSnapshot: v.any(), // privacy-filtered snapshot at submission time
     stage: v.string(), // "new" | "screening" | "interview" | "offered" | "hired" | "not-selected"
     referredBy: v.optional(v.id("users")),
+    // Screening appointment. The pipeline had an "interview" stage but no
+    // interview: no date, no place, and nothing the applicant could see or
+    // respond to, so scheduling happened off-platform or not at all.
+    //
+    // `respondedAt`/`response` are the applicant's side — an appointment
+    // nobody confirmed is not a booking, and an employer needs to know the
+    // difference between "not seen it yet" and "can't make it".
+    interview: v.optional(
+      v.object({
+        startsAt: v.number(),
+        durationMinutes: v.optional(v.number()),
+        mode: v.string(), // "onsite" | "online" | "phone"
+        // Address for onsite, joining link for online, number for phone.
+        location: v.optional(v.string()),
+        note: v.optional(v.string()),
+        scheduledBy: v.id("users"),
+        scheduledAt: v.number(),
+        cancelledAt: v.optional(v.number()),
+        response: v.optional(v.string()), // "accepted" | "declined"
+        responseNote: v.optional(v.string()),
+        respondedAt: v.optional(v.number()),
+      }),
+    ),
     // Explicit, employer-triggered "CV reviewed" marker. Independent of stage —
     // an employer marks the CV reviewed by a deliberate action, and analytics
     // count reviews from this field rather than inferring from stage movement.
@@ -254,6 +432,10 @@ export default defineSchema({
     // The PDF/DOC binary lives in storage; we keep only the pointer.
     resumeStorageId: v.optional(v.id("_storage")),
     resumeFilename: v.optional(v.string()),
+    // Stage timing for analytics: when the stage last changed, and when the
+    // application reached "hired" (time-to-hire = hiredAt − createdAt).
+    stageChangedAt: v.optional(v.number()),
+    hiredAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -348,6 +530,11 @@ export default defineSchema({
     publishedBy: v.id("users"),
     publishedAt: v.number(),
     cancelledAt: v.optional(v.number()),
+    // Visible to logged-out visitors on the marketing site. Opt-in, and
+    // absent means private: events can carry an audienceFilter restricting
+    // them to particular batches or programmes, so defaulting the roster to
+    // public would leak alumni-only gatherings the day this shipped.
+    isPublic: v.optional(v.boolean()),
     coverImageStorageId: v.optional(v.id("_storage")),
     category: v.optional(
       v.union(
@@ -370,7 +557,11 @@ export default defineSchema({
     ),
   })
     .index("by_starts_at", ["startsAt"])
-    .index("by_published_at", ["publishedAt"]),
+    .index("by_published_at", ["publishedAt"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["category"],
+    }),
 
   rsvps: defineTable({
     eventId: v.id("events"),
@@ -498,6 +689,33 @@ export default defineSchema({
     logoStorageId: v.optional(v.id("_storage")),
     websiteUrl: v.optional(v.string()),
     hqCity: v.optional(v.string()),
+    // Company profile — edited by the org's own employer admins from
+    // /employer/company and shown on the public /companies/[slug] page.
+    tagline: v.optional(v.string()),
+    about: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    companySize: v.optional(v.string()),
+    foundedYear: v.optional(v.number()),
+    contactEmail: v.optional(v.string()),
+    // Partnership contract (admin-managed): ISO dates + signed MOA / NDA.
+    contractStart: v.optional(v.string()),
+    contractEnd: v.optional(v.string()),
+    moaDoc: v.optional(
+      v.object({
+        filename: v.string(),
+        sizeKb: v.number(),
+        uploadedAt: v.string(),
+        storageId: v.optional(v.id("_storage")),
+      }),
+    ),
+    ndaDoc: v.optional(
+      v.object({
+        filename: v.string(),
+        sizeKb: v.number(),
+        uploadedAt: v.string(),
+        storageId: v.optional(v.id("_storage")),
+      }),
+    ),
     mouAcknowledgedAt: v.optional(v.number()),
     planTier: v.string(),
     subscriptionId: v.optional(v.string()),
@@ -512,9 +730,14 @@ export default defineSchema({
     updatedAt: v.number(),
     suspendedAt: v.optional(v.number()),
     suspendedReason: v.optional(v.string()),
+    suspendedKind: v.optional(v.string()), // "deactivated" | "rejected"
   })
     .index("by_slug", ["slug"])
-    .index("by_tier", ["tier"]),
+    .index("by_tier", ["tier"])
+    .searchIndex("search_name", {
+      searchField: "name",
+      filterFields: ["tier", "industry", "hqCity"],
+    }),
 
   // ---------- AUF Academy (Epic 17) ----------
   // On-demand "how to" courses taught by verified alumni instructors.
@@ -537,7 +760,11 @@ export default defineSchema({
     .index("by_slug", ["slug"])
     .index("by_instructor", ["instructorId"])
     .index("by_status_published", ["status", "publishedAt"])
-    .index("by_category_status", ["category", "status"]),
+    .index("by_category_status", ["category", "status"])
+    .searchIndex("search_title", {
+      searchField: "title",
+      filterFields: ["status", "category", "level"],
+    }),
 
   academyLessons: defineTable({
     courseId: v.id("academyCourses"),
@@ -629,6 +856,14 @@ export default defineSchema({
     status: v.string(), // "issued" | "active" | "lost"
     boundAt: v.optional(v.number()),
     updatedAt: v.number(),
+    // Which KDF produced the hashes above. Absent means the original djb2
+    // prototype hash, which is no longer accepted — those cards must be
+    // re-activated. See convex/idCards.ts.
+    hashAlg: v.optional(v.string()), // "pbkdf2-sha256-v1"
+    // Brute-force protection on verify(): a 4-digit PIN is only 10,000
+    // guesses, and alumnaId is printed on the card's own QR code.
+    failedAttempts: v.optional(v.number()),
+    lockedUntil: v.optional(v.number()),
   }).index("by_alumna", ["alumnaId"]),
 
   // Single-use "set your PIN" tokens (30-min TTL). Emailed to the alumna.

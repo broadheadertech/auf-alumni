@@ -2,6 +2,10 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
+import {
+  CourseCompletion,
+  type NextCourse,
+} from "@/components/auf/CourseCompletion";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
@@ -29,7 +33,16 @@ type Course = {
   slug: string;
   title: string;
   lessons: Lesson[];
-  enrollment: { _id: string; completedLessonIds: string[] } | null;
+  enrollment: {
+    _id: string;
+    completedLessonIds: string[];
+    completedAt: number | null;
+  } | null;
+  instructorId: string;
+  instructorName: string;
+  instructorSlug: string | null;
+  instructorOpenTo: string[];
+  nextCourses: NextCourse[];
 };
 
 function renderMarkdown(md: string): React.ReactNode {
@@ -100,6 +113,11 @@ export default function LessonPage({
   const completedSet = new Set(course.enrollment?.completedLessonIds ?? []);
   const isComplete = completedSet.has(lesson._id);
   const prev = course.lessons.find((l) => l.order === order - 1);
+  // Every lesson ticked off — show what to do next instead of a dead end.
+  const courseDone =
+    !!course.enrollment &&
+    course.lessons.length > 0 &&
+    course.lessons.every((l) => completedSet.has(l._id));
   const next = course.lessons.find((l) => l.order === order + 1);
 
   const onMark = async () => {
@@ -202,8 +220,25 @@ export default function LessonPage({
                   Enroll on the course page to track progress.
                 </span>
               )}
+              {course.enrollment && !courseDone && !next && (
+                <span className="text-[12px] ink-3">
+                  Finish the remaining lessons to complete the course.
+                </span>
+              )}
             </div>
           </div>
+
+          {courseDone && (
+            <CourseCompletion
+              courseTitle={course.title}
+              instructorName={course.instructorName}
+              instructorId={course.instructorId}
+              instructorSlug={course.instructorSlug}
+              instructorOpenTo={course.instructorOpenTo}
+              completedAt={course.enrollment?.completedAt ?? null}
+              nextCourses={course.nextCourses}
+            />
+          )}
         </div>
 
         <aside className="lg:col-span-4">

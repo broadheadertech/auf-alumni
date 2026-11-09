@@ -19,6 +19,9 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+import { buildSearchText } from "./helpers/searchText";
+import { normalizeEntry } from "./helpers/experience";
+import { sanitizeAddress, sanitizeLinks, sanitizePhone } from "./helpers/links";
 
 const HARD_DELETE_GRACE_DAYS = 30;
 const VERIFICATION_ARTIFACT_TTL_DAYS = 30;
@@ -57,6 +60,27 @@ async function ensureUniqueSlug(
 /**
  * Get the current authenticated user's profile, with full self-view.
  */
+/**
+ * Recompute each entry's display label from its structured dates so `years`
+ * can never drift from the start/end fields a client sent. A client could
+ * otherwise post "2015 - 2019" alongside startYear 2022 and every surface
+ * that renders `years` would show the lie.
+ */
+function normalizeExperience(
+  entries: Array<{
+    role: string;
+    company: string;
+    years: string;
+    startYear?: number;
+    startMonth?: number;
+    endYear?: number;
+    endMonth?: number;
+    current?: boolean;
+  }>,
+) {
+  return entries.map((e) => normalizeEntry(e));
+}
+
 export const getMyProfile = query({
   args: {},
   handler: async (ctx) => {
@@ -84,7 +108,13 @@ export const getBySlug = query({
       .unique();
     if (!profile) return null;
     const viewer = await getViewerContext(ctx, profile.userId);
-    return applyPrivacy(profile, viewer);
+    const safe = applyPrivacy(profile, viewer);
+    // Resolve the avatar here so every surface can render it (the storage id
+    // alone is useless to the client).
+    const photoUrl = safe.photoStorageId
+      ? await ctx.storage.getUrl(safe.photoStorageId)
+      : null;
+    return { ...safe, photoUrl };
   },
 });
 
@@ -354,6 +384,36 @@ export const getPhotoUrl = query({
  * Create or update the authenticated user's profile (Stories 3.1 + 3.2 + 3.5).
  */
 // @no-audit-required: user self-service mutation; user owns their own profile.
+
+const DISPLAY_NAME_MAX = 80;
+
+/**
+ * Display names reach a public page, including inside a JSON-LD <script>
+ * block. Angle brackets there could close the script early (see
+ * src/lib/json-ld.ts for the escaping that now blocks it) — this is the other
+ * half: don't store markup in the first place. Control characters are stripped
+ * too, since they only ever arrive from a crafted request.
+ */
+function cleanDisplayName(raw: string): string {
+  const value = raw
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .replace(/[<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (value.length === 0) {
+    throw new ConvexError({
+      code: "validation",
+      message: "Display name is required",
+    });
+  }
+  if (value.length > DISPLAY_NAME_MAX) {
+    throw new ConvexError({
+      code: "validation",
+      message: `Display name must be ${DISPLAY_NAME_MAX} characters or fewer`,
+    });
+  }
+  return value;
+}
 export const createOrUpdateMyProfile = mutation({
   args: {
     displayName: v.string(),
@@ -364,6 +424,18 @@ export const createOrUpdateMyProfile = mutation({
     company: v.optional(v.string()),
     city: v.optional(v.string()),
     country: v.optional(v.string()),
+    employmentStatus: v.optional(v.string()),
+    phone: v.optional(v.string()),
+    addressLine: v.optional(v.string()),
+    links: v.optional(
+      v.object({
+        linkedin: v.optional(v.string()),
+        facebook: v.optional(v.string()),
+        instagram: v.optional(v.string()),
+        github: v.optional(v.string()),
+        website: v.optional(v.string()),
+      }),
+    ),
     bio: v.optional(v.string()),
     skills: v.array(v.string()),
     openTo: v.array(v.string()),
@@ -373,7 +445,14 @@ export const createOrUpdateMyProfile = mutation({
       v.object({
         role: v.string(),
         company: v.string(),
+        // Accepted but not trusted: `years` is recomputed from the structured
+        // fields below before storage. See normalizeExperience().
         years: v.string(),
+        startYear: v.optional(v.number()),
+        startMonth: v.optional(v.number()),
+        endYear: v.optional(v.number()),
+        endMonth: v.optional(v.number()),
+        current: v.optional(v.boolean()),
       }),
     ),
     education: v.array(
@@ -395,12 +474,7 @@ export const createOrUpdateMyProfile = mutation({
         message: "Sign in required",
       });
     }
-    if (args.displayName.trim().length === 0) {
-      throw new ConvexError({
-        code: "validation",
-        message: "Display name is required",
-      });
-    }
+    const displayName = cleanDisplayName(args.displayName);
     if (args.batch < 1960 || args.batch > new Date().getFullYear()) {
       throw new ConvexError({
         code: "validation",
@@ -414,12 +488,12 @@ export const createOrUpdateMyProfile = mutation({
       .unique();
 
     const now = Date.now();
-    const initials = buildInitials(args.displayName);
+    const initials = buildInitials(displayName);
 
     if (existing) {
       // Existing profile: preserve slug, update fields.
       await ctx.db.patch(existing._id, {
-        displayName: args.displayName,
+        displayName,
         initials,
         batch: args.batch,
         program: args.program,
@@ -428,13 +502,24 @@ export const createOrUpdateMyProfile = mutation({
         company: args.company,
         city: args.city,
         country: args.country,
+        employmentStatus: args.employmentStatus,
+        phone: sanitizePhone(args.phone),
+        addressLine: sanitizeAddress(args.addressLine),
+        links: sanitizeLinks(args.links),
         bio: args.bio,
         skills: args.skills,
+        searchText: buildSearchText({
+          displayName,
+          currentRole: args.currentRole,
+          company: args.company,
+          bio: args.bio,
+          skills: args.skills,
+        }),
         openTo: args.openTo,
         openToWork: args.openToWork ?? false,
         openToWorkNote: args.openToWorkNote,
         openToWorkUpdatedAt: now,
-        experience: args.experience,
+        experience: normalizeExperience(args.experience),
         education: args.education,
         privacyTiers: args.privacyTiers,
         excludeFromSearchEngines: args.excludeFromSearchEngines ?? false,
@@ -444,13 +529,13 @@ export const createOrUpdateMyProfile = mutation({
     }
 
     // New profile: generate a unique slug.
-    const baseSlug = buildSlug(args.displayName);
+    const baseSlug = buildSlug(displayName);
     const slug = await ensureUniqueSlug(ctx, baseSlug);
 
     const profileId = await ctx.db.insert("profiles", {
       userId,
       slug,
-      displayName: args.displayName,
+      displayName,
       initials,
       batch: args.batch,
       program: args.program,
@@ -459,13 +544,24 @@ export const createOrUpdateMyProfile = mutation({
       company: args.company,
       city: args.city,
       country: args.country,
+      employmentStatus: args.employmentStatus,
+      phone: sanitizePhone(args.phone),
+      addressLine: sanitizeAddress(args.addressLine),
+      links: sanitizeLinks(args.links),
       bio: args.bio,
       skills: args.skills,
+      searchText: buildSearchText({
+        displayName,
+        currentRole: args.currentRole,
+        company: args.company,
+        bio: args.bio,
+        skills: args.skills,
+      }),
       openTo: args.openTo,
       openToWork: args.openToWork ?? false,
       openToWorkNote: args.openToWorkNote,
       openToWorkUpdatedAt: now,
-      experience: args.experience,
+      experience: normalizeExperience(args.experience),
       education: args.education,
       privacyTiers: args.privacyTiers,
       verifiedAt: undefined,

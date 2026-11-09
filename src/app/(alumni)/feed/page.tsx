@@ -18,6 +18,7 @@ import {
   Briefcase,
   Calendar,
   Loader2,
+  MessageCircle,
   Send,
   Sparkles,
   Trash2,
@@ -25,12 +26,14 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 
 type Post = {
   _id: string;
   authorId: string;
   authorName: string | null;
   authorSlug: string | null;
+  authorPhotoUrl?: string | null;
   kind: string;
   content: string;
   imageUrl: string | null;
@@ -59,7 +62,9 @@ type EventRow = {
 
 type Suggested = {
   _id: string;
+  userId?: string;
   displayName: string;
+  photoUrl?: string | null;
   currentRole?: string;
   company?: string;
 };
@@ -92,7 +97,7 @@ export default function FeedPage() {
   const me = useQuery(api.users.getMe);
   const myProfile = useQuery(api.profiles.getMyProfile);
   const feed = useQuery(api.feed.getFeed, { limit: 30 });
-  const matchedJobs = useQuery(api.jobs.browse, { showUnmatched: true });
+  const matchedJobs = useQuery(api.jobs.browse, { onlyStrong: true });
   const upcomingEvents = useQuery(api.events.listUpcoming, {});
   const suggested = useQuery(api.directory.list, { pageSize: 3 });
   const publishPost = useMutation(api.feed.publishPost);
@@ -333,7 +338,13 @@ function FeedPost({
   return (
     <div className="auf-card p-5">
       <div className="flex items-start gap-3">
-        <AUFAvatar name={post.authorName ?? "?"} grad={3} badge size={44} />
+        <AUFAvatar
+          name={post.authorName ?? "?"}
+          src={post.authorPhotoUrl}
+          grad={3}
+          badge
+          size={44}
+        />
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             {post.authorSlug ? (
@@ -371,6 +382,25 @@ function FeedPost({
       <p className="mt-3 text-[14.5px] leading-[1.55] whitespace-pre-wrap ink">
         {post.content}
       </p>
+      {!mine && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t auf-hairline pt-3">
+          <Link
+            href={`/messages?to=${post.authorId}`}
+            className="auf-btn auf-btn-outline auf-btn-sm"
+          >
+            <MessageCircle size={13} /> Message
+          </Link>
+          <ConnectButton otherUserId={post.authorId} />
+          {post.authorSlug && (
+            <Link
+              href={`/profile/${post.authorSlug}`}
+              className="text-[12px] ink-3 hover:underline underline-offset-2"
+            >
+              View profile
+            </Link>
+          )}
+        </div>
+      )}
       {post.imageUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -503,7 +533,7 @@ function RightCardSuggested({ suggested }: { suggested: Suggested[] }) {
             const grad = ((i % 6) + 1) as 1 | 2 | 3 | 4 | 5 | 6;
             return (
               <div key={a._id} className="flex items-center gap-3">
-                <AUFAvatar name={a.displayName} grad={grad} size={36} />
+                <AUFAvatar name={a.displayName} src={a.photoUrl} grad={grad} size={36} />
                 <div className="flex-1 min-w-0">
                   <div className="text-[13.5px] font-medium truncate">
                     {a.displayName}
@@ -512,12 +542,16 @@ function RightCardSuggested({ suggested }: { suggested: Suggested[] }) {
                     {[a.currentRole, a.company].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                <Link
-                  href="/connections"
-                  className="auf-btn auf-btn-outline auf-btn-sm"
-                >
-                  Connect
-                </Link>
+                {a.userId ? (
+                  <ConnectButton otherUserId={a.userId} className="shrink-0" />
+                ) : (
+                  <Link
+                    href="/connections"
+                    className="auf-btn auf-btn-outline auf-btn-sm"
+                  >
+                    Connect
+                  </Link>
+                )}
               </div>
             );
           })}

@@ -26,6 +26,9 @@ export const DEFAULT_PREFS: Record<string, boolean> = {
   dmInApp: true,
   eventReminderEmail: true,
   eventReminderInApp: true,
+  enquiryInApp: true,
+  interviewEmail: true,
+  interviewInApp: true,
   digestEmail: true,
   milestonesAuto: true,
 };
@@ -148,21 +151,25 @@ export const markRead = mutation({
  * connection accept, DM, RSVP reminder). Idempotent in the sense that the
  * caller is responsible for not double-firing.
  */
+export async function isChannelEnabled(
+  ctx: MutationCtx,
+  recipientId: Id<"users">,
+  channelKey: string,
+): Promise<boolean> {
+  const prefsRow = await ctx.db
+    .query("notificationPrefs")
+    .withIndex("by_user", (q) => q.eq("userId", recipientId))
+    .unique();
+  return prefsRow?.prefs?.[channelKey] ?? DEFAULT_PREFS[channelKey] ?? true;
+}
+
 export async function maybeInsertNotification(
   ctx: MutationCtx,
   recipientId: Id<"users">,
   channelKey: string,
   body: { kind: string; title: string; body: string; href?: string },
 ): Promise<boolean> {
-  const prefsRow = await ctx.db
-    .query("notificationPrefs")
-    .withIndex("by_user", (q) => q.eq("userId", recipientId))
-    .unique();
-  const enabled =
-    prefsRow?.prefs?.[channelKey] ??
-    DEFAULT_PREFS[channelKey] ??
-    true;
-  if (!enabled) return false;
+  if (!(await isChannelEnabled(ctx, recipientId, channelKey))) return false;
   await ctx.db.insert("notifications", {
     userId: recipientId,
     kind: body.kind,

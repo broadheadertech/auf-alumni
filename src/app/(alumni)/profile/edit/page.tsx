@@ -22,6 +22,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  MONTH_OPTIONS,
+  formatPeriod,
+  periodError,
+  yearOptions,
+  type ExperienceDraft,
+} from "@/lib/experience";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -34,6 +42,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProgramOptions } from "@/lib/use-program-options";
+import { useLookupOptions } from "@/lib/use-lookup-options";
 import {
   PrivacyTierIcon,
   type PrivacyTier as PrivacyTierType,
@@ -43,6 +52,7 @@ import {
   ProfilePreviewSwitcher,
   type PreviewViewer,
 } from "@/components/auf/ProfilePreviewSwitcher";
+import { prepareImageForUpload } from "@/lib/image-upload";
 import { cn } from "@/lib/utils";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -71,12 +81,16 @@ type FormState = {
   company: string;
   city: string;
   country: string;
+  employmentStatus: string;
   bio: string;
   skills: string[];
   openTo: OpenToKind[];
   openToWork: boolean;
   openToWorkNote: string;
-  experience: { role: string; company: string; years: string }[];
+  phone: string;
+  addressLine: string;
+  links: Record<LinkKey, string>;
+  experience: ExperienceDraft[];
   education: {
     degree: string;
     program: string;
@@ -87,16 +101,49 @@ type FormState = {
   excludeFromSearchEngines: boolean;
 };
 
+type LinkKey = "linkedin" | "facebook" | "instagram" | "github" | "website";
+
+/** The social fields, in the order they appear in the Contact section. */
+const LINK_FIELDS: { key: LinkKey; label: string; placeholder: string }[] = [
+  { key: "linkedin", label: "LinkedIn", placeholder: "linkedin.com/in/your-name" },
+  { key: "facebook", label: "Facebook", placeholder: "facebook.com/your-name" },
+  { key: "instagram", label: "Instagram", placeholder: "instagram.com/your-name" },
+  { key: "github", label: "GitHub", placeholder: "github.com/your-name" },
+  { key: "website", label: "Website", placeholder: "your-site.com" },
+];
+
+const EMPTY_LINKS: Record<LinkKey, string> = {
+  linkedin: "",
+  facebook: "",
+  instagram: "",
+  github: "",
+  website: "",
+};
+
 const DEFAULT_TIERS: Record<string, PrivacyTier> = {
   currentRole: "alumni",
   company: "alumni",
   city: "alumni",
   country: "public",
+  employmentStatus: "alumni",
+  // Contact details start closed. A phone number is for people you have
+  // actually connected with, and a home address is nobody's business by
+  // default — both can be opened up deliberately, but never by omission.
+  phone: "connections",
+  addressLine: "private",
+  links: "alumni",
   bio: "alumni",
   skills: "alumni",
   experience: "alumni",
   education: "alumni",
 };
+
+/** Sentinel for an unset month/year (Select items need a non-empty value). */
+const NONE = "__none";
+const YEAR_CHOICES = yearOptions();
+
+/** Select sentinel for "no employment status" (Select items need a value). */
+const NO_STATUS = "__none__";
 
 const SECTIONS: { id: string; label: string }[] = [
   { id: "opentowork", label: "Open to work" },
@@ -104,6 +151,7 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: "identity", label: "Identity" },
   { id: "work", label: "Work" },
   { id: "about", label: "About" },
+  { id: "contact", label: "Contact" },
   { id: "opento", label: "Open to" },
   { id: "skills", label: "Skills" },
   { id: "experience", label: "Experience" },
@@ -120,11 +168,15 @@ const EMPTY: FormState = {
   company: "",
   city: "",
   country: "",
+  employmentStatus: "",
   bio: "",
   skills: [],
   openTo: [],
   openToWork: false,
   openToWorkNote: "",
+  phone: "",
+  addressLine: "",
+  links: EMPTY_LINKS,
   experience: [],
   education: [],
   privacyTiers: DEFAULT_TIERS,
@@ -143,6 +195,9 @@ export default function ProfileEditPage() {
   const uploadUrl = useMutation(api.profiles.generatePhotoUploadUrl);
   const setPhoto = useMutation(api.profiles.setPhoto);
   const programOptions = useProgramOptions();
+  const areaOptions = useLookupOptions("area");
+  const statusOptions = useLookupOptions("status");
+  const skillOptions = useLookupOptions("skill");
 
   const [state, setState] = useState<FormState>(EMPTY);
   const [skillInput, setSkillInput] = useState("");
@@ -171,11 +226,18 @@ export default function ProfileEditPage() {
       company: existing.company ?? "",
       city: existing.city ?? "",
       country: existing.country ?? "",
+      employmentStatus: existing.employmentStatus ?? "",
       bio: existing.bio ?? "",
       skills: existing.skills ?? [],
       openTo: (existing.openTo ?? []) as OpenToKind[],
       openToWork: existing.openToWork ?? false,
       openToWorkNote: existing.openToWorkNote ?? "",
+      phone: (existing.phone as string | undefined) ?? "",
+      addressLine: (existing.addressLine as string | undefined) ?? "",
+      links: {
+        ...EMPTY_LINKS,
+        ...((existing.links as Record<LinkKey, string> | undefined) ?? {}),
+      },
       experience: existing.experience ?? [],
       education: existing.education ?? [],
       privacyTiers: {
@@ -228,17 +290,16 @@ export default function ProfileEditPage() {
   const onPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("Photo must be 5 MB or smaller");
-      return;
-    }
     setUploading(true);
     try {
+      // Downscale and re-encode rather than refusing phone photos outright —
+      // see src/lib/image-upload.ts.
+      const { blob, contentType } = await prepareImageForUpload(file);
       const url = await uploadUrl({});
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file,
+        headers: { "Content-Type": contentType },
+        body: blob,
       });
       if (!res.ok) throw new Error("Upload failed");
       const { storageId } = (await res.json()) as { storageId: string };
@@ -278,6 +339,7 @@ export default function ProfileEditPage() {
         company: state.company.trim() || undefined,
         city: state.city.trim() || undefined,
         country: state.country.trim() || undefined,
+        employmentStatus: state.employmentStatus || undefined,
         bio: state.bio.trim() || undefined,
         skills: state.skills,
         openTo: state.openTo,
@@ -285,6 +347,13 @@ export default function ProfileEditPage() {
         openToWorkNote: state.openToWork
           ? state.openToWorkNote.trim() || undefined
           : undefined,
+        phone: state.phone.trim() || undefined,
+        addressLine: state.addressLine.trim() || undefined,
+        links: Object.fromEntries(
+          LINK_FIELDS.map((f) => [f.key, state.links[f.key].trim()]).filter(
+            ([, v]) => v,
+          ),
+        ),
         experience: state.experience,
         education: state.education,
         privacyTiers: state.privacyTiers,
@@ -550,7 +619,7 @@ export default function ProfileEditPage() {
                 </div>
                 <div className="flex flex-1 items-center gap-2">
                   <label
-                    htmlFor="photo"
+                    htmlFor="photo-input"
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-muted"
                   >
                     {uploading ? (
@@ -561,9 +630,9 @@ export default function ProfileEditPage() {
                     {photoUrl ? "Replace" : "Upload"}
                   </label>
                   <input
-                    id="photo"
+                    id="photo-input"
                     type="file"
-                    accept="image/jpeg,image/png"
+                    accept="image/*,.heic,.heif"
                     className="sr-only"
                     onChange={onPhotoChange}
                     disabled={uploading}
@@ -689,6 +758,41 @@ export default function ProfileEditPage() {
             <CardContent className="space-y-4 p-6">
               <h2 className="font-semibold">Where you are now</h2>
               <FieldWithPrivacy
+                label="Employment status"
+                fieldKey="employmentStatus"
+                tier={state.privacyTiers.employmentStatus ?? "alumni"}
+                onTier={(t) => updateTier("employmentStatus", t)}
+                hidden={showHiddenInPreview("employmentStatus")}
+              >
+                <Select
+                  value={state.employmentStatus || NO_STATUS}
+                  onValueChange={(v) =>
+                    setState((s) => ({
+                      ...s,
+                      employmentStatus: !v || v === NO_STATUS ? "" : v,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full" aria-label="Employment status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NO_STATUS}>Not specified</SelectItem>
+                    {state.employmentStatus &&
+                      !statusOptions.names.includes(state.employmentStatus) && (
+                        <SelectItem value={state.employmentStatus}>
+                          {state.employmentStatus}
+                        </SelectItem>
+                      )}
+                    {statusOptions.options.map((o) => (
+                      <SelectItem key={o._id} value={o.name}>
+                        {o.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldWithPrivacy>
+              <FieldWithPrivacy
                 label="Current role"
                 fieldKey="currentRole"
                 tier={state.privacyTiers.currentRole ?? "alumni"}
@@ -726,10 +830,16 @@ export default function ProfileEditPage() {
                 >
                   <Input
                     value={state.city}
+                    list="area-options"
                     onChange={(e) =>
                       setState((s) => ({ ...s, city: e.target.value }))
                     }
                   />
+                  <datalist id="area-options">
+                    {areaOptions.names.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
                 </FieldWithPrivacy>
                 <FieldWithPrivacy
                   label="Country"
@@ -841,7 +951,15 @@ export default function ProfileEditPage() {
                       }
                     }}
                     placeholder="Add a skill (press Enter)"
+                    list="skill-options"
                   />
+                  <datalist id="skill-options">
+                    {skillOptions.names
+                      .filter((n) => !state.skills.includes(n))
+                      .map((n) => (
+                        <option key={n} value={n} />
+                      ))}
+                  </datalist>
                   <Button type="button" size="sm" variant="outline" onClick={addSkill}>
                     Add
                   </Button>
@@ -851,6 +969,92 @@ export default function ProfileEditPage() {
           </Card>
 
           {/* Experience */}
+          <Card id="contact" className={cn(activeTab !== "contact" && "hidden")}>
+            <CardContent className="space-y-4 p-6">
+              <FieldWithPrivacy
+                label="Phone"
+                fieldKey="phone"
+                tier={state.privacyTiers.phone ?? "connections"}
+                onTier={(t) => updateTier("phone", t)}
+                hidden={showHiddenInPreview("phone")}
+              >
+                <Input
+                  id="phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="+63 917 555 0101"
+                  value={state.phone}
+                  onChange={(e) =>
+                    setState((prev) => ({ ...prev, phone: e.target.value }))
+                  }
+                />
+              </FieldWithPrivacy>
+
+              <FieldWithPrivacy
+                label="Address"
+                fieldKey="addressLine"
+                tier={state.privacyTiers.addressLine ?? "private"}
+                onTier={(t) => updateTier("addressLine", t)}
+                hidden={showHiddenInPreview("addressLine")}
+              >
+                <Input
+                  id="addressLine"
+                  placeholder="House / street / barangay"
+                  value={state.addressLine}
+                  onChange={(e) =>
+                    setState((prev) => ({
+                      ...prev,
+                      addressLine: e.target.value,
+                    }))
+                  }
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Used for posting your Alumni ID and printed invitations. It
+                  starts visible only to you — open it up only if you want to.
+                  Your city and country are set under Identity.
+                </p>
+              </FieldWithPrivacy>
+
+              <FieldWithPrivacy
+                label="Social links"
+                fieldKey="links"
+                tier={state.privacyTiers.links ?? "alumni"}
+                onTier={(t) => updateTier("links", t)}
+                hidden={showHiddenInPreview("links")}
+              >
+                <div className="space-y-2">
+                  {LINK_FIELDS.map((f) => (
+                    <div key={f.key} className="grid gap-1 sm:grid-cols-[110px_1fr] sm:items-center">
+                      <Label
+                        htmlFor={`link-${f.key}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {f.label}
+                      </Label>
+                      <Input
+                        id={`link-${f.key}`}
+                        inputMode="url"
+                        placeholder={f.placeholder}
+                        value={state.links[f.key]}
+                        onChange={(e) =>
+                          setState((prev) => ({
+                            ...prev,
+                            links: { ...prev.links, [f.key]: e.target.value },
+                          }))
+                        }
+                      />
+                    </div>
+                  ))}
+                  <p className="text-xs text-muted-foreground">
+                    Paste the address or just the handle part — https:// is
+                    added for you. Anything that is not a web address is
+                    dropped when you save.
+                  </p>
+                </div>
+              </FieldWithPrivacy>
+            </CardContent>
+          </Card>
+
           <Card id="experience" className={cn(activeTab !== "experience" && "hidden")}>
             <CardContent className="space-y-3 p-6">
               <FieldWithPrivacy
@@ -861,66 +1065,200 @@ export default function ProfileEditPage() {
                 hidden={showHiddenInPreview("experience")}
               >
                 <div className="space-y-3">
-                  {state.experience.map((entry, idx) => (
-                    <div
-                      key={idx}
-                      className="rounded-md border border-border p-3"
-                    >
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <Input
-                          placeholder="Role"
-                          value={entry.role}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, role: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                        <Input
-                          placeholder="Company"
-                          value={entry.company}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, company: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                        <Input
-                          placeholder="Years (e.g. 2020 – 2023)"
-                          value={entry.years}
-                          onChange={(e) => {
-                            const next = [...state.experience];
-                            next[idx] = { ...entry, years: e.target.value };
-                            setState((s) => ({ ...s, experience: next }));
-                          }}
-                        />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 text-muted-foreground"
-                        onClick={() =>
-                          setState((s) => ({
-                            ...s,
-                            experience: s.experience.filter((_, i) => i !== idx),
-                          }))
-                        }
+                  {state.experience.map((entry, idx) => {
+                    const patch = (fields: Partial<ExperienceDraft>) =>
+                      setState((prev) => {
+                        const next = [...prev.experience];
+                        next[idx] = { ...next[idx], ...fields };
+                        next[idx].years = formatPeriod(next[idx]);
+                        return { ...prev, experience: next };
+                      });
+                    const err = periodError(entry);
+                    const monthItems = (
+                      <>
+                        <SelectItem value={NONE}>Month</SelectItem>
+                        {MONTH_OPTIONS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </>
+                    );
+                    const yearItems = (
+                      <>
+                        <SelectItem value={NONE}>Year</SelectItem>
+                        {YEAR_CHOICES.map((y) => (
+                          <SelectItem key={y} value={String(y)}>
+                            {y}
+                          </SelectItem>
+                        ))}
+                      </>
+                    );
+                    return (
+                      <div
+                        key={idx}
+                        className="rounded-md border border-border p-3"
                       >
-                        <X className="mr-1 h-3.5 w-3.5" />
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input
+                            placeholder="Role"
+                            value={entry.role}
+                            onChange={(e) => patch({ role: e.target.value })}
+                          />
+                          <Input
+                            placeholder="Company"
+                            value={entry.company}
+                            onChange={(e) => patch({ company: e.target.value })}
+                          />
+                        </div>
+
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              From
+                            </Label>
+                            <div className="mt-1 flex gap-2">
+                              <Select
+                                value={
+                                  entry.startMonth
+                                    ? String(entry.startMonth)
+                                    : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    startMonth:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Month" />
+                                </SelectTrigger>
+                                <SelectContent>{monthItems}</SelectContent>
+                              </Select>
+                              <Select
+                                value={
+                                  entry.startYear
+                                    ? String(entry.startYear)
+                                    : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    startYear:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Year" />
+                                </SelectTrigger>
+                                <SelectContent>{yearItems}</SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <Label className="text-xs text-muted-foreground">
+                              To
+                            </Label>
+                            <div className="mt-1 flex gap-2">
+                              <Select
+                                disabled={entry.current === true}
+                                value={
+                                  entry.endMonth ? String(entry.endMonth) : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    endMonth:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue placeholder="Month" />
+                                </SelectTrigger>
+                                <SelectContent>{monthItems}</SelectContent>
+                              </Select>
+                              <Select
+                                disabled={entry.current === true}
+                                value={
+                                  entry.endYear ? String(entry.endYear) : NONE
+                                }
+                                onValueChange={(v) =>
+                                  patch({
+                                    endYear:
+                                      !v || v === NONE ? undefined : Number(v),
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="flex-1">
+                                  <SelectValue
+                                    placeholder={
+                                      entry.current ? "Present" : "Year"
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>{yearItems}</SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label className="mt-2 flex w-fit items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={entry.current === true}
+                            onCheckedChange={(v) =>
+                              patch(
+                                v === true
+                                  ? {
+                                      current: true,
+                                      endYear: undefined,
+                                      endMonth: undefined,
+                                    }
+                                  : { current: false },
+                              )
+                            }
+                          />
+                          I currently work here
+                        </label>
+
+                        {err ? (
+                          <p className="mt-2 text-xs text-destructive">{err}</p>
+                        ) : entry.years ? (
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Shows as: {entry.years}
+                          </p>
+                        ) : null}
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-2 text-muted-foreground"
+                          onClick={() =>
+                            setState((prev) => ({
+                              ...prev,
+                              experience: prev.experience.filter(
+                                (_, i) => i !== idx,
+                              ),
+                            }))
+                          }
+                        >
+                          <X className="mr-1 h-3.5 w-3.5" />
+                          Remove
+                        </Button>
+                      </div>
+                    );
+                  })}
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      setState((s) => ({
-                        ...s,
+                      setState((prev) => ({
+                        ...prev,
                         experience: [
-                          ...s.experience,
+                          ...prev.experience,
                           { role: "", company: "", years: "" },
                         ],
                       }))

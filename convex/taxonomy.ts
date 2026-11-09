@@ -317,7 +317,7 @@ export const setProgramArchived = mutation({
 // ------------------------------------------------------------------ seed ---
 
 /** Default AUF colleges → programs, used to seed an empty taxonomy. */
-const SEED: Array<{ college: string; short: string; programs: string[] }> = [
+export const TAXONOMY_SEED: Array<{ college: string; short: string; programs: string[] }> = [
   {
     college: "College of Computer Studies",
     short: "CCS",
@@ -371,7 +371,7 @@ export const seedDefaults = mutation({
     const now = Date.now();
     let collegeOrder = 0;
     let programOrder = 0;
-    for (const entry of SEED) {
+    for (const entry of TAXONOMY_SEED) {
       const collegeId = await ctx.db.insert("colleges", {
         name: entry.college,
         shortName: entry.short,
@@ -393,7 +393,7 @@ export const seedDefaults = mutation({
     return {
       action: "seed-taxonomy",
       target: { type: "taxonomy", id: "taxonomy" },
-      result: { seeded: true, colleges: SEED.length },
+      result: { seeded: true, colleges: TAXONOMY_SEED.length },
     };
   }),
 });

@@ -8,110 +8,183 @@
  * therefore an administrative surface: only the Alumni Relations office browses
  * the whole network here. The alumnus-facing app has no directory.
  *
- * URL is the source of truth for filters (FR22). Reads Convex with a mock-data
- * fallback, same as the original alumni-side page.
+ * Filters use the standard FilterPanel + useUrlFilters: the URL is the source
+ * of truth (FR22) and the last set is kept for the session. Every dropdown
+ * reads the same tables profiles are edited against — College → Program
+ * (taxonomy), City (areas), Employment status (statuses), Company suggestions
+ * (employer orgs) — so filter options can't drift from stored values.
  */
 
 import { useMemo } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
-import { Search, X } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { OPEN_TO_KINDS, type OpenToKind } from "@/lib/schemas/shared";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
+import { useCollegePrograms } from "@/lib/use-program-options";
+import { useLookupOptions } from "@/lib/use-lookup-options";
+import { useUrlFilters } from "@/lib/use-url-filters";
+import { parseBatchInput } from "@/lib/batch-input";
 import {
   DirectoryCard,
   type DirectoryCardData,
 } from "@/components/auf/DirectoryCard";
 import { EmptyState } from "@/components/auf/EmptyState";
-import { OpenToTag } from "@/components/auf/OpenToTag";
-import { cn } from "@/lib/utils";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 
-const BASE = "/admin/directory";
+const FILTER_KEYS = [
+  "q",
+  "college",
+  "program",
+  "batch",
+  "city",
+  "status",
+  "company",
+  "openTo",
+] as const;
 
-// Filter affordances for the directory. These are selectable options only —
-// the actual roster is driven entirely by Convex.
-const CURRENT_YEAR = 2026;
-const BATCHES = Array.from({ length: 9 }, (_, i) => CURRENT_YEAR - i);
-const PROGRAMS = [
-  "BS Information Technology",
-  "BS Computer Science",
-  "BS Business Administration",
-  "BS Accountancy",
-  "BS Nursing",
-  "BS Civil Engineering",
-  "BS Psychology",
-  "BS Education",
-];
-const CITIES = [
-  "Angeles City",
-  "San Fernando",
-  "Mabalacat",
-  "Manila",
-  "Makati",
-  "Quezon City",
-];
+const OPEN_TO_LABEL: Record<OpenToKind, string> = {
+  mentorship: "Mentorship",
+  hiring: "Hiring",
+  referrals: "Referrals",
+  speaking: "Speaking",
+};
 
-function csvFromParam(v: string | null): string[] {
-  return v ? v.split(",").filter(Boolean) : [];
-}
-function joinParam(arr: string[]): string | null {
-  return arr.length > 0 ? arr.join(",") : null;
-}
+type SuggestionFilter = {
+  search?: string;
+  batches?: number[];
+  programs?: string[];
+  cities?: string[];
+  openTo?: string[];
+  statuses?: string[];
+  companyQuery?: string;
+};
 
 export default function AdminDirectoryPage() {
-  const router = useRouter();
-  const sp = useSearchParams();
+  const { values, set, setMany, reset, restored } = useUrlFilters(
+    "admin-directory",
+    FILTER_KEYS,
+  );
+  const taxonomy = useCollegePrograms();
+  const areas = useLookupOptions("area");
+  const statuses = useLookupOptions("status");
+  const employers = useQuery(api.companies.list, {}) as
+    | Array<{ name: string }>
+    | undefined;
 
-  // URL is the source of truth (FR22).
-  const query = sp.get("q") ?? "";
-  const batches = csvFromParam(sp.get("batch")).map((s) => Number(s));
-  const programs = csvFromParam(sp.get("program"));
-  const cities = csvFromParam(sp.get("city"));
-  const openTo = csvFromParam(sp.get("openTo"));
+  const batch = parseBatchInput(values.batch);
 
-  const batchKey = batches.join(",");
-  const programKey = programs.join(",");
-  const cityKey = cities.join(",");
-  const openToKey = openTo.join(",");
+  // College narrows Program; with no program picked, a college filters to all
+  // of its programs. An unknown college (e.g. archived) matches nothing.
+  const collegePrograms = values.college ? taxonomy.programsFor(values.college) : [];
+  const programFilter = values.program
+    ? [values.program]
+    : values.college
+      ? collegePrograms.length
+        ? collegePrograms.map((p) => p.name)
+        : ["(no programs in this college)"]
+      : undefined;
 
+  // Keyed on content so Convex subscriptions stay stable across re-renders.
+  const programKey = (programFilter ?? []).join("|");
   const filters = useMemo(
     () => ({
-      search: query || undefined,
-      batches: batches.length > 0 ? batches : undefined,
-      programs: programs.length > 0 ? programs : undefined,
-      cities: cities.length > 0 ? cities : undefined,
-      openTo: openTo.length > 0 ? openTo : undefined,
+      search: values.q || undefined,
+      batches: batch.years ?? undefined,
+      programs: programKey ? programKey.split("|") : undefined,
+      cities: values.city ? [values.city] : undefined,
+      statuses: values.status ? [values.status] : undefined,
+      companyQuery: values.company || undefined,
+      openTo: values.openTo ? [values.openTo] : undefined,
     }),
+    // batch.years is derived from values.batch; batch.key is its stable identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [query, batchKey, programKey, cityKey, openToKey],
+    [values, batch.key, programKey],
   );
 
-  const convexResult = useQuery(api.directory.list, {
-    ...filters,
-    pageSize: 60,
-  });
-  const counts = useQuery(api.directory.count, filters);
-  const suggestions = useQuery(api.directory.adjacentSuggestions, filters);
+  // Hold queries until the taxonomy loads when a college filter depends on it.
+  const waitForTaxonomy = !!values.college && !values.program && !taxonomy.ready;
+  const convexResult = useQuery(
+    api.directory.list,
+    waitForTaxonomy ? "skip" : { ...filters, pageSize: 60 },
+  );
+  const counts = useQuery(api.directory.count, waitForTaxonomy ? "skip" : filters);
+  const suggestions = useQuery(
+    api.directory.adjacentSuggestions,
+    waitForTaxonomy ? "skip" : filters,
+  );
 
-  const updateParam = (key: string, value: string | null) => {
-    const next = new URLSearchParams(sp.toString());
-    if (value == null || value === "") next.delete(key);
-    else next.set(key, value);
-    router.replace(BASE + "?" + next.toString(), { scroll: false });
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Name, company, skill…" },
+    {
+      type: "select",
+      key: "college",
+      label: "College",
+      allLabel: "All colleges",
+      options: taxonomy.colleges.map((c) => ({ value: c.name, label: c.name })),
+    },
+    {
+      type: "select",
+      key: "program",
+      label: "Program / degree",
+      allLabel: values.college ? "All programs in this college" : "All programs",
+      options: (values.college ? collegePrograms : taxonomy.programs).map((p) => ({
+        value: p.name,
+        label: p.name,
+        group: values.college ? undefined : p.collegeName,
+      })),
+    },
+    {
+      type: "text",
+      key: "batch",
+      label: "Batch (year)",
+      placeholder: "e.g. 2021 or 2018-2022",
+      maxLength: 9,
+      hint: batch.error ?? undefined,
+    },
+    {
+      type: "select",
+      key: "city",
+      label: "City",
+      allLabel: "All cities",
+      options: areas.options.map((a) => ({ value: a.name, label: a.name, group: a.group })),
+    },
+    {
+      type: "select",
+      key: "status",
+      label: "Employment status",
+      allLabel: "Any status",
+      options: statuses.options.map((s) => ({ value: s.name, label: s.name })),
+    },
+    {
+      type: "text",
+      key: "company",
+      label: "Company",
+      placeholder: "Company name",
+      suggestions: (employers ?? []).map((e) => e.name),
+    },
+    {
+      type: "select",
+      key: "openTo",
+      label: "Open to",
+      allLabel: "Anything",
+      options: OPEN_TO_KINDS.map((k) => ({ value: k, label: OPEN_TO_LABEL[k] })),
+    },
+  ];
+
+  const onFilterChange = (key: string, value: string) => {
+    if (key === "college") {
+      // Dependent dropdown: drop a program that doesn't belong to the new college.
+      const keepProgram =
+        values.program && value && taxonomy.collegeOfProgram(values.program) === value;
+      setMany({ college: value, program: keepProgram ? values.program : "" });
+      return;
+    }
+    if (key === "program" && value && !values.college) {
+      // Picking a program first also pins its college, so both dropdowns agree.
+      setMany({ program: value, college: taxonomy.collegeOfProgram(value) ?? "" });
+      return;
+    }
+    set(key as (typeof FILTER_KEYS)[number], value);
   };
-
-  const toggleInList = (param: string, value: string) => {
-    const current = csvFromParam(sp.get(param));
-    const next = current.includes(value)
-      ? current.filter((v) => v !== value)
-      : [...current, value];
-    updateParam(param, joinParam(next));
-  };
-
-  const clearAll = () => router.replace(BASE, { scroll: false });
 
   const convexCards: DirectoryCardData[] = useMemo(() => {
     if (!convexResult || convexResult.page.length === 0) return [];
@@ -138,27 +211,39 @@ export default function AdminDirectoryPage() {
           openTo: (((p.openTo as string[] | undefined) ?? []) as string[]).map(
             (t) => t.toLowerCase() as OpenToKind,
           ),
+          photoUrl: (p.photoUrl as string | null | undefined) ?? null,
         };
       });
   }, [convexResult]);
 
   const loading = convexResult === undefined;
-  const allCards = convexCards;
 
   const totalLabel = counts
     ? `${counts.matched} of ${counts.total} alumni`
-    : `${allCards.length} alumni`;
+    : `${convexCards.length} alumni`;
 
-  const activeFilterCount =
-    batches.length + programs.length + cities.length + openTo.length;
+  const applySuggestion = (f: SuggestionFilter) => {
+    const years = f.batches ?? [];
+    const program = f.programs?.length === 1 ? f.programs[0] : "";
+    setMany({
+      q: f.search ?? "",
+      batch: years.length > 1 ? `${Math.min(...years)}-${Math.max(...years)}` : years.length ? String(years[0]) : "",
+      program,
+      college: program ? taxonomy.collegeOfProgram(program) ?? "" : f.programs?.length ? values.college : "",
+      city: f.cities?.[0] ?? "",
+      status: f.statuses?.[0] ?? "",
+      company: f.companyQuery ?? "",
+      openTo: f.openTo?.[0] ?? "",
+    });
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Alumni directory</h1>
         <p className="mt-2 text-muted-foreground">
-          Full verified-alumni roster. Filter by batch, program, city, or search
-          by name, company, or skill.
+          Full verified-alumni roster. Filter by college, program, batch, city,
+          status, or company — or search by name, company, or skill.
         </p>
         <p className="mt-2 text-xs italic text-muted-foreground">
           Admin-only. The directory is private to alumni and is not exposed in
@@ -166,90 +251,15 @@ export default function AdminDirectoryPage() {
         </p>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-5">
-          <div>
-            <Label
-              htmlFor="search"
-              className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground"
-            >
-              Search
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="search"
-                placeholder="Name, company, skill…"
-                value={query}
-                onChange={(e) => updateParam("q", e.target.value || null)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          <FilterGroup
-            label="Batch"
-            options={BATCHES.map((b) => ({
-              value: String(b),
-              label: `Class of ${b}`,
-            }))}
-            active={batches.map(String)}
-            onToggle={(v) => toggleInList("batch", v)}
+      <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <FilterPanel
+            fields={fields}
+            values={values}
+            onChange={onFilterChange}
+            onReset={reset}
+            restored={restored}
           />
-
-          <FilterGroup
-            label="Program"
-            options={PROGRAMS.map((p) => ({ value: p, label: p }))}
-            active={programs}
-            onToggle={(v) => toggleInList("program", v)}
-          />
-
-          <FilterGroup
-            label="City"
-            options={CITIES.map((c) => ({ value: c, label: c }))}
-            active={cities}
-            onToggle={(v) => toggleInList("city", v)}
-          />
-
-          <div>
-            <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-              Open to
-            </Label>
-            <div className="flex flex-wrap gap-1.5">
-              {OPEN_TO_KINDS.map((kind) => {
-                const active = openTo.includes(kind);
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    onClick={() => toggleInList("openTo", kind)}
-                    className={cn(
-                      "rounded-full transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      !active && "opacity-50 hover:opacity-100",
-                    )}
-                    aria-pressed={active}
-                  >
-                    <OpenToTag
-                      kind={kind}
-                      variant={active ? "subtle" : "outline"}
-                    />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {(activeFilterCount > 0 || query) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearAll}
-              className="w-full justify-start gap-2 text-muted-foreground"
-            >
-              <X className="h-3.5 w-3.5" />
-              Clear filters
-            </Button>
-          )}
         </aside>
 
         <section>
@@ -261,91 +271,27 @@ export default function AdminDirectoryPage() {
             <div className="py-16 text-center text-sm text-muted-foreground">
               Loading directory…
             </div>
-          ) : allCards.length === 0 ? (
+          ) : convexCards.length === 0 ? (
             <EmptyState
               message="No alumni match these filters."
               description="Try widening your search."
               suggestions={((suggestions ?? []) as Array<{
                 label: string;
-                filter: {
-                  search?: string;
-                  batches?: number[];
-                  programs?: string[];
-                  cities?: string[];
-                  openTo?: string[];
-                };
+                filter: SuggestionFilter;
               }>).map((s) => ({
                 label: s.label,
-                onClick: () => {
-                  const next = new URLSearchParams();
-                  if (s.filter.search) next.set("q", s.filter.search);
-                  if (s.filter.batches) {
-                    next.set("batch", s.filter.batches.join(","));
-                  }
-                  if (s.filter.programs) {
-                    next.set("program", s.filter.programs.join(","));
-                  }
-                  if (s.filter.cities) {
-                    next.set("city", s.filter.cities.join(","));
-                  }
-                  if (s.filter.openTo) {
-                    next.set("openTo", s.filter.openTo.join(","));
-                  }
-                  router.replace(
-                    BASE + (next.toString() ? "?" + next.toString() : ""),
-                    { scroll: false },
-                  );
-                },
+                onClick: () => applySuggestion(s.filter),
               }))}
-              cta={{ label: "Clear all filters", href: BASE }}
+              cta={{ label: "Clear all filters", onClick: reset }}
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {allCards.map((card) => (
+              {convexCards.map((card) => (
                 <DirectoryCard key={card.slug} data={card} />
               ))}
             </div>
           )}
         </section>
-      </div>
-    </div>
-  );
-}
-
-function FilterGroup({
-  label,
-  options,
-  active,
-  onToggle,
-}: {
-  label: string;
-  options: { value: string; label: string }[];
-  active: string[];
-  onToggle: (value: string) => void;
-}) {
-  return (
-    <div>
-      <Label className="mb-2 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </Label>
-      <div className="flex flex-col gap-1">
-        {options.map((opt) => {
-          const isActive = active.includes(opt.value);
-          return (
-            <label
-              key={opt.value}
-              className="flex cursor-pointer items-center gap-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                checked={isActive}
-                onChange={() => onToggle(opt.value)}
-                className="h-4 w-4 rounded border-border"
-              />
-              <span className={isActive ? "font-medium" : ""}>{opt.label}</span>
-            </label>
-          );
-        })}
       </div>
     </div>
   );

@@ -27,7 +27,7 @@ export function StageBadge({ stage }: { stage: ApplicationStage }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[stage],
       )}
     >
@@ -42,11 +42,12 @@ export function PostingStatusBadge({ status }: { status: PostingStatus }) {
     closed: "bg-muted text-muted-foreground",
     "pending-moderation": "bg-amber-500/10 text-amber-700 dark:text-amber-300",
     draft: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    rejected: "bg-destructive/10 text-destructive",
   };
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[status],
       )}
     >
@@ -65,8 +66,13 @@ export function TierBadge({ tier }: { tier: EmployerTier }) {
   return <Badge variant={variant}>{tier}</Badge>;
 }
 
-export function ContractBadge({ state }: { state: ContractState }) {
-  const map: Record<ContractState, { label: string; cls: string }> = {
+/** `"none"` = no contract on file (live employerOrgs rows may have no dates). */
+export function ContractBadge({ state }: { state: ContractState | "none" }) {
+  const map: Record<ContractState | "none", { label: string; cls: string }> = {
+    none: {
+      label: "No contract",
+      cls: "bg-muted text-muted-foreground",
+    },
     active: {
       label: "Active",
       cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
@@ -84,7 +90,7 @@ export function ContractBadge({ state }: { state: ContractState }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         cls,
       )}
     >
@@ -103,7 +109,7 @@ export function WorkStatusBadge({ status }: { status: WorkStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center rounded-full px-2 text-xs font-medium",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium leading-tight",
         tone[status],
       )}
     >

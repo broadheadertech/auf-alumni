@@ -14,19 +14,27 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
 import {
+  BadgeCheck,
   BarChart3,
   Building2,
   CalendarDays,
   ClipboardCheck,
   Contact,
   FileText,
+  Gavel,
+  Inbox,
   LayoutDashboard,
+  LayoutTemplate,
+  LifeBuoy,
   LogOut,
+  MapPin,
   Menu,
+  Newspaper,
   Scale,
   ScrollText,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Stamp,
   UserCog,
   Users,
@@ -34,6 +42,8 @@ import {
 } from "lucide-react";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
+import { PageHelpLink } from "./PageHelpLink";
+import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
@@ -65,6 +75,7 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/employers", label: "Employers", Icon: Building2 },
       { href: "/admin/jobs", label: "Job postings", Icon: ClipboardCheck },
+      { href: "/admin/moderation/jobs", label: "Job moderation", Icon: Gavel },
       { href: "/admin/analytics", label: "Analytics", Icon: BarChart3 },
     ],
   },
@@ -75,6 +86,7 @@ const GROUPS: NavGroup[] = [
   {
     label: "Trust & operations",
     items: [
+      { href: "/admin/enquiries", label: "Enquiries", Icon: Inbox },
       { href: "/admin/audit", label: "Audit log", Icon: ScrollText },
       { href: "/admin/compliance", label: "Compliance", Icon: Scale },
       { href: "/admin/reports", label: "Reports", Icon: FileText },
@@ -82,9 +94,18 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Configuration",
+    label: "Help",
+    items: [{ href: "/admin/guide", label: "How to use this", Icon: LifeBuoy }],
+  },
+  {
+    label: "Content management",
     items: [
+      { href: "/admin/content", label: "Main page", Icon: LayoutTemplate },
+      { href: "/admin/articles", label: "Articles", Icon: Newspaper },
       { href: "/admin/settings", label: "Colleges & programs", Icon: Settings2 },
+      { href: "/admin/lists/areas", label: "Areas", Icon: MapPin },
+      { href: "/admin/lists/statuses", label: "Statuses", Icon: BadgeCheck },
+      { href: "/admin/lists/skills", label: "Skill sets", Icon: Sparkles },
     ],
   },
 ];
@@ -143,8 +164,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <h1 className="min-w-0 truncate text-base font-semibold tracking-tight">
               {title}
             </h1>
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
+              <PageHelpLink surface="admin" />
               <NotificationDropdown />
             </div>
           </div>
@@ -165,6 +187,7 @@ function Sidebar({
   drawerOpen: boolean;
   onClose: () => void;
 }) {
+  const refreshHome = useSameRouteRefresh("/admin/dashboard");
   return (
     <aside
       className={cn(
@@ -177,7 +200,11 @@ function Sidebar({
       aria-label="Admin"
     >
       <div className="flex items-center justify-between px-4 py-3">
-        <Link href="/admin/dashboard" className="flex items-center gap-2">
+        <Link
+          href="/admin/dashboard"
+          onClick={refreshHome}
+          className="flex items-center gap-2"
+        >
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
             AUF
           </span>

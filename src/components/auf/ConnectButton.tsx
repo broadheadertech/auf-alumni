@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
@@ -114,10 +115,14 @@ export function ConnectButton({ otherUserId, className }: Props) {
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuItem disabled>
-            <MessageSquare className="mr-2 h-4 w-4" />
-            Message (Phase 2)
-          </DropdownMenuItem>
+          <DropdownMenuItem
+            render={
+              <Link href={`/messages?to=${otherUserId}`}>
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Message
+              </Link>
+            }
+          />
           <DropdownMenuItem
             onClick={handleAction(
               () =>

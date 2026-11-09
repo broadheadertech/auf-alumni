@@ -28,6 +28,11 @@ type Company = {
   tier: string;
   websiteUrl: string | null;
   hqCity: string | null;
+  tagline: string | null;
+  about: string | null;
+  industry: string | null;
+  companySize: string | null;
+  foundedYear: number | null;
   planTier: string;
   jobPostsUsed: number;
   logoUrl: string | null;
@@ -41,6 +46,7 @@ type Company = {
     salaryMin?: number;
     salaryMax?: number;
     salaryCurrency?: string;
+    skills?: string[];
     publishedAt: number | null;
   }>;
   alumniHere: Array<{
@@ -112,7 +118,9 @@ export async function generateMetadata({
   const { slug } = await params;
   const company = await loadCompany(slug);
   if (!company) return { title: "Company not found — AUF Alumni" };
-  const description = company.hqCity
+  const description = company.tagline
+    ? `${company.name} — ${company.tagline}`
+    : company.hqCity
     ? `${company.name} (${company.hqCity}) on the AUF Alumni Network — open jobs and alumni working here.`
     : `${company.name} on the AUF Alumni Network — a ${tierLabel(company.tier).toLowerCase()} hiring AUF graduates.`;
   return {
@@ -301,6 +309,20 @@ export default async function CompanyPage({ params }: { params: Params }) {
                               <span>{formatEmploymentType(j.employmentType)}</span>
                               {salary && <span>{salary}</span>}
                             </div>
+                            {j.skills && j.skills.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {j.skills.slice(0, 4).map((s) => (
+                                  <span key={s} className="auf-chip">
+                                    {s}
+                                  </span>
+                                ))}
+                                {j.skills.length > 4 && (
+                                  <span className="auf-chip">
+                                    +{j.skills.length - 4}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <span className="auf-chip auf-chip-brand self-start sm:self-auto">
                             View role
@@ -326,7 +348,13 @@ export default async function CompanyPage({ params }: { params: Params }) {
               <h2 className="font-serif text-[20px] font-semibold mb-3">
                 About this company
               </h2>
+              {company.tagline && (
+                <p className="text-[15px] font-medium ink-2 mb-3">{company.tagline}</p>
+              )}
               <div className="flex flex-wrap items-center gap-3 text-[13px] ink-2">
+                {company.industry && <span>{company.industry}</span>}
+                {company.companySize && <span>{company.companySize} employees</span>}
+                {company.foundedYear && <span>Founded {company.foundedYear}</span>}
                 {company.hqCity && (
                   <span className="inline-flex items-center gap-1">
                     <MapPin size={12} />
@@ -348,9 +376,15 @@ export default async function CompanyPage({ params }: { params: Params }) {
                   <span className="auf-chip">{company.planTier}</span>
                 )}
               </div>
-              <p className="ink-3 text-[13px] mt-4 leading-[1.55]">
-                Company description coming soon.
-              </p>
+              {company.about ? (
+                <p className="ink-2 text-[14.5px] mt-4 leading-[1.7] whitespace-pre-line">
+                  {company.about}
+                </p>
+              ) : (
+                <p className="ink-3 text-[13px] mt-4 leading-[1.55]">
+                  Company description coming soon.
+                </p>
+              )}
             </section>
           </div>
 

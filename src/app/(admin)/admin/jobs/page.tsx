@@ -1,171 +1,249 @@
 "use client";
 
 /**
- * Admin job postings — every posting across all employers in one place
- * (replaces the pending-only moderation queue). Filter by status, employer,
- * and search; sort by applicants or recency. Pending posts can be approved or
- * rejected inline (folds in what the old moderation queue did).
+ * Admin job postings — every posting across all employers in one place.
+ * Standard FilterPanel (search, status, company, employment type, location,
+ * posted date range; URL-backed and persisted — the Analytics "Open postings"
+ * quick link lands here pre-filtered with `employer=<employerOrgId>`); sort by
+ * applicants or recency. Pending posts can be approved or rejected inline.
  *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
- * Approve/reject decisions are local to the session.
+ * Live data: convex/adminData.ts `employers` flattened to postings, so the
+ * counts here match the Employers roster, Dashboard and Analytics. Approve /
+ * reject call the audited convex/jobs.ts approveJob / rejectJob mutations.
  */
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
+import type { FunctionReturnType } from "convex/server";
 import { toast } from "sonner";
-import { ArrowUpDown, Check, ChevronRight, Search, X } from "lucide-react";
-import {
-  EMPLOYERS,
-  fmtDate,
-  jobApplicants,
-  type EmployerPosting,
-  type PostingStatus,
-} from "@/lib/mock-admin";
+import { ArrowUpDown, Check, ChevronRight, Loader2, X } from "lucide-react";
+import { api } from "@/lib/convex-api";
+import { useAsOf } from "@/lib/use-as-of";
+import { fmtDate, type PostingStatus } from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { PostingStatusBadge, StatTile } from "@/components/auf/AdminBits";
+import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
+import { useUrlFilters } from "@/lib/use-url-filters";
 import { cn } from "@/lib/utils";
 
+type EmployerView = FunctionReturnType<typeof api.adminData.employers>[number];
+type PostingView = EmployerView["postings"][number];
+
 type JobRow = {
-  posting: EmployerPosting;
+  posting: PostingView;
   employerId: string;
   employerName: string;
   applicants: number;
 };
 
-type StatusFilter = "all" | PostingStatus;
 type SortKey = "applicants" | "posted";
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "All" },
+const FILTER_KEYS = ["q", "status", "employer", "type", "location", "from", "to"] as const;
+
+const STATUS_FILTERS: { value: PostingStatus; label: string }[] = [
   { value: "published", label: "Published" },
   { value: "pending-moderation", label: "Pending" },
   { value: "closed", label: "Closed" },
+  { value: "rejected", label: "Rejected" },
   { value: "draft", label: "Draft" },
 ];
 
-const ALL_ROWS: JobRow[] = EMPLOYERS.flatMap((e) =>
-  e.postings.map((p) => ({
-    posting: p,
-    employerId: e.id,
-    employerName: e.name,
-    applicants: jobApplicants(p).length,
-  })),
-);
-
-const EMPLOYER_OPTIONS = EMPLOYERS.map((e) => ({ id: e.id, name: e.name }));
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ConvexError) {
+    const data = err.data as { message?: string } | string;
+    return typeof data === "string" ? data : data?.message ?? fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
 
 export default function AdminJobsPage() {
-  // Local status overrides from approve/reject actions.
-  const [override, setOverride] = useState<Record<string, PostingStatus>>({});
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [employer, setEmployer] = useState("all");
-  const [search, setSearch] = useState("");
+  const asOf = useAsOf();
+  const employers = useQuery(api.adminData.employers, { asOf });
+  const loading = employers === undefined;
+  const approveJob = useMutation(api.jobs.approveJob);
+  const rejectJob = useMutation(api.jobs.rejectJob);
+  const { values, set, reset, restored } = useUrlFilters("admin-jobs", FILTER_KEYS);
   const [sort, setSort] = useState<SortKey>("applicants");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState<JobRow | null>(null);
+  const [reason, setReason] = useState("");
 
-  const statusOf = (r: JobRow): PostingStatus => override[r.posting.id] ?? r.posting.status;
+  const allRows = useMemo<JobRow[]>(
+    () =>
+      (employers ?? []).flatMap((e) =>
+        e.postings.map((p) => ({
+          posting: p,
+          employerId: e.id,
+          employerName: e.name,
+          applicants: p.applicants.length,
+        })),
+      ),
+    [employers],
+  );
+
+  const employerOptions = useMemo(
+    () => (employers ?? []).map((e) => ({ value: e.id, label: e.name })),
+    [employers],
+  );
+  const typeOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.posting.employmentType))].sort(),
+    [allRows],
+  );
+  const locationOptions = useMemo(
+    () => [...new Set(allRows.map((r) => r.posting.location))].filter(Boolean).sort(),
+    [allRows],
+  );
 
   const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return ALL_ROWS.filter((r) => {
-      if (status !== "all" && statusOf(r) !== status) return false;
-      if (employer !== "all" && r.employerId !== employer) return false;
-      if (q && !(r.posting.title + " " + r.employerName).toLowerCase().includes(q))
-        return false;
-      return true;
-    }).sort((a, b) =>
-      sort === "applicants"
-        ? b.applicants - a.applicants
-        : b.posting.postedAt.localeCompare(a.posting.postedAt),
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, employer, search, sort, override]);
+    const q = values.q.trim().toLowerCase();
+    return allRows
+      .filter((r) => {
+        if (values.status && r.posting.status !== values.status) return false;
+        if (values.employer && r.employerId !== values.employer) return false;
+        if (values.type && r.posting.employmentType !== values.type) return false;
+        if (values.location && r.posting.location !== values.location) return false;
+        if (values.from && r.posting.postedAt.slice(0, 10) < values.from) return false;
+        if (values.to && r.posting.postedAt.slice(0, 10) > values.to) return false;
+        if (q && !(r.posting.title + " " + r.employerName).toLowerCase().includes(q))
+          return false;
+        return true;
+      })
+      .sort((a, b) =>
+        sort === "applicants"
+          ? b.applicants - a.applicants
+          : b.posting.postedAt.localeCompare(a.posting.postedAt),
+      );
+  }, [allRows, values, sort]);
 
-  const totals = useMemo(() => {
-    const eff = (r: JobRow) => override[r.posting.id] ?? r.posting.status;
-    return {
-      total: ALL_ROWS.length,
-      published: ALL_ROWS.filter((r) => eff(r) === "published").length,
-      pending: ALL_ROWS.filter((r) => eff(r) === "pending-moderation").length,
-      applicants: ALL_ROWS.reduce((s, r) => s + r.applicants, 0),
-    };
-  }, [override]);
+  const totals = useMemo(
+    () => ({
+      total: allRows.length,
+      published: allRows.filter((r) => r.posting.status === "published").length,
+      pending: allRows.filter((r) => r.posting.status === "pending-moderation").length,
+      applicants: allRows.reduce((s, r) => s + r.applicants, 0),
+    }),
+    [allRows],
+  );
 
-  const approve = (r: JobRow) => {
-    setOverride((m) => ({ ...m, [r.posting.id]: "published" }));
-    toast.success(`“${r.posting.title}” approved — now published`);
+  const fields: FilterField[] = [
+    { type: "search", key: "q", label: "Search", placeholder: "Title or company…" },
+    {
+      type: "select",
+      key: "status",
+      label: "Status",
+      allLabel: "Any status",
+      options: STATUS_FILTERS.map((o) => ({ value: o.value, label: o.label })),
+    },
+    {
+      type: "select",
+      key: "employer",
+      label: "Company",
+      allLabel: "All companies",
+      options: employerOptions,
+    },
+    {
+      type: "select",
+      key: "type",
+      label: "Employment type",
+      allLabel: "Any type",
+      options: typeOptions.map((t) => ({ value: t, label: t })),
+    },
+    {
+      type: "select",
+      key: "location",
+      label: "Location",
+      allLabel: "Any location",
+      options: locationOptions.map((l) => ({ value: l, label: l })),
+    },
+    { type: "date", key: "from", label: "Posted from", max: values.to },
+    { type: "date", key: "to", label: "Posted to", min: values.from },
+  ];
+
+  const approve = async (r: JobRow) => {
+    setBusyId(r.posting.id);
+    try {
+      await approveJob({ jobId: r.posting.id as never });
+      toast.success(`“${r.posting.title}” approved — now published`);
+    } catch (err) {
+      toast.error(errorMessage(err, "Approve failed"));
+    } finally {
+      setBusyId(null);
+    }
   };
-  const reject = (r: JobRow) => {
-    setOverride((m) => ({ ...m, [r.posting.id]: "closed" }));
-    toast.success(`“${r.posting.title}” rejected`);
+
+  const confirmReject = async () => {
+    if (!rejecting) return;
+    const why = reason.trim();
+    if (!why) {
+      toast.error("A rejection reason is required");
+      return;
+    }
+    setBusyId(rejecting.posting.id);
+    try {
+      await rejectJob({ jobId: rejecting.posting.id as never, reason: why });
+      toast.success(`“${rejecting.posting.title}” rejected`);
+      setRejecting(null);
+      setReason("");
+    } catch (err) {
+      toast.error(errorMessage(err, "Reject failed"));
+    } finally {
+      setBusyId(null);
+    }
   };
+
+  const tile = (n: number) => (loading ? "—" : n);
 
   return (
     <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
       <h1 className="text-2xl font-semibold tracking-tight">Job postings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Every posting across all employers. Review pending posts, or filter by
-        status and company.
+        Every posting across all employers. For a full read of each pending
+        submission, use{" "}
+        <Link href="/admin/moderation/jobs" className="underline">
+          Job moderation
+        </Link>
+        .
       </p>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Postings" value={totals.total} />
-        <StatTile label="Published" value={totals.published} />
-        <StatTile label="Pending review" value={totals.pending} />
-        <StatTile label="Total applicants" value={totals.applicants} />
+        <StatTile label="Postings" value={tile(totals.total)} />
+        <StatTile label="Published" value={tile(totals.published)} />
+        <StatTile label="Pending review" value={tile(totals.pending)} />
+        <StatTile label="Total applicants" value={tile(totals.applicants)} />
       </div>
 
-      {/* Controls */}
-      <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {STATUS_FILTERS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => setStatus(s.value)}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs transition-colors",
-                status === s.value
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={employer}
-            onChange={(e) => setEmployer(e.target.value)}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-          >
-            <option value="all">All companies</option>
-            {EMPLOYER_OPTIONS.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
-          >
-            <option value="applicants">Sort: applicants</option>
-            <option value="posted">Sort: most recent</option>
-          </select>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search title, company…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 sm:w-56"
-            />
-          </div>
-        </div>
+      {/* Filters */}
+      <FilterPanel
+        layout="bar"
+        className="mt-6"
+        values={values}
+        onChange={(k, v) => set(k as (typeof FILTER_KEYS)[number], v)}
+        onReset={reset}
+        restored={restored}
+        fields={fields}
+      />
+      <div className="mt-3 flex items-center justify-end">
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortKey)}
+          aria-label="Sort postings"
+          className="rounded-md border border-border bg-background px-2.5 py-1.5 text-sm"
+        >
+          <option value="applicants">Sort: applicants</option>
+          <option value="posted">Sort: most recent</option>
+        </select>
       </div>
 
       {/* Table */}
@@ -192,16 +270,36 @@ export default function AdminJobsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.length === 0 ? (
+                {loading ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                      No postings match these filters.
+                      <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                      Loading postings…
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                      {allRows.length === 0 ? (
+                        "No job postings yet."
+                      ) : (
+                        <>
+                          No postings match these filters.{" "}
+                          <button
+                            type="button"
+                            onClick={reset}
+                            className="font-medium text-foreground underline-offset-4 hover:underline"
+                          >
+                            Reset filters
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ) : (
                   rows.map((r) => {
-                    const st = statusOf(r);
-                    const pending = st === "pending-moderation";
+                    const pending = r.posting.status === "pending-moderation";
+                    const busy = busyId === r.posting.id;
                     return (
                       <tr
                         key={r.posting.id}
@@ -228,29 +326,39 @@ export default function AdminJobsPage() {
                           </Link>
                         </td>
                         <td className="px-3 py-3">
-                          <PostingStatusBadge status={st} />
+                          <PostingStatusBadge status={r.posting.status} />
                         </td>
                         <td className="px-3 py-3 text-right tabular-nums">
                           {r.applicants}
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
                           {fmtDate(r.posting.postedAt)}
-                          <div className="text-[11px]">
-                            closes {fmtDate(r.posting.closesAt)}
-                          </div>
+                          {r.posting.closesAt && (
+                            <div className="text-[11px]">
+                              closes {fmtDate(r.posting.closesAt)}
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center justify-end gap-1.5">
                             {pending ? (
                               <>
-                                <Button size="xs" onClick={() => approve(r)}>
-                                  <Check className="h-3.5 w-3.5" />
+                                <Button size="xs" disabled={busy} onClick={() => approve(r)}>
+                                  {busy ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3.5 w-3.5" />
+                                  )}
                                   Approve
                                 </Button>
                                 <Button
                                   size="xs"
                                   variant="outline"
-                                  onClick={() => reject(r)}
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setReason("");
+                                    setRejecting(r);
+                                  }}
                                 >
                                   <X className="h-3.5 w-3.5" />
                                   Reject
@@ -277,10 +385,49 @@ export default function AdminJobsPage() {
         </CardContent>
       </Card>
 
-      <p className="mt-3 text-xs italic text-muted-foreground">
-        Showing {rows.length} of {ALL_ROWS.length} postings · demo data.
-        Approve/reject decisions are not persisted.
-      </p>
+      {!loading && (
+        <p className="mt-3 text-xs italic text-muted-foreground">
+          Showing {rows.length} of {allRows.length} postings.
+        </p>
+      )}
+
+      <Dialog
+        open={rejecting !== null}
+        onOpenChange={(open) => !open && busyId === null && setRejecting(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject “{rejecting?.posting.title}”?</DialogTitle>
+            <DialogDescription>
+              The reason is sent to {rejecting?.employerName ?? "the employer"}.
+              The posting is taken out of the review queue.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason for rejection (sent to the employer)"
+            aria-label="Rejection reason"
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={busyId !== null}
+              onClick={() => setRejecting(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busyId !== null || !reason.trim()}
+              onClick={confirmReject}
+            >
+              {busyId !== null ? "Rejecting…" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

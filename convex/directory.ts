@@ -10,9 +10,59 @@
  */
 
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { ConvexError } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { query, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
+
+/**
+ * The roster is members-only.
+ *
+ * `applyPrivacy` already strips fields a stranger may not see, but it was the
+ * ONLY thing standing between an anonymous caller and the whole membership:
+ * these queries had no identity check, so anyone with the deployment URL could
+ * page through every verified alumnus and read an exact member count. Privacy
+ * tiers decide WHICH fields a viewer gets; this decides whether they get to
+ * ask at all.
+ *
+ * Deliberately member-level rather than admin-only: the alumni feed's
+ * suggestion rail and the "alumni at this company" block on a job both read
+ * `list`. `publicMentors` stays public — it is bounded, consent-gated on
+ * `openTo`, and returns stranger-tier fields only.
+ */
+async function requireMember(ctx: QueryCtx) {
+  const userId = await getAuthUserId(ctx);
+  if (!userId) {
+    throw new ConvexError({
+      code: "unauthenticated",
+      message: "Sign in to browse the alumni directory",
+    });
+  }
+  const user = await ctx.db.get(userId);
+  if (!user || user.deletedAt || user.suspendedAt) {
+    throw new ConvexError({
+      code: "forbidden",
+      message: "This account can't browse the directory",
+    });
+  }
+  return userId;
+}
+
+/**
+ * How many rows the search index may return before we stop.
+ *
+ * The directory previously `.collect()`ed every profile on every call and
+ * filtered in JavaScript — fine at 71 rows, but the stated budget is p95
+ * under 300ms at 10,000. With a search term we read the `search_all` index
+ * instead, bounded by this cap rather than by table size.
+ *
+ * Without a term there is nothing to search on, and the remaining filters are
+ * multi-valued (programs[], cities[], skills[]) while Convex filterFields are
+ * equality on a single value — so those cannot be pushed into an index and the
+ * scan stays. That is the path to revisit if the roster grows large.
+ */
+const SEARCH_CANDIDATE_CAP = 500;
 
 const PAGE_SIZE_DEFAULT = 30;
 const PAGE_SIZE_MAX = 100;
@@ -26,7 +76,72 @@ type Filters = {
   companies?: string[];
   skills?: string[];
   openTo?: string[];
+  /** Employment status names (admin-managed "status" reference items). */
+  statuses?: string[];
+  /** Case-insensitive substring match on the profile's company. */
+  companyQuery?: string;
 };
+
+/** Users an admin deactivated, rejected, suspended or deleted — never listed. */
+async function hiddenUserIds(ctx: QueryCtx): Promise<Set<string>> {
+  const users = await ctx.db.query("users").collect();
+  return new Set(users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string));
+}
+
+/** Shared validator for every filterable directory query — one shape everywhere. */
+const filterArgs = {
+  search: v.optional(v.string()),
+  batches: v.optional(v.array(v.number())),
+  programs: v.optional(v.array(v.string())),
+  cities: v.optional(v.array(v.string())),
+  countries: v.optional(v.array(v.string())),
+  companies: v.optional(v.array(v.string())),
+  skills: v.optional(v.array(v.string())),
+  openTo: v.optional(v.array(v.string())),
+  statuses: v.optional(v.array(v.string())),
+  companyQuery: v.optional(v.string()),
+};
+
+function toFilters(args: Filters): Filters {
+  return {
+    search: args.search,
+    batches: args.batches,
+    programs: args.programs,
+    cities: args.cities,
+    countries: args.countries,
+    companies: args.companies,
+    skills: args.skills,
+    openTo: args.openTo,
+    statuses: args.statuses,
+    companyQuery: args.companyQuery,
+  };
+}
+
+/**
+ * Rows the query could possibly match.
+ *
+ * With a search term this reads the `search_all` index — bounded, and matching
+ * the same haystack the scan used (name, role, company, program, bio, skills),
+ * because `searchText` is built from exactly those fields. Without a term
+ * there is nothing to search, so it falls back to the scan.
+ *
+ * Index matching is token-prefix, not substring: "info" finds "Information
+ * Technology", but a fragment starting mid-word does not. For a roster search
+ * that is the behaviour people expect, and it is what makes the query bounded.
+ */
+async function candidateProfiles(
+  ctx: QueryCtx,
+  f: Filters,
+): Promise<Array<Doc<"profiles">>> {
+  const term = (f.search ?? "").trim();
+  if (term.length < 2) {
+    return await ctx.db.query("profiles").collect();
+  }
+  return await ctx.db
+    .query("profiles")
+    .withSearchIndex("search_all", (q) => q.search("searchText", term))
+    .take(SEARCH_CANDIDATE_CAP);
+}
 
 function profileMatches(p: Doc<"profiles">, f: Filters): boolean {
   if (p.verifiedAt == null) return false;
@@ -56,6 +171,17 @@ function profileMatches(p: Doc<"profiles">, f: Filters): boolean {
     !(p.company && f.companies.includes(p.company))
   ) {
     return false;
+  }
+  if (
+    f.statuses &&
+    f.statuses.length > 0 &&
+    !(p.employmentStatus && f.statuses.includes(p.employmentStatus))
+  ) {
+    return false;
+  }
+  if (f.companyQuery && f.companyQuery.trim().length > 0) {
+    const needle = f.companyQuery.trim().toLowerCase();
+    if (!(p.company ?? "").toLowerCase().includes(needle)) return false;
   }
   if (f.skills && f.skills.length > 0) {
     const skillSet = new Set((p.skills ?? []).map((s) => s.toLowerCase()));
@@ -90,66 +216,54 @@ function profileMatches(p: Doc<"profiles">, f: Filters): boolean {
  */
 export const list = query({
   args: {
-    search: v.optional(v.string()),
-    batches: v.optional(v.array(v.number())),
-    programs: v.optional(v.array(v.string())),
-    cities: v.optional(v.array(v.string())),
-    countries: v.optional(v.array(v.string())),
-    companies: v.optional(v.array(v.string())),
-    skills: v.optional(v.array(v.string())),
-    openTo: v.optional(v.array(v.string())),
+    ...filterArgs,
     pageSize: v.optional(v.number()),
+    /** Offset cursor from a previous page's `continueCursor`. */
     cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    const filters: Filters = {
-      search: args.search,
-      batches: args.batches,
-      programs: args.programs,
-      cities: args.cities,
-      countries: args.countries,
-      companies: args.companies,
-      skills: args.skills,
-      openTo: args.openTo,
-    };
+    await requireMember(ctx);
+    const filters = toFilters(args);
     const pageSize = Math.min(
       args.pageSize ?? PAGE_SIZE_DEFAULT,
       PAGE_SIZE_MAX,
     );
+    const offset = Math.max(0, Number(args.cursor ?? 0) || 0);
 
-    // Paginate raw profiles, then in-memory filter + privacy-apply.
-    // (Replaceable with a search index later — interface preserved.)
-    const result = await ctx.db
-      .query("profiles")
-      .paginate({ cursor: args.cursor ?? null, numItems: pageSize * 3 });
-
-    const filtered = result.page.filter((p) => profileMatches(p, filters));
-
-    // Privacy-apply, one viewer-context per request.
-    const viewer = await getViewerContext(
-      ctx,
-      filtered[0]?.userId ?? ("_no_user" as Doc<"users">["_id"]),
+    // Filter the full set, then page. (Previously this paged raw rows first and
+    // filtered after, so filtered results could be silently truncated and
+    // disagree with `count`. Replaceable with a search index later — the
+    // interface is preserved.)
+    const [profiles, hidden] = await Promise.all([
+      candidateProfiles(ctx, filters),
+      hiddenUserIds(ctx),
+    ]);
+    const matched = profiles.filter(
+      (p) => !hidden.has(p.userId) && profileMatches(p, filters),
     );
-    const visible = filtered.slice(0, pageSize).map((p) => {
-      // recompute viewer per-result so self / connection state is per-profile
-      // (cheap because the helper itself is cached per request).
-      return p; // applyPrivacy uses viewer; we re-resolve per profile below.
-    });
+    const slice = matched.slice(offset, offset + pageSize);
 
-    const pageWithPrivacy = [] as Partial<Doc<"profiles">>[];
-    for (const p of visible) {
+    // Privacy-apply per profile so self / connection state is per-result.
+    const pageWithPrivacy = [] as Array<
+      Partial<Doc<"profiles">> & { photoUrl: string | null }
+    >;
+    for (const p of slice) {
       const vctx = await getViewerContext(ctx, p.userId);
-      pageWithPrivacy.push(applyPrivacy(p, vctx));
+      const safe = applyPrivacy(p, vctx);
+      pageWithPrivacy.push({
+        ...safe,
+        photoUrl: safe.photoStorageId
+          ? await ctx.storage.getUrl(safe.photoStorageId)
+          : null,
+      });
     }
 
+    const next = offset + slice.length;
     return {
       page: pageWithPrivacy,
-      isDone: result.isDone,
-      continueCursor: result.continueCursor,
-      // Note: total count requires a separate count query. For NFR1, deferring.
+      isDone: next >= matched.length,
+      continueCursor: String(next),
     };
-    // Use the precomputed viewer if no caller relies on per-profile resolution.
-    void viewer;
   },
 });
 
@@ -159,32 +273,22 @@ export const list = query({
  * search-index `getDocuments` count when scale demands.
  */
 export const count = query({
-  args: {
-    search: v.optional(v.string()),
-    batches: v.optional(v.array(v.number())),
-    programs: v.optional(v.array(v.string())),
-    cities: v.optional(v.array(v.string())),
-    countries: v.optional(v.array(v.string())),
-    companies: v.optional(v.array(v.string())),
-    skills: v.optional(v.array(v.string())),
-    openTo: v.optional(v.array(v.string())),
-  },
+  args: filterArgs,
   handler: async (ctx, args) => {
-    const filters: Filters = {
-      search: args.search,
-      batches: args.batches,
-      programs: args.programs,
-      cities: args.cities,
-      countries: args.countries,
-      companies: args.companies,
-      skills: args.skills,
-      openTo: args.openTo,
-    };
-    const profiles = await ctx.db.query("profiles").collect();
+    await requireMember(ctx);
+    const filters = toFilters(args);
+    // Not candidateProfiles(): `total` is the size of the whole roster, the
+    // denominator in "N of M alumni". Narrowing it to the search hits made the
+    // display read "1 of 9" where it should say "1 of 71". This query returns
+    // two integers and does no per-row privacy work, so the scan is cheap.
+    const [profiles, hidden] = await Promise.all([
+      ctx.db.query("profiles").collect(),
+      hiddenUserIds(ctx),
+    ]);
     let matched = 0;
     let total = 0;
     for (const p of profiles) {
-      if (p.verifiedAt == null) continue;
+      if (p.verifiedAt == null || hidden.has(p.userId)) continue;
       total += 1;
       if (profileMatches(p, filters)) matched += 1;
     }
@@ -203,29 +307,15 @@ export const count = query({
  *   - drop the most-specific facet (heuristic: skills or openTo)
  */
 export const adjacentSuggestions = query({
-  args: {
-    search: v.optional(v.string()),
-    batches: v.optional(v.array(v.number())),
-    programs: v.optional(v.array(v.string())),
-    cities: v.optional(v.array(v.string())),
-    countries: v.optional(v.array(v.string())),
-    companies: v.optional(v.array(v.string())),
-    skills: v.optional(v.array(v.string())),
-    openTo: v.optional(v.array(v.string())),
-  },
+  args: filterArgs,
   handler: async (ctx, args) => {
-    const base: Filters = {
-      search: args.search,
-      batches: args.batches,
-      programs: args.programs,
-      cities: args.cities,
-      countries: args.countries,
-      companies: args.companies,
-      skills: args.skills,
-      openTo: args.openTo,
-    };
-    const profiles = await ctx.db.query("profiles").collect();
-    const verified = profiles.filter((p) => p.verifiedAt != null);
+    await requireMember(ctx);
+    const base = toFilters(args);
+    const [profiles, hidden] = await Promise.all([
+      candidateProfiles(ctx, base),
+      hiddenUserIds(ctx),
+    ]);
+    const verified = profiles.filter((p) => p.verifiedAt != null && !hidden.has(p.userId));
 
     const countWith = (f: Filters) =>
       verified.reduce((n, p) => (profileMatches(p, f) ? n + 1 : n), 0);
@@ -254,12 +344,22 @@ export const adjacentSuggestions = query({
         });
       }
     }
-    if (base.companies && base.companies.length > 0) {
-      const c = countWith({ ...base, companies: undefined });
+    if ((base.companies && base.companies.length > 0) || base.companyQuery) {
+      const c = countWith({ ...base, companies: undefined, companyQuery: undefined });
       if (c > 0) {
         suggestions.push({
           label: `Remove the company filter (${c} alumni)`,
-          filter: { ...base, companies: undefined },
+          filter: { ...base, companies: undefined, companyQuery: undefined },
+          count: c,
+        });
+      }
+    }
+    if (base.statuses && base.statuses.length > 0) {
+      const c = countWith({ ...base, statuses: undefined });
+      if (c > 0) {
+        suggestions.push({
+          label: `Remove the status filter (${c} alumni)`,
+          filter: { ...base, statuses: undefined },
           count: c,
         });
       }
@@ -338,6 +438,7 @@ export const publicMentors = query({
 export const facets = query({
   args: {},
   handler: async (ctx) => {
+    await requireMember(ctx);
     const profiles = await ctx.db.query("profiles").collect();
     const verified = profiles.filter((p) => p.verifiedAt != null);
 

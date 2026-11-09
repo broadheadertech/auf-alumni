@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   name?: string;
+  /** Uploaded profile photo; falls back to initials when absent. */
+  src?: string | null;
   size?: number;
   grad?: 1 | 2 | 3 | 4 | 5 | 6;
   ring?: boolean;
@@ -28,6 +30,7 @@ function initialsFrom(name: string): string {
 
 export function AUFAvatar({
   name = "",
+  src,
   size = 36,
   grad = 1,
   ring = false,
@@ -45,7 +48,16 @@ export function AUFAvatar({
         )}
         style={px}
       >
-        {initialsFrom(name)}
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt=""
+            className="h-full w-full rounded-full object-cover"
+          />
+        ) : (
+          initialsFrom(name)
+        )}
       </span>
       {badge && (
         <span

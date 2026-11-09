@@ -5,29 +5,44 @@
  *
  * Shows the post details, a summary (applicants · days live · CVs reviewed ·
  * hires), and the full applicant list for the posting. "CVs reviewed" counts
- * applicants who have moved past the initial "new" stage.
+ * applications an employer has opened (applications.reviewedAt set).
+ *
+ * Live data: convex/adminData.ts `posting`. Pending postings can be approved
+ * or rejected here via convex/jobs.ts approveJob / rejectJob.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Building2,
   CalendarDays,
+  Check,
   Clock,
   FileCheck2,
   FileText,
+  Loader2,
   MapPin,
+  X,
 } from "lucide-react";
-import {
-  daysSincePosted,
-  fmtDate,
-  getPostingById,
-  jobApplicants,
-  reviewedCount,
-} from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+import { useAsOf } from "@/lib/use-as-of";
+import { fmtDate } from "@/lib/mock-admin";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/auf/EmptyState";
 import {
   PostingStatusBadge,
@@ -35,16 +50,50 @@ import {
   StatTile,
 } from "@/components/auf/AdminBits";
 
+const DAY = 86_400_000;
+
+/** Whole days between an ISO date and today (UTC); never negative. */
+function daysSince(iso: string): number {
+  const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z").getTime();
+  return Math.max(0, Math.round((today - new Date(iso + "T00:00:00Z").getTime()) / DAY));
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof ConvexError) {
+    const data = err.data as { message?: string } | string;
+    return typeof data === "string" ? data : data?.message ?? fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
+}
+
 export default function AdminJobDetailPage() {
   const params = useParams<{ jobId: string }>();
-  const found = getPostingById(params.jobId);
+  const asOf = useAsOf();
+  const found = useQuery(api.adminData.posting, { id: params.jobId, asOf });
+  const approveJob = useMutation(api.jobs.approveJob);
+  const rejectJob = useMutation(api.jobs.rejectJob);
+  const [busy, setBusy] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason, setReason] = useState("");
 
   const applicants = useMemo(
-    () => (found ? jobApplicants(found.posting) : []),
+    () =>
+      found
+        ? [...found.posting.applicants].sort((a, b) => b.appliedAt.localeCompare(a.appliedAt))
+        : [],
     [found],
   );
 
-  if (!found) {
+  if (found === undefined) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16 text-center text-sm text-muted-foreground">
+        <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+        Loading posting…
+      </div>
+    );
+  }
+
+  if (found === null) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16">
         <EmptyState
@@ -56,9 +105,42 @@ export default function AdminJobDetailPage() {
   }
 
   const { posting, employer } = found;
-  const reviewed = reviewedCount(applicants);
+  const reviewed = applicants.filter((a) => a.reviewed).length;
+  const withCv = applicants.filter((a) => a.hasCv).length;
   const hired = applicants.filter((a) => a.stage === "hired").length;
-  const daysLive = daysSincePosted(posting.postedAt);
+  const daysLive = daysSince(posting.postedAt);
+  const pending = posting.status === "pending-moderation";
+
+  const onApprove = async () => {
+    setBusy(true);
+    try {
+      await approveJob({ jobId: posting.id as never });
+      toast.success(`“${posting.title}” approved — now published`);
+    } catch (err) {
+      toast.error(errorMessage(err, "Approve failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onReject = async () => {
+    const why = reason.trim();
+    if (!why) {
+      toast.error("A rejection reason is required");
+      return;
+    }
+    setBusy(true);
+    try {
+      await rejectJob({ jobId: posting.id as never, reason: why });
+      toast.success(`“${posting.title}” rejected`);
+      setRejectOpen(false);
+      setReason("");
+    } catch (err) {
+      toast.error(errorMessage(err, "Reject failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
@@ -87,7 +169,33 @@ export default function AdminJobDetailPage() {
             {employer.name}
           </Link>
         </div>
+        {pending && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={busy} onClick={onApprove}>
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Approve &amp; publish
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                setReason("");
+                setRejectOpen(true);
+              }}
+            >
+              <X className="h-4 w-4" />
+              Reject
+            </Button>
+          </div>
+        )}
       </div>
+
+      {posting.statusReason && (
+        <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          <span className="font-medium">Moderation note:</span> {posting.statusReason}
+        </div>
+      )}
 
       {/* Summary */}
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -102,7 +210,7 @@ export default function AdminJobDetailPage() {
           value={`${reviewed} / ${applicants.length}`}
           hint={
             applicants.length
-              ? `${Math.round((reviewed / applicants.length) * 100)}% screened`
+              ? `${Math.round((reviewed / applicants.length) * 100)}% screened · ${withCv} with CV`
               : undefined
           }
         />
@@ -117,8 +225,34 @@ export default function AdminJobDetailPage() {
             <Detail icon={MapPin} label="Location" value={`${posting.location} · ${posting.employmentType}`} />
             <Detail icon={FileText} label="Salary" value={posting.salaryLabel} />
             <Detail icon={CalendarDays} label="Posted" value={fmtDate(posting.postedAt)} />
-            <Detail icon={Clock} label="Closes" value={fmtDate(posting.closesAt)} />
+            <Detail
+              icon={Clock}
+              label="Closes"
+              value={posting.closesAt ? fmtDate(posting.closesAt) : "No closing date"}
+            />
           </dl>
+          {posting.description && (
+            <p className="mt-4 whitespace-pre-line text-sm text-foreground/90">
+              {posting.description}
+            </p>
+          )}
+          {posting.skills.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {posting.skills.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-full border border-border px-2 py-0.5 text-[11px]"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+            <BulletList title="Responsibilities" items={posting.responsibilities} />
+            <BulletList title="Requirements" items={posting.requirements} />
+            <BulletList title="Benefits" items={posting.benefits} />
+          </div>
         </CardContent>
       </Card>
 
@@ -155,7 +289,6 @@ export default function AdminJobDetailPage() {
                 </thead>
                 <tbody>
                   {applicants.map((a) => {
-                    const reviewedRow = a.stage !== "new";
                     const nameEl = (
                       <span className="flex items-center gap-2">
                         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
@@ -173,7 +306,7 @@ export default function AdminJobDetailPage() {
                     );
                     return (
                       <tr
-                        key={a.key}
+                        key={a.applicationId}
                         className="border-b border-border align-top last:border-0 hover:bg-muted/20"
                       >
                         <td className="px-3 py-2">
@@ -189,7 +322,8 @@ export default function AdminJobDetailPage() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">
-                          {a.college.replace("College of ", "")} · Batch {a.batch}
+                          {a.college.replace("College of ", "")}
+                          {a.batch != null ? ` · Batch ${a.batch}` : ""}
                         </td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">
                           {fmtDate(a.appliedAt)}
@@ -200,7 +334,7 @@ export default function AdminJobDetailPage() {
                         <td className="px-3 py-2 text-center">
                           {!a.hasCv ? (
                             <span className="text-xs text-muted-foreground">—</span>
-                          ) : reviewedRow ? (
+                          ) : a.reviewed ? (
                             <span
                               className="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400"
                               title={a.cvFilename ?? "CV reviewed"}
@@ -230,8 +364,35 @@ export default function AdminJobDetailPage() {
       </Card>
 
       <p className="mt-3 text-xs italic text-muted-foreground">
-        “CVs reviewed” counts applicants moved past the New stage. Demo data.
+        “CVs reviewed” counts applications the employer has opened.
       </p>
+
+      <Dialog open={rejectOpen} onOpenChange={(open) => !open && !busy && setRejectOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject “{posting.title}”?</DialogTitle>
+            <DialogDescription>
+              The reason is sent to {employer.name}. The posting is taken out of
+              the review queue.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            rows={3}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Reason for rejection (sent to the employer)"
+            aria-label="Rejection reason"
+          />
+          <DialogFooter>
+            <Button variant="outline" disabled={busy} onClick={() => setRejectOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={busy || !reason.trim()} onClick={onReject}>
+              {busy ? "Rejecting…" : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -252,6 +413,22 @@ function Detail({
         <dt className="text-xs text-muted-foreground">{label}</dt>
         <dd className="font-medium">{value}</dd>
       </div>
+    </div>
+  );
+}
+
+function BulletList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-sm text-foreground/90">
+        {items.map((it, i) => (
+          <li key={i}>{it}</li>
+        ))}
+      </ul>
     </div>
   );
 }

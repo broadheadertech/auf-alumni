@@ -70,13 +70,15 @@ export type PostingStatus =
   | "published"
   | "closed"
   | "pending-moderation"
-  | "draft";
+  | "draft"
+  | "rejected";
 
 export const POSTING_STATUS_LABEL: Record<PostingStatus, string> = {
   published: "Published",
   closed: "Closed",
   "pending-moderation": "Pending review",
   draft: "Draft",
+  rejected: "Rejected",
 };
 
 export type PostingApplicant = {

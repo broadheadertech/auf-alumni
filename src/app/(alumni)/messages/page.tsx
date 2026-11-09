@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { Loader2, Send } from "lucide-react";
@@ -23,7 +24,19 @@ type Thread = {
 };
 
 export default function MessagesPage() {
+  return (
+    <Suspense fallback={<div className="p-10" />}>
+      <MessagesInner />
+    </Suspense>
+  );
+}
+
+function MessagesInner() {
   const me = useQuery(api.users.getMe);
+  // `?to=<userId>` opens (or starts) a conversation with that person —
+  // used by Connect/Message buttons on profiles, the feed and mentors.
+  const sp = useSearchParams();
+  const toUserId = sp.get("to");
   const threads = useQuery(api.messaging.listMyThreads);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const thread = useQuery(
@@ -31,6 +44,10 @@ export default function MessagesPage() {
     activeThreadId
       ? { threadId: activeThreadId as unknown as never }
       : "skip",
+  );
+  const pending = useQuery(
+    api.messaging.threadWith,
+    toUserId ? { otherUserId: toUserId as unknown as never } : "skip",
   );
   const markRead = useMutation(api.messaging.markThreadRead);
   const sendMessage = useMutation(api.messaging.sendMessage);
@@ -40,12 +57,21 @@ export default function MessagesPage() {
   // Auto-select first thread on initial load
   const list = (threads ?? []) as Thread[];
   const firstThreadId = list[0]?.threadId ?? null;
+  const pendingThreadId = pending?.threadId ?? null;
   /* eslint-disable */
   useEffect(() => {
+    if (toUserId) {
+      // Wait for threadWith: an existing conversation opens, a new one stays
+      // on the composer below.
+      if (pendingThreadId && activeThreadId !== pendingThreadId) {
+        setActiveThreadId(pendingThreadId);
+      }
+      return;
+    }
     if (!activeThreadId && firstThreadId) {
       setActiveThreadId(firstThreadId);
     }
-  }, [activeThreadId, firstThreadId]);
+  }, [activeThreadId, firstThreadId, toUserId, pendingThreadId]);
   /* eslint-enable */
 
   // Mark read when thread opens
@@ -56,12 +82,15 @@ export default function MessagesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeThreadId]);
 
+  const recipientId = thread?.otherUserId ?? toUserId ?? null;
+  const startingNew = !!toUserId && !pendingThreadId;
+
   const onSend = async () => {
-    if (!draft.trim() || !thread) return;
+    if (!draft.trim() || !recipientId) return;
     setSending(true);
     try {
       await sendMessage({
-        recipientId: thread.otherUserId as unknown as never,
+        recipientId: recipientId as unknown as never,
         content: draft.trim(),
       });
       setDraft("");
@@ -133,6 +162,15 @@ export default function MessagesPage() {
                 Loading…
               </CardContent>
             </Card>
+          ) : startingNew ? (
+            <NewConversation
+              name={pending?.otherName ?? "this person"}
+              allowed={pending?.allowed !== false}
+              draft={draft}
+              setDraft={setDraft}
+              sending={sending}
+              onSend={onSend}
+            />
           ) : !thread ? (
             <Card>
               <CardContent className="p-6 text-sm text-muted-foreground">
@@ -251,5 +289,63 @@ export default function MessagesPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+/** Composer for a conversation that doesn't exist yet (`?to=<userId>`). */
+function NewConversation({
+  name,
+  allowed,
+  draft,
+  setDraft,
+  sending,
+  onSend,
+}: {
+  name: string;
+  allowed: boolean;
+  draft: string;
+  setDraft: (v: string) => void;
+  sending: boolean;
+  onSend: () => void;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <h2 className="text-sm font-medium">Message {name}</h2>
+        {allowed ? (
+          <>
+            <p className="mt-1 text-xs text-muted-foreground">
+              This starts a new conversation. Be specific — busy alumni respond
+              more often to messages that lead with the ask.
+            </p>
+            <Textarea
+              rows={4}
+              value={draft}
+              maxLength={4000}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={`Write to ${name}…`}
+              className="mt-3"
+              aria-label={`Message ${name}`}
+            />
+            <div className="mt-2 flex justify-end">
+              <Button onClick={onSend} disabled={!draft.trim() || sending}>
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                Send
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            You can message verified alumni, and employers whose postings you
+            applied to. {name} can&apos;t be messaged right now — they may have
+            blocked you or left the network.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

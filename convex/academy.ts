@@ -131,7 +131,11 @@ export const getCourseBySlug = query({
 
     const me = await getAuthUserId(ctx);
     let enrollment = null as
-      | { _id: Id<"academyEnrollments">; completedLessonIds: string[] }
+      | {
+          _id: Id<"academyEnrollments">;
+          completedLessonIds: string[];
+          completedAt: number | null;
+        }
       | null;
     if (me) {
       const row = await ctx.db
@@ -144,6 +148,7 @@ export const getCourseBySlug = query({
         enrollment = {
           _id: row._id,
           completedLessonIds: row.completedLessonIds as unknown as string[],
+          completedAt: row.completedAt ?? null,
         };
       }
     }
@@ -152,6 +157,26 @@ export const getCourseBySlug = query({
       .query("academyEnrollments")
       .withIndex("by_course", (q) => q.eq("courseId", course._id))
       .collect();
+
+    // Where to go next: other published courses, same category first.
+    const others = (
+      await ctx.db
+        .query("academyCourses")
+        .withIndex("by_status_published", (q) => q.eq("status", "published"))
+        .collect()
+    ).filter((c) => c._id !== course._id);
+    others.sort((a, b) => {
+      const rank = (c: typeof a) => (c.category === course.category ? 0 : 1);
+      return rank(a) - rank(b) || (b.publishedAt ?? 0) - (a.publishedAt ?? 0);
+    });
+    const nextCourses = others.slice(0, 3).map((c) => ({
+      slug: c.slug,
+      title: c.title,
+      summary: c.summary,
+      category: c.category,
+      level: c.level,
+      sameCategory: c.category === course.category,
+    }));
 
     return {
       _id: course._id,
@@ -189,6 +214,7 @@ export const getCourseBySlug = query({
       })),
       enrolledCount: enrollments.length,
       enrollment,
+      nextCourses,
     };
   },
 });

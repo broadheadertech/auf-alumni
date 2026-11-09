@@ -1,34 +1,44 @@
 "use client";
 
 /**
- * Employer reports — exportable hiring summaries for the signed-in employer.
+ * Employer reports — exportable hiring summaries for the signed-in employer
+ * org (live Convex data).
  *
  * A monthly hiring report table (applications → interviews → offers → hires →
- * rate) plus one-click exports (real client-side CSV downloads) for the
- * applicant list, posting performance, and college breakdown. Period-filtered.
+ * rate) plus one-click exports (client-side CSV downloads) for the applicant
+ * list, posting performance, and college breakdown. Period-filtered.
  *
- * Mock-data prototype for stakeholder review — see lib/mock-admin.ts.
+ * Reads `api.adminData.myEmployerRecords` (the same application records as
+ * employer Analytics and the admin analytics) and `api.jobs.listMyOrgJobs`.
+ * Like the employer dashboard, it reports on the first organisation the user
+ * manages.
  */
 
 import { useMemo, useState } from "react";
+import { useQuery } from "convex/react";
 import { toast } from "sonner";
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
-import {
-  ANALYTICS_DATE_MAX,
-  ANALYTICS_DATE_MIN,
-  EMPLOYER_APPLICANTS,
-  STAGE_LABEL,
-  contractState,
-  currentEmployer,
-  currentEmployerHistory,
-  employerApplicantsForJob,
-  fmtDate,
-  fmtMonth,
-} from "@/lib/mock-admin";
+import { api } from "@/lib/convex-api";
+import type { ApplicationRecord } from "../../../../../convex/adminData";
+import { JOB_STATUS_LABEL, STAGE_LABEL, fmtDate } from "@/lib/employer-format";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { StatTile } from "@/components/auf/AdminBits";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-03" → "Mar 2026". */
+const fmtMonth = (key: string) => {
+  const [y, m] = key.split("-");
+  return `${MONTHS[Number(m) - 1]} ${y}`;
+};
+/** "2026-03-14" → "Mar 14, 2026". */
+const fmtIsoDate = (iso: string) => {
+  const [y, m, d] = iso.split("-");
+  return `${MONTHS[Number(m) - 1]} ${Number(d)}, ${y}`;
+};
+const slugify = (s: string) =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "employer";
 
 /** Build a CSV string and trigger a download (client-side, no backend). */
 function downloadCsv(filename: string, header: string[], rows: (string | number)[][]) {
@@ -47,13 +57,29 @@ function downloadCsv(filename: string, header: string[], rows: (string | number)
 }
 
 export default function EmployerReportsPage() {
-  const employer = currentEmployer();
-  const history = useMemo(() => currentEmployerHistory(), []);
-  const [from, setFrom] = useState(ANALYTICS_DATE_MIN);
-  const [to, setTo] = useState(ANALYTICS_DATE_MAX);
+  const orgs = useQuery(api.employerOrgs.listMine);
+  const org = orgs?.[0];
+  const data = useQuery(
+    api.adminData.myEmployerRecords,
+    org ? { employerOrgId: org._id } : "skip",
+  ) as { orgs: { id: string; name: string }[]; records: ApplicationRecord[] } | undefined;
+  const allJobs = useQuery(api.jobs.listMyOrgJobs);
+
+  const history = useMemo(() => data?.records ?? [], [data]);
+  const jobs = useMemo(
+    () => (allJobs ?? []).filter((j) => org && j.employerOrgId === org._id),
+    [allJobs, org],
+  );
+
+  // Empty bound = open-ended.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const filtered = useMemo(
-    () => history.filter((r) => r.appliedAt >= from && r.appliedAt <= to),
+    () =>
+      history.filter(
+        (r) => (!from || r.appliedAt >= from) && (!to || r.appliedAt <= to),
+      ),
     [history, from, to],
   );
 
@@ -87,9 +113,44 @@ export default function EmployerReportsPage() {
     return { apps, hires, rate: apps ? hires / apps : 0 };
   }, [filtered]);
 
+  const minDate = history.length ? history[history.length - 1].appliedAt : undefined;
+  const maxDate = history.length ? history[0].appliedAt : undefined;
+  const periodFrom = from || minDate;
+  const periodTo = to || maxDate;
+
+  if (orgs === undefined || (org && (data === undefined || allJobs === undefined))) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-10 text-sm text-muted-foreground">
+        Loading reports…
+      </div>
+    );
+  }
+
+  if (!org) {
+    return (
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 py-16">
+        <Card>
+          <CardContent className="p-10 text-center">
+            <h1 className="text-lg font-semibold">No employer organisation</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your account isn&apos;t linked to an employer yet. Ask an AUF admin
+              to grant your organisation access.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const slug = slugify(org.name);
+
   const exportMonthly = () => {
+    if (monthly.length === 0) {
+      toast.error("No applications in this period to export");
+      return;
+    }
     downloadCsv(
-      "kollab-ai-hiring-report.csv",
+      `${slug}-hiring-report.csv`,
       ["Month", "Applications", "Interviews", "Offers", "Hires", "Hire rate %"],
       monthly.map((m) => [
         fmtMonth(m.key),
@@ -105,33 +166,38 @@ export default function EmployerReportsPage() {
 
   const exportApplicants = () => {
     downloadCsv(
-      "kollab-ai-applicants.csv",
-      ["Name", "Posting", "College", "Batch", "Applied", "Stage", "Match %", "Years exp"],
-      EMPLOYER_APPLICANTS.map((a) => [
-        a.name,
+      `${slug}-applicants.csv`,
+      ["Name", "Posting", "College", "Program", "Batch", "Applied", "Stage"],
+      filtered.map((a) => [
+        a.applicantName,
         a.jobTitle,
         a.college,
-        a.batch,
+        a.program,
+        a.batch ?? "",
         a.appliedAt,
-        STAGE_LABEL[a.stage],
-        a.matchScore,
-        a.yearsExperience,
+        STAGE_LABEL[a.stage] ?? a.stage,
       ]),
     );
     toast.success("Applicant list exported");
   };
 
   const exportPostings = () => {
+    const appsByJob = new Map<string, number>();
+    const hiresByJob = new Map<string, number>();
+    for (const r of filtered) {
+      appsByJob.set(r.jobId, (appsByJob.get(r.jobId) ?? 0) + 1);
+      if (r.hired) hiresByJob.set(r.jobId, (hiresByJob.get(r.jobId) ?? 0) + 1);
+    }
     downloadCsv(
-      "kollab-ai-postings.csv",
-      ["Posting", "Status", "Location", "Posted", "Closes", "Applicants"],
-      employer.postings.map((p) => [
+      `${slug}-postings.csv`,
+      ["Posting", "Status", "Location", "Posted", "Applicants (period)", "Hires (period)"],
+      jobs.map((p) => [
         p.title,
-        p.status,
+        JOB_STATUS_LABEL[p.status] ?? p.status,
         p.location,
-        p.postedAt,
-        p.closesAt,
-        employerApplicantsForJob(p.id).length,
+        fmtDate(p.publishedAt ?? p.createdAt),
+        appsByJob.get(p._id) ?? 0,
+        hiresByJob.get(p._id) ?? 0,
       ]),
     );
     toast.success("Posting performance exported");
@@ -139,15 +205,16 @@ export default function EmployerReportsPage() {
 
   const exportColleges = () => {
     const map = new Map<string, number>();
-    for (const a of EMPLOYER_APPLICANTS)
-      map.set(a.college, (map.get(a.college) ?? 0) + 1);
+    for (const a of filtered) map.set(a.college, (map.get(a.college) ?? 0) + 1);
     downloadCsv(
-      "kollab-ai-applicants-by-college.csv",
+      `${slug}-applicants-by-college.csv`,
       ["College", "Applicants"],
       [...map.entries()].sort((a, b) => b[1] - a[1]),
     );
     toast.success("College breakdown exported");
   };
+
+  const collegeCount = new Set(filtered.map((a) => a.college)).size;
 
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
@@ -156,7 +223,7 @@ export default function EmployerReportsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
-        Hiring summaries and exports for {employer.name}. Choose a period, then
+        Hiring summaries and exports for {org.name}. Choose a period, then
         download the report you need.
       </p>
 
@@ -170,8 +237,8 @@ export default function EmployerReportsPage() {
             <input
               type="date"
               value={from}
-              min={ANALYTICS_DATE_MIN}
-              max={to}
+              min={minDate}
+              max={to || maxDate}
               onChange={(e) => setFrom(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             />
@@ -183,13 +250,30 @@ export default function EmployerReportsPage() {
             <input
               type="date"
               value={to}
-              min={from}
-              max={ANALYTICS_DATE_MAX}
+              min={from || minDate}
               onChange={(e) => setTo(e.target.value)}
               className="rounded-md border border-border bg-background px-2 py-1.5 text-sm"
             />
           </div>
-          <Button size="sm" className="ml-auto" onClick={exportMonthly}>
+          {(from || to) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={() => {
+                setFrom("");
+                setTo("");
+              }}
+            >
+              Reset
+            </Button>
+          )}
+          <Button
+            size="sm"
+            className="ml-auto"
+            onClick={exportMonthly}
+            disabled={monthly.length === 0}
+          >
             <Download className="h-4 w-4" />
             Export hiring report
           </Button>
@@ -200,7 +284,7 @@ export default function EmployerReportsPage() {
       <div className="mt-4 grid grid-cols-3 gap-3">
         <StatTile label="Applications" value={totals.apps} />
         <StatTile label="Hires" value={totals.hires} />
-        <StatTile label="Hire rate" value={`${(totals.rate * 100).toFixed(1)}%`} />
+        <StatTile label="Hire rate" value={totals.apps ? `${(totals.rate * 100).toFixed(1)}%` : "—"} />
       </div>
 
       {/* Monthly hiring report */}
@@ -209,7 +293,9 @@ export default function EmployerReportsPage() {
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h2 className="text-sm font-medium">Monthly hiring report</h2>
             <span className="text-xs text-muted-foreground">
-              {fmtDate(from)} – {fmtDate(to)}
+              {periodFrom && periodTo
+                ? `${fmtIsoDate(periodFrom)} – ${fmtIsoDate(periodTo)}`
+                : "All time"}
             </span>
           </div>
           <div className="overflow-x-auto">
@@ -228,7 +314,9 @@ export default function EmployerReportsPage() {
                 {monthly.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-6 text-center text-muted-foreground">
-                      No data in this period.
+                      {history.length === 0
+                        ? "No applications yet. Reports fill in as alumni apply to your postings."
+                        : "No applications in this period."}
                     </td>
                   </tr>
                 ) : (
@@ -276,37 +364,44 @@ export default function EmployerReportsPage() {
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <ReportCard
           title="Applicant list"
-          desc="All current applicants with posting, college, stage, and match score."
-          meta={`${EMPLOYER_APPLICANTS.length} rows · CSV`}
+          desc="Applicants in the period with posting, college, program, batch, and stage."
+          meta={`${filtered.length} rows · CSV`}
           onExport={exportApplicants}
+          disabled={filtered.length === 0}
         />
         <ReportCard
           title="Posting performance"
-          desc="Every posting with status, dates, and applicant counts."
-          meta={`${employer.postings.length} rows · CSV`}
+          desc="Every posting with status, posted date, and applicants / hires in the period."
+          meta={`${jobs.length} rows · CSV`}
           onExport={exportPostings}
+          disabled={jobs.length === 0}
         />
         <ReportCard
           title="Applicants by college"
-          desc="Where your candidates studied — applicant counts per AUF college."
-          meta="CSV"
+          desc="Where your candidates studied — applicant counts per AUF college in the period."
+          meta={`${collegeCount} rows · CSV`}
           onExport={exportColleges}
+          disabled={filtered.length === 0}
         />
         <ReportCard
-          title="Compliance summary"
-          desc={`MOA ${employer.moa ? "on file" : "missing"} · contract ${contractState(employer)} · ends ${fmtDate(employer.contractEnd)}.`}
+          title="Account summary"
+          desc={`${org.tier.charAt(0).toUpperCase()}${org.tier.slice(1)} tier${
+            org.planTier ? ` · ${org.planTier} plan` : ""
+          } · ${jobs.length} posting${jobs.length === 1 ? "" : "s"}${
+            org.createdAt ? ` · onboarded ${fmtDate(org.createdAt)}` : ""
+          }.`}
           meta="View only"
           onExport={() =>
             toast.message(
-              `Contract ${contractState(employer)} · ${employer.moa ? "MOA on file" : "MOA missing"}`,
+              `${org.name} · ${org.tier} tier · ${jobs.filter((j) => j.status === "published").length} published postings`,
             )
           }
         />
       </div>
 
-      <p className="mt-4 text-xs italic text-muted-foreground">
-        Demo data. CSV exports are generated in your browser from the prototype
-        dataset.
+      <p className="mt-4 text-xs text-muted-foreground">
+        Live data. CSV exports are generated in your browser from your
+        organisation&apos;s applications and postings.
       </p>
     </div>
   );
@@ -317,11 +412,13 @@ function ReportCard({
   desc,
   meta,
   onExport,
+  disabled,
 }: {
   title: string;
   desc: string;
   meta: string;
   onExport: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Card>
@@ -332,7 +429,7 @@ function ReportCard({
           <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
           <p className="mt-1 text-[11px] text-muted-foreground/80">{meta}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={onExport}>
+        <Button variant="outline" size="sm" onClick={onExport} disabled={disabled}>
           <Download className="h-4 w-4" />
           Export
         </Button>

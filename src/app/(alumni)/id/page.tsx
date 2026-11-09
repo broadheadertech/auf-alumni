@@ -9,11 +9,12 @@
  * can confirm authenticity by scanning.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import {
+  Camera,
   Download,
   Loader2,
   RefreshCw,
@@ -79,7 +80,44 @@ function formatIssued(ms?: number | null): string {
 export default function AlumniIdPage() {
   const card = useQuery(api.profiles.getMyAlumniCard) as Card | undefined;
   const ensureId = useMutation(api.profiles.ensureMyAlumniId);
+  const generateUploadUrl = useMutation(api.profiles.generatePhotoUploadUrl);
+  const setPhoto = useMutation(api.profiles.setPhoto);
   const [minting, setMinting] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const onPhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose an image file (JPG or PNG)");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Photo must be 5 MB or smaller");
+      e.target.value = "";
+      return;
+    }
+    setUploadingPhoto(true);
+    try {
+      const url = await generateUploadUrl({});
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const { storageId } = (await res.json()) as { storageId: string };
+      await setPhoto({ storageId: storageId as unknown as never });
+      toast.success("ID photo updated");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = "";
+    }
+  };
 
   // Lazily mint the ID the first time the page loads if not present.
   /* eslint-disable */
@@ -255,9 +293,9 @@ export default function AlumniIdPage() {
             </div>
 
             {/* Photo */}
-            <div className="relative shrink-0 flex justify-center sm:justify-start">
+            <div className="relative shrink-0 flex flex-col items-center sm:items-start gap-2">
               <div
-                className="rounded-md overflow-hidden"
+                className="relative rounded-md overflow-hidden"
                 style={{
                   width: 104,
                   height: 128,
@@ -282,7 +320,28 @@ export default function AlumniIdPage() {
                     />
                   </div>
                 )}
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                  </div>
+                )}
               </div>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={onPhotoChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={uploadingPhoto}
+                className="auf-btn auf-btn-outline auf-btn-sm print:hidden"
+              >
+                <Camera size={13} />
+                {card.photoUrl ? "Change photo" : "Add photo"}
+              </button>
             </div>
 
             {/* Identity column */}

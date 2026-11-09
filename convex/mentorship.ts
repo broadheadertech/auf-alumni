@@ -10,7 +10,10 @@
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
+import { applyPrivacy, type ViewerContext } from "./helpers/privacy";
+import { loadCollegeClassifier } from "./helpers/taxonomy";
 
 // @no-audit-required: user self-service.
 export const requestMentorship = mutation({
@@ -50,7 +53,7 @@ export const requestMentorship = mutation({
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", mentorId))
       .unique();
-    if (!mentorProfile?.openTo?.includes("mentorship")) {
+    if (!isOpenToMentorship(mentorProfile?.openTo)) {
       throw new ConvexError({
         code: "not-open",
         message: "This alumna isn't open to mentorship right now",
@@ -182,7 +185,48 @@ export const myMentorshipQueue = query({
       .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
       .order("desc")
       .take(50);
-    return { incoming, outgoing };
+
+    // The rows alone never said WHO asked, so the cards showed a topic and a
+    // status with no name and only a generic link to the inbox. Join the other
+    // party once per distinct user so each card can name them, link to their
+    // profile, and open the actual conversation.
+    const names = new Map<string, { name: string; slug: string | null }>();
+    const resolve = async (userId: Id<"users">) => {
+      const key = userId as string;
+      const hit = names.get(key);
+      if (hit) return hit;
+      // @no-privacy-required: displayName and slug are always-visible identity
+      // fields (see ALWAYS_INCLUDE in helpers/privacy), and these two people
+      // are already in a mentorship conversation with each other.
+      const profile = await ctx.db
+        .query("profiles")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .unique();
+      const user = profile ? null : await ctx.db.get(userId);
+      const entry = {
+        name: profile?.displayName ?? user?.name ?? "An alumnus",
+        slug: profile?.slug ?? null,
+      };
+      names.set(key, entry);
+      return entry;
+    };
+
+    const withParty = async (
+      rows: Array<Doc<"mentorshipRequests">>,
+      pick: (r: Doc<"mentorshipRequests">) => Id<"users">,
+    ) =>
+      Promise.all(
+        rows.map(async (r) => {
+          const other = pick(r);
+          const { name, slug } = await resolve(other);
+          return { ...r, otherUserId: other as string, otherName: name, otherSlug: slug };
+        }),
+      );
+
+    return {
+      incoming: await withParty(incoming, (r) => r.requesterId),
+      outgoing: await withParty(outgoing, (r) => r.mentorId),
+    };
   },
 });
 
@@ -250,5 +294,159 @@ export const myReferrals = query({
       .withIndex("by_referrer_time", (q) => q.eq("referrerId", me))
       .order("desc")
       .take(50);
+  },
+});
+
+// ---------------------------------------------------------- find a mentor ---
+
+/**
+ * `openTo` values are inconsistent across data written at different times
+ * ("mentorship" from the profile editor, "Mentorship" from the seeds), so
+ * every mentor check matches case-insensitively on the stem.
+ */
+export function isOpenToMentorship(openTo: string[] | undefined): boolean {
+  return (openTo ?? []).some((t) => t.toLowerCase().includes("mentor"));
+}
+
+export type MentorCard = {
+  userId: string;
+  slug: string;
+  displayName: string;
+  initials: string;
+  program: string | null;
+  college: string;
+  batch: number | null;
+  currentRole: string | null;
+  company: string | null;
+  city: string | null;
+  bio: string | null;
+  skills: string[];
+  openTo: string[];
+  photoUrl: string | null;
+  /** My latest request to this mentor, if any — drives the button state. */
+  myRequestStatus: string | null;
+};
+
+/**
+ * Alumni-facing mentor directory: verified alumni who are open to mentorship.
+ *
+ * Privacy-filtered per viewer like the directory; deactivated / suspended
+ * accounts are excluded, as is the viewer themselves.
+ */
+export const availableMentors = query({
+  args: {
+    search: v.optional(v.string()),
+    programs: v.optional(v.array(v.string())),
+    batches: v.optional(v.array(v.number())),
+    cities: v.optional(v.array(v.string())),
+    skills: v.optional(v.array(v.string())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<MentorCard[]> => {
+    const me = await getAuthUserId(ctx);
+    if (!me) return [];
+
+    // Resolve the viewer's context ONCE. Calling getViewerContext per profile
+    // meant two extra reads per mentor (~70 round trips on this page), which
+    // is what made the list take seconds to appear.
+    const [profiles, users, collegeFor, myRequests, sentLinks, recvLinks, myProfile] =
+      await Promise.all([
+        ctx.db.query("profiles").collect(),
+        ctx.db.query("users").collect(),
+        loadCollegeClassifier(ctx),
+        ctx.db
+          .query("mentorshipRequests")
+          .withIndex("by_requester_status", (q) => q.eq("requesterId", me))
+          .collect(),
+        ctx.db
+          .query("connections")
+          .withIndex("by_requester_status", (q) =>
+            q.eq("requesterId", me).eq("status", "connected"),
+          )
+          .collect(),
+        ctx.db
+          .query("connections")
+          .withIndex("by_recipient_status", (q) =>
+            q.eq("recipientId", me).eq("status", "connected"),
+          )
+          .collect(),
+        ctx.db
+          .query("profiles")
+          .withIndex("by_userId", (q) => q.eq("userId", me))
+          .unique(),
+      ]);
+    const connectedIds = new Set<string>([
+      ...sentLinks.map((c) => c.recipientId as string),
+      ...recvLinks.map((c) => c.requesterId as string),
+    ]);
+    const viewerRoles = new Set(users.find((u) => u._id === me)?.roles ?? []);
+    const viewerIsAlumnus =
+      !!myProfile ||
+      ["alumnus", "current-student", "super-admin", "verifier", "moderator"].some((r) =>
+        viewerRoles.has(r),
+      );
+    const blocked = new Set(
+      users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string),
+    );
+    // Latest request per mentor wins.
+    const statusByMentor = new Map<string, string>();
+    for (const r of [...myRequests].sort((a, b) => a.createdAt - b.createdAt)) {
+      statusByMentor.set(r.mentorId as string, r.status);
+    }
+
+    const search = (args.search ?? "").trim().toLowerCase();
+    const skills = (args.skills ?? []).map((s) => s.toLowerCase());
+    const out: MentorCard[] = [];
+
+    for (const p of profiles) {
+      if (p.verifiedAt == null) continue;
+      if (p.userId === me) continue;
+      if (blocked.has(p.userId as string)) continue;
+      if (!isOpenToMentorship(p.openTo)) continue;
+      if (args.programs?.length && !args.programs.includes(p.program)) continue;
+      if (args.batches?.length && !args.batches.includes(p.batch)) continue;
+      if (args.cities?.length && !(p.city && args.cities.includes(p.city))) continue;
+      if (skills.length) {
+        const have = new Set((p.skills ?? []).map((s) => s.toLowerCase()));
+        if (!skills.some((s) => have.has(s))) continue;
+      }
+      if (search) {
+        const hay = [p.displayName, p.currentRole, p.company, p.bio, p.program, ...(p.skills ?? [])]
+          .filter((x): x is string => typeof x === "string")
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(search)) continue;
+      }
+
+      const viewer: ViewerContext = connectedIds.has(p.userId as string)
+        ? { kind: "connection", userId: me }
+        : viewerIsAlumnus
+          ? { kind: "alumnus", userId: me }
+          : { kind: "stranger" };
+      const safe = applyPrivacy(p, viewer);
+      out.push({
+        userId: p.userId,
+        slug: p.slug,
+        displayName: p.displayName,
+        initials: p.initials,
+        program: safe.program ?? null,
+        // College comes from the program, so only expose it when the program is.
+        college: safe.program ? collegeFor(safe.program) : "",
+        batch: safe.batch ?? null,
+        currentRole: safe.currentRole ?? null,
+        company: safe.company ?? null,
+        city: safe.city ?? null,
+        bio: safe.bio ?? null,
+        skills: safe.skills ?? [],
+        openTo: safe.openTo ?? [],
+        photoUrl: safe.photoStorageId
+          ? await ctx.storage.getUrl(safe.photoStorageId)
+          : null,
+        myRequestStatus: statusByMentor.get(p.userId as string) ?? null,
+      });
+    }
+
+    out.sort((a, b) => a.displayName.localeCompare(b.displayName));
+    return out.slice(0, Math.min(Math.max(args.limit ?? 60, 1), 200));
   },
 });

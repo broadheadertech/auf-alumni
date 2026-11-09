@@ -17,6 +17,10 @@ import {
 import { api } from "@/lib/convex-api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
+import {
+  CourseCompletion,
+  type NextCourse,
+} from "@/components/auf/CourseCompletion";
 import { EmptyState } from "@/components/auf/EmptyState";
 
 type Lesson = {
@@ -50,7 +54,12 @@ type Course = {
   instructorOpenTo: string[];
   lessons: Lesson[];
   enrolledCount: number;
-  enrollment: { _id: string; completedLessonIds: string[] } | null;
+  enrollment: {
+    _id: string;
+    completedLessonIds: string[];
+    completedAt: number | null;
+  } | null;
+  nextCourses: NextCourse[];
 };
 
 function titleCase(s: string): string {
@@ -123,6 +132,8 @@ export default function CourseDetailPage({
     ? course.lessons.filter((l) => completedSet.has(l._id)).length
     : 0;
   const totalLessons = course.lessons.length;
+  const courseDone =
+    !!course.enrollment && totalLessons > 0 && completedCount === totalLessons;
   const progressPct =
     totalLessons === 0 ? 0 : Math.round((completedCount / totalLessons) * 100);
   const totalDuration =
@@ -204,6 +215,18 @@ export default function CourseDetailPage({
                 {renderMarkdown(course.description)}
               </div>
             </div>
+          )}
+
+          {courseDone && (
+            <CourseCompletion
+              courseTitle={course.title}
+              instructorName={course.instructorName}
+              instructorId={course.instructorId}
+              instructorSlug={course.instructorSlug}
+              instructorOpenTo={course.instructorOpenTo}
+              completedAt={course.enrollment?.completedAt ?? null}
+              nextCourses={course.nextCourses}
+            />
           )}
 
           <div className="auf-card p-6">

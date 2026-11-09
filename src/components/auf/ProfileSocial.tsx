@@ -23,13 +23,15 @@ import { toast } from "sonner";
 import {
   Briefcase,
   Loader2,
+  MessageSquare,
   Star,
   ThumbsUp,
   UserCheck,
   UserPlus,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -187,6 +189,14 @@ export function FollowControl({
               Follow
             </Button>
           )}
+          <ConnectButton otherUserId={profileUserId} />
+          <Link
+            href={`/messages?to=${profileUserId}`}
+            className={buttonVariants({ size: "sm", variant: "outline" }) + " gap-1.5"}
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Message
+          </Link>
         </>
       )}
     </div>

@@ -37,7 +37,6 @@ const NAV_BY_ROLE: Record<SiteRole, NavItem[]> = {
   ],
   admin: [
     { href: "/admin/dashboard", label: "Dashboard" },
-    { href: "/admin/queue", label: "Queue" },
     { href: "/admin/jobs", label: "Job postings" },
     { href: "/admin/employers", label: "Employers" },
     { href: "/admin/alumni", label: "Alumni" },

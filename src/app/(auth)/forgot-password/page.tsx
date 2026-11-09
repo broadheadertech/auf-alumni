@@ -4,11 +4,12 @@
  * Forgot-password page.
  *
  * Single email field that calls `api.authResetHelpers.requestPasswordReset`.
- * Backend always returns `{ ok: true }` to avoid revealing whether an account
- * exists; we mirror that here by always showing the same "check your email"
- * confirmation. While `RESEND_API_KEY` isn't wired the action returns a
- * `resetUrl` so the demo flow still works — we surface it as a "Dev mode"
- * link directly under the confirmation when present.
+ * The backend always returns a bare `{ ok: true }` — same response whether or
+ * not the account exists — and emails the link, so this page shows the same
+ * "check your email" confirmation either way and never has a token to display.
+ *
+ * `resetUrl` only comes back when PASSWORD_RESET_DEBUG is set on a local
+ * Convex deployment; the dev-mode block below renders solely in that case.
  */
 
 import { useState } from "react";
@@ -33,6 +34,7 @@ export default function ForgotPasswordPage() {
     setSubmitting(true);
     try {
       const result = await requestReset({ email: trimmed });
+      // Present only on a local deployment with PASSWORD_RESET_DEBUG=true.
       setDevResetUrl(result.resetUrl);
       setSent(true);
     } catch (err) {

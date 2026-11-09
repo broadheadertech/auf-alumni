@@ -9,7 +9,12 @@
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { mutation, query } from "./_generated/server";
+import {
+  mutation,
+  query,
+  type MutationCtx,
+  type QueryCtx,
+} from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
@@ -191,4 +196,208 @@ export const listMine = query({
       createdAt: r.createdAt,
     }));
   },
+});
+
+// ------------------------------------------------------- company profile ---
+//
+// Employer admins manage their own org's public company profile from
+// /employer/company. Name, slug and trust tier stay admin-controlled (they are
+// what verification vouches for); everything else is self-service.
+
+const COMPANY_EDITOR_ROLES = [
+  "partner-employer-admin",
+  "verified-employer-admin",
+  "moderator",
+  "super-admin",
+] as const;
+
+const COMPANY_SIZES = [
+  "1–10",
+  "11–50",
+  "51–200",
+  "201–500",
+  "501–1,000",
+  "1,001–5,000",
+  "5,000+",
+] as const;
+
+async function requireCompanyEditor(
+  ctx: QueryCtx | MutationCtx,
+  employerOrgId: Id<"employerOrgs">,
+) {
+  const { userId, user } = await requireRole(ctx, [...COMPANY_EDITOR_ROLES]);
+  const org = await ctx.db.get(employerOrgId);
+  if (!org) {
+    throw new ConvexError({ code: "not-found", message: "Employer not found" });
+  }
+  const roles = user.roles ?? [];
+  const isPlatformAdmin =
+    roles.includes("super-admin") || roles.includes("moderator");
+  if (!isPlatformAdmin && !(org.adminUserIds ?? []).includes(userId)) {
+    throw new ConvexError({
+      code: "forbidden",
+      message: "You don't manage this employer",
+    });
+  }
+  if (!isPlatformAdmin && org.suspendedAt) {
+    throw new ConvexError({
+      code: "suspended",
+      message: "This employer is suspended",
+    });
+  }
+  return { userId, org, isPlatformAdmin };
+}
+
+function optionalText(
+  raw: string | undefined,
+  max: number,
+  label: string,
+): string | undefined {
+  const value = (raw ?? "").trim();
+  if (value.length > max) {
+    throw new ConvexError({
+      code: "validation",
+      message: `${label} must be ${max} characters or fewer`,
+    });
+  }
+  return value || undefined;
+}
+
+export const getCompanyProfile = query({
+  args: { employerOrgId: v.id("employerOrgs") },
+  handler: async (ctx, { employerOrgId }) => {
+    const { org, isPlatformAdmin } = await requireCompanyEditor(
+      ctx,
+      employerOrgId,
+    );
+    return {
+      _id: org._id,
+      name: org.name,
+      slug: org.slug,
+      tier: org.tier,
+      tagline: org.tagline ?? "",
+      about: org.about ?? "",
+      industry: org.industry ?? "",
+      companySize: org.companySize ?? "",
+      foundedYear: org.foundedYear ?? null,
+      websiteUrl: org.websiteUrl ?? "",
+      hqCity: org.hqCity ?? "",
+      contactEmail: org.contactEmail ?? "",
+      logoUrl: org.logoStorageId
+        ? await ctx.storage.getUrl(org.logoStorageId)
+        : null,
+      updatedAt: org.updatedAt,
+      isPlatformAdmin,
+      companySizes: [...COMPANY_SIZES],
+    };
+  },
+});
+
+export const updateCompanyProfile = mutation({
+  args: {
+    employerOrgId: v.id("employerOrgs"),
+    tagline: v.optional(v.string()),
+    about: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    companySize: v.optional(v.string()),
+    foundedYear: v.optional(v.number()),
+    websiteUrl: v.optional(v.string()),
+    hqCity: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+  },
+  handler: withAuditLog(async (ctx, args: {
+    employerOrgId: Id<"employerOrgs">;
+    tagline?: string;
+    about?: string;
+    industry?: string;
+    companySize?: string;
+    foundedYear?: number;
+    websiteUrl?: string;
+    hqCity?: string;
+    contactEmail?: string;
+  }) => {
+    await requireRole(ctx, [...COMPANY_EDITOR_ROLES]);
+    const { org } = await requireCompanyEditor(ctx, args.employerOrgId);
+
+    let websiteUrl = optionalText(args.websiteUrl, 200, "Website");
+    if (websiteUrl) {
+      if (!/^https?:\/\//i.test(websiteUrl)) websiteUrl = `https://${websiteUrl}`;
+      try {
+        new URL(websiteUrl);
+      } catch {
+        throw new ConvexError({ code: "validation", message: "Website URL is invalid" });
+      }
+    }
+    const contactEmail = optionalText(args.contactEmail, 200, "Contact email");
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+      throw new ConvexError({ code: "validation", message: "Contact email is invalid" });
+    }
+    const companySize = optionalText(args.companySize, 20, "Company size");
+    if (companySize && !(COMPANY_SIZES as readonly string[]).includes(companySize)) {
+      throw new ConvexError({ code: "validation", message: "Unknown company size" });
+    }
+    const year = args.foundedYear;
+    if (
+      year != null &&
+      (!Number.isInteger(year) || year < 1800 || year > new Date().getFullYear())
+    ) {
+      throw new ConvexError({ code: "validation", message: "Founded year out of range" });
+    }
+
+    const patch = {
+      tagline: optionalText(args.tagline, 120, "Tagline"),
+      about: optionalText(args.about, 3000, "About"),
+      industry: optionalText(args.industry, 80, "Industry"),
+      companySize,
+      foundedYear: year ?? undefined,
+      websiteUrl,
+      hqCity: optionalText(args.hqCity, 120, "Headquarters"),
+      contactEmail,
+      updatedAt: Date.now(),
+    };
+    await ctx.db.patch(org._id, patch);
+    return {
+      action: "update-company-profile",
+      target: { type: "employerOrg", id: org._id },
+      metadata: {
+        name: org.name,
+        changedFields: (Object.keys(patch) as Array<keyof typeof patch>).filter(
+          (k) => k !== "updatedAt" && patch[k] !== org[k],
+        ),
+      },
+    };
+  }),
+});
+
+// @no-audit-required: only mints an ephemeral upload token; attaching the logo is audited in setCompanyLogo.
+export const generateLogoUploadUrl = mutation({
+  args: { employerOrgId: v.id("employerOrgs") },
+  handler: async (ctx, { employerOrgId }) => {
+    await requireRole(ctx, [...COMPANY_EDITOR_ROLES]);
+    await requireCompanyEditor(ctx, employerOrgId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const setCompanyLogo = mutation({
+  args: {
+    employerOrgId: v.id("employerOrgs"),
+    storageId: v.optional(v.id("_storage")),
+  },
+  handler: withAuditLog(async (ctx, { employerOrgId, storageId }: {
+    employerOrgId: Id<"employerOrgs">;
+    storageId?: Id<"_storage">;
+  }) => {
+    await requireRole(ctx, [...COMPANY_EDITOR_ROLES]);
+    const { org } = await requireCompanyEditor(ctx, employerOrgId);
+    if (org.logoStorageId && org.logoStorageId !== storageId) {
+      await ctx.storage.delete(org.logoStorageId);
+    }
+    await ctx.db.patch(org._id, { logoStorageId: storageId, updatedAt: Date.now() });
+    return {
+      action: storageId ? "set-company-logo" : "remove-company-logo",
+      target: { type: "employerOrg", id: org._id },
+      metadata: { name: org.name },
+    };
+  }),
 });

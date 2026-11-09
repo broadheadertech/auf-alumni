@@ -23,7 +23,9 @@ import {
 import { api } from "@/lib/convex-api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { AUFAvatar } from "@/components/auf/AUFAvatar";
+import { ConnectButton } from "@/components/auf/ConnectButton";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { jobPostingSections } from "@/lib/job-posting";
 
 type GradKey = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -31,11 +33,17 @@ type Job = {
   _id: string;
   title: string;
   description: string;
+  responsibilities?: string[];
+  requirements?: string[];
+  benefits?: string[];
   location: string;
+  workMode?: string;
   employmentType: string;
+  experienceLevel?: string;
   salaryMin?: number;
   salaryMax?: number;
   salaryCurrency?: string;
+  skills?: string[];
   targetingBatches?: number[];
   targetingPrograms?: string[];
   targetingSkills?: string[];
@@ -48,6 +56,7 @@ type Job = {
 };
 
 type Alum = {
+  userId?: string;
   slug?: string;
   displayName?: string;
   initials?: string;
@@ -89,28 +98,6 @@ function gradFor(seed: string): GradKey {
   return (((Math.abs(h) % 6) + 1) as GradKey);
 }
 
-function parseBullets(description: string): string[] {
-  // Pulls lines that look like bullets (-, *, •, numbered).
-  return description
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => /^([-*•]|\d+[.)])\s+/.test(l))
-    .map((l) => l.replace(/^([-*•]|\d+[.)])\s+/, ""));
-}
-
-const DEFAULT_DO = [
-  "Ship features end-to-end across the product surface",
-  "Partner with design and PM on the user-facing experience",
-  "Own quality, performance, and reliability of what you ship",
-  "Pair with teammates and mentor on craft",
-];
-const DEFAULT_LOOKING = [
-  "3+ years building production software",
-  "Strong fluency in the team's primary stack",
-  "Comfortable communicating across product, design, and engineering",
-  "Bonus: AUF alum or Philippines market context",
-];
-
 function cohortBucket(program?: string): "it" | "business" | "engineering" {
   const p = (program ?? "").toLowerCase();
   if (/(\bit\b|information tech|computer|software|data)/.test(p)) return "it";
@@ -125,7 +112,7 @@ export default function JobDetailPage() {
   const params = useParams<{ jobId: string }>();
   const jobId = params?.jobId;
 
-  const jobs = useQuery(api.jobs.browse, { showUnmatched: true });
+  const jobs = useQuery(api.jobs.browse, {});
   const list = (jobs ?? []) as Job[];
   const job = useMemo(() => list.find((j) => j._id === jobId), [list, jobId]);
 
@@ -211,9 +198,14 @@ export default function JobDetailPage() {
     }
   };
 
-  const doItems = parseBullets(job.description).slice(0, 6);
-  const doList = doItems.length >= 3 ? doItems : DEFAULT_DO;
-  const lookList = DEFAULT_LOOKING;
+  // Shared with the board's detail pane so the two can't drift again.
+  const posting = jobPostingSections(job);
+  const {
+    roleMeta,
+    responsibilities: respList,
+    requirements: reqList,
+    benefits: benefitList,
+  } = posting;
 
   return (
     <div className="mx-auto max-w-[1180px] px-4 sm:px-7 py-6">
@@ -332,16 +324,55 @@ export default function JobDetailPage() {
           </div>
 
           <div className="auf-card p-6">
-            <h3 className="mb-3 font-serif text-[18px] font-semibold">
-              About the role
-            </h3>
-            <p className="mb-4 whitespace-pre-line text-[14px] leading-[1.6] ink-2">
-              {job.description}
-            </p>
-            <div className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
-              <ListBlock title="What you'll do" items={doList} />
-              <ListBlock title="What we're looking for" items={lookList} />
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-serif text-[18px] font-semibold">
+                About the role
+              </h3>
+              {roleMeta.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {roleMeta.map((m) => (
+                    <span
+                      key={m}
+                      className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[11px] ink-2"
+                    >
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
+            <p className="mb-4 whitespace-pre-line text-[14px] leading-[1.6] ink-2">
+              {posting.overview}
+            </p>
+            {posting.skills.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-2 text-[13px] font-semibold uppercase tracking-wider ink">
+                  Required skills
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {posting.skills.map((s) => (
+                    <span key={s} className="auf-chip">
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(respList.length > 0 || reqList.length > 0) && (
+              <div className="mt-5 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+                {respList.length > 0 && (
+                  <ListBlock title="Key responsibilities" items={respList} />
+                )}
+                {reqList.length > 0 && (
+                  <ListBlock title="Requirements" items={reqList} />
+                )}
+              </div>
+            )}
+            {benefitList.length > 0 && (
+              <div className="mt-5">
+                <ListBlock title="Benefits & perks" items={benefitList} />
+              </div>
+            )}
           </div>
 
           <div className="auf-card p-6">
@@ -449,9 +480,12 @@ export default function JobDetailPage() {
                             : ""}
                         </div>
                       </div>
-                      <button className="auf-btn auf-btn-outline auf-btn-sm">
-                        Connect
-                      </button>
+                      {a.userId ? (
+                        <ConnectButton
+                          otherUserId={a.userId}
+                          className="shrink-0"
+                        />
+                      ) : null}
                     </div>
                   ))}
                 </div>
