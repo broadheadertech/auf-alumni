@@ -8,7 +8,7 @@
  * alumna a one-time link to set her own PIN. Includes a checkpoint verify demo.
  */
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
@@ -48,6 +48,9 @@ export type AlumnaIdInput = {
   alumniId?: string | null;
 };
 
+/** Stable no-op: a value that never changes still needs a subscribe fn. */
+const NO_SUBSCRIBE = () => () => {};
+
 export function AlumniIdCard({ alumna }: { alumna: AlumnaIdInput }) {
   const card = useQuery(api.idCards.getCard, { alumnaId: alumna.id });
   const bindUid = useMutation(api.idCards.bindUid);
@@ -61,10 +64,15 @@ export function AlumniIdCard({ alumna }: { alumna: AlumnaIdInput }) {
   const realId = alumna.alumniId ?? null;
   const alumniId = realId ?? alumniIdOf(alumna.id, alumna.batch);
 
-  const [origin, setOrigin] = useState("");
-  useEffect(() => {
-    if (typeof window !== "undefined") setOrigin(window.location.origin);
-  }, []);
+  // The origin never changes, so there is nothing to subscribe to — the
+  // point of useSyncExternalStore here is its third argument, the server
+  // snapshot. That is what the effect was emulating: render "" on the server,
+  // the real origin on the client, without a hydration mismatch.
+  const origin = useSyncExternalStore(
+    NO_SUBSCRIBE,
+    () => window.location.origin,
+    () => "",
+  );
   const verifyUrl = realId ? `${origin}/i/${realId}` : "";
 
   // Exactly what a scanner sees — same query the public /i/[id] page uses.

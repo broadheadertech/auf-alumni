@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { useRouter } from "next/navigation";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -63,14 +63,17 @@ export default function SettingsPage() {
   const [discoveryHydrated, setDiscoveryHydrated] = useState(false);
   const [savingDiscovery, setSavingDiscovery] = useState(false);
 
-  useEffect(() => {
-    if (discoveryHydrated || !myProfile) return;
+  // Seed the form from the profile the first time it arrives, during render
+  // rather than in an effect. An effect would paint the empty form first and
+  // then fill it, which reads as a flicker on a slow connection. The guard
+  // means a background refetch never clobbers what the user has typed.
+  if (!discoveryHydrated && myProfile) {
+    setDiscoveryHydrated(true);
     setOpenWork(!!myProfile.openToWork);
     setOpenWorkNote(myProfile.openToWorkNote ?? "");
     setOpenHire(!!myProfile.openToHire);
     setOpenHireNote(myProfile.openToHireNote ?? "");
-    setDiscoveryHydrated(true);
-  }, [discoveryHydrated, myProfile]);
+  }
 
   const onSaveDiscovery = async () => {
     if (openWorkNote.length > 280 || openHireNote.length > 280) {

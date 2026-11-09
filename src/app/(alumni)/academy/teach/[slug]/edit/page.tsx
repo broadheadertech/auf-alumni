@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
@@ -94,18 +94,17 @@ export default function EditCoursePage({
   const [addingLesson, setAddingLesson] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Hydrate form once when course arrives. Guarded so user edits aren't
-  // clobbered by background refetches on the same slug.
-  useEffect(() => {
-    if (!hydrated && course) {
-      setTitle(course.title);
-      setSummary(course.summary);
-      setDescription(course.description);
-      setCategory(course.category);
-      setLevel(course.level);
-      setHydrated(true);
-    }
-  }, [course, hydrated]);
+  // Seed the form once the course arrives, during render rather than in an
+  // effect, so the fields are never briefly empty. Still guarded, so a
+  // background refetch on the same slug cannot clobber unsaved edits.
+  if (!hydrated && course) {
+    setHydrated(true);
+    setTitle(course.title);
+    setSummary(course.summary);
+    setDescription(course.description);
+    setCategory(course.category);
+    setLevel(course.level);
+  }
 
   if (course === undefined) {
     return (
@@ -537,7 +536,7 @@ export default function EditCoursePage({
               className="auf-input"
             />
             <p className="mt-1 text-[11.5px] ink-3">
-              Use the embed URL (e.g. YouTube's <code>/embed/&lt;id&gt;</code>).
+              Use the embed URL (e.g. YouTube&apos;s <code>/embed/&lt;id&gt;</code>).
             </p>
           </div>
         ) : (

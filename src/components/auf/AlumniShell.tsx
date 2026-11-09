@@ -11,7 +11,7 @@
  * in the topbar.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
@@ -83,10 +83,15 @@ export function AlumniShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Reset drawer on navigation.
-  useEffect(() => {
+  // Close on navigation, derived during render rather than in an effect.
+  // An effect runs *after* the new route has painted, so the menu was briefly
+  // visible over the page you had just navigated to. Comparing against the
+  // last rendered path closes it in the same render instead.
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
     setDrawerOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <div className="min-h-screen flex" data-density="cozy">

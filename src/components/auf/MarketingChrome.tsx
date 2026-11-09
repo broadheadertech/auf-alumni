@@ -5,7 +5,7 @@
  * Used by the public surface; auth and alumni surfaces have their own chrome.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "convex/react";
@@ -46,9 +46,15 @@ export function MarketingNav() {
   const signedIn = me != null;
   const appHome = appHomeFor(me ?? null);
 
-  useEffect(() => {
+  // Close on navigation, derived during render rather than in an effect.
+  // An effect runs *after* the new route has painted, so the menu was briefly
+  // visible over the page you had just navigated to. Comparing against the
+  // last rendered path closes it in the same render instead.
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
     setMenuOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <header
