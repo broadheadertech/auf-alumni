@@ -37,6 +37,8 @@ import { PostingStatusBadge, StatTile } from "@/components/auf/AdminBits";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 
 type EmployerView = FunctionReturnType<typeof api.adminData.employers>[number];
 type PostingView = EmployerView["postings"][number];
@@ -126,6 +128,10 @@ export default function AdminJobsPage() {
           : b.posting.postedAt.localeCompare(a.posting.postedAt),
       );
   }, [allRows, values, sort]);
+
+  const paged = usePagination(rows, {
+    resetKey: Object.values(values).join("|"),
+  });
 
   const totals = useMemo(
     () => ({
@@ -297,7 +303,7 @@ export default function AdminJobsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((r) => {
+                  paged.pageItems.map((r) => {
                     const pending = r.posting.status === "pending-moderation";
                     const busy = busyId === r.posting.id;
                     return (
@@ -386,9 +392,14 @@ export default function AdminJobsPage() {
       </Card>
 
       {!loading && (
-        <p className="mt-3 text-xs italic text-muted-foreground">
-          Showing {rows.length} of {allRows.length} postings.
-        </p>
+        <Pagination
+          state={paged}
+          noun={
+            paged.total === allRows.length
+              ? "posting"
+              : `matching posting (of ${allRows.length})`
+          }
+        />
       )}
 
       <Dialog

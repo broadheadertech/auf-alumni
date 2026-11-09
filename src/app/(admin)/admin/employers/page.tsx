@@ -56,6 +56,8 @@ import { useUrlFilters } from "@/lib/use-url-filters";
 import { useLookupOptions } from "@/lib/use-lookup-options";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 
 type EmployerView = FunctionReturnType<typeof api.adminData.employers>[number];
 type ContractFilter = EmployerView["contractState"];
@@ -150,6 +152,10 @@ export default function AdminEmployersPage() {
     });
     return list;
   }, [allEmployers, values, sort, dir]);
+
+  const paged = usePagination(rows, {
+    resetKey: Object.values(values).join("|"),
+  });
 
   const setSortKey = (key: SortKey) => {
     if (sort === key) setDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -320,7 +326,7 @@ export default function AdminEmployersPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((e) => (
+                  paged.pageItems.map((e) => (
                     <tr
                       key={e.id}
                       className="group border-b border-border align-top last:border-0 hover:bg-muted/30"
@@ -401,9 +407,14 @@ export default function AdminEmployersPage() {
       </Card>
 
       {!loading && (
-        <p className="mt-3 text-xs italic text-muted-foreground">
-          Showing {rows.length} of {allEmployers.length} employers.
-        </p>
+        <Pagination
+          state={paged}
+          noun={
+            paged.total === allEmployers.length
+              ? "employer"
+              : `matching employer (of ${allEmployers.length})`
+          }
+        />
       )}
 
       <AddEmployerDialog
