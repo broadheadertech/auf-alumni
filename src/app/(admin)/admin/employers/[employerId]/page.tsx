@@ -19,7 +19,6 @@ import { ConvexError } from "convex/values";
 import type { FunctionReturnType } from "convex/server";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   ChevronDown,
   Download,
   ExternalLink,
@@ -57,10 +56,14 @@ import {
   ContractBadge,
   PostingStatusBadge,
   StageBadge,
-  StatTile,
   TierBadge,
 } from "@/components/auf/AdminBits";
 import { cn } from "@/lib/utils";
+import {
+  DetailPage,
+  Stat,
+  StatStrip,
+} from "@/components/auf/admin-ui";
 
 type EmployerView = NonNullable<FunctionReturnType<typeof api.adminData.employer>>;
 type PostingView = EmployerView["postings"][number];
@@ -153,39 +156,32 @@ export default function EmployerDetailPage() {
   const left = employer.contractEnd ? daysFromToday(employer.contractEnd) : null;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/employers"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Employers
-      </Link>
-
-      {/* Header */}
-      <div className="mt-3 flex flex-wrap items-start gap-4">
-        <span className="flex h-14 w-14 items-center justify-center rounded-lg bg-foreground text-lg font-bold text-background">
+    <DetailPage
+      backHref="/admin/employers"
+      backLabel="Employers"
+      avatar={
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-foreground text-[13px] font-bold text-background">
           {employer.initials}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {employer.name}
-            </h1>
-            <TierBadge tier={employer.tier} />
-            <ContractBadge state={employer.contractState} />
-            {employer.suspended && (
-              <span className="inline-flex h-5 items-center rounded-full bg-destructive/10 px-2 text-xs font-medium text-destructive">
-                Suspended
-              </span>
-            )}
-          </div>
-          {employer.description && (
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              {employer.description}
-            </p>
+      }
+      title={employer.name}
+      badges={
+        <>
+          <TierBadge tier={employer.tier} />
+          <ContractBadge state={employer.contractState} />
+          {employer.suspended && (
+            <span className="inline-flex items-center rounded-full bg-destructive/10 px-2 py-0.5 text-[11.5px] font-medium text-destructive">
+              Suspended
+            </span>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        </>
+      }
+      subtitle={
+        <>
+          {employer.description && (
+            <span className="block max-w-2xl">{employer.description}</span>
+          )}
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
             {employer.industry && <span>{employer.industry}</span>}
             {employer.hqCity && <span>{employer.hqCity}</span>}
             {employer.websiteUrl && (
@@ -198,18 +194,22 @@ export default function EmployerDetailPage() {
                 Website <ExternalLink className="h-3 w-3" />
               </a>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* Summary tiles */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Postings" value={employer.postings.length} />
-        <StatTile label="Applicants" value={applicantTotal} />
-        <StatTile label="Hired" value={hiredTotal} />
-        <StatTile
+          </span>
+        </>
+      }
+    >
+      <StatStrip>
+        <Stat label="Postings" value={employer.postings.length} />
+        <Stat label="Applicants" value={applicantTotal} />
+        <Stat
+          label="Hired"
+          value={hiredTotal}
+          tone={hiredTotal > 0 ? "good" : "default"}
+        />
+        <Stat
           label="Contract"
           value={left === null ? "—" : left < 0 ? "Expired" : `${left}d`}
+          tone={left !== null && left < 0 ? "bad" : left !== null && left < 30 ? "warn" : "default"}
           hint={
             left === null || !employer.contractEnd
               ? "no contract on file"
@@ -218,7 +218,7 @@ export default function EmployerDetailPage() {
                 : "until renewal"
           }
         />
-      </div>
+      </StatStrip>
 
       {/* Contract + documents */}
       <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -350,7 +350,7 @@ export default function EmployerDetailPage() {
       {editOpen && (
         <EditContractDialog employer={employer} onClose={() => setEditOpen(false)} />
       )}
-    </div>
+    </DetailPage>
   );
 }
 

@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { ExternalLink, LayoutTemplate, RotateCcw, Save } from "lucide-react";
+import { ExternalLink, RotateCcw, Save } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 const PAGE_KEY = "home";
 
@@ -83,24 +84,22 @@ export default function AdminContentPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8 pb-28">
-      <div className="flex flex-wrap items-center gap-2">
-        <LayoutTemplate className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">Main page</h1>
+    <AdminPage
+      title="Main page"
+      description="Edit the text on the public homepage. Live figures (verified alumni, jobs, mentors) come from the database and are not edited here."
+      width="narrow"
+      actions={
         <Link
           href="/"
           target="_blank"
-          className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
         >
           View page <ExternalLink className="h-3.5 w-3.5" />
         </Link>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Edit the text on the public homepage. Live figures (verified alumni,
-        jobs, mentors) come from the database and aren&apos;t edited here.
-      </p>
+      }
+    >
       {data?.updatedAt && (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           Last saved {new Date(data.updatedAt).toLocaleString()}
           {data.updatedByName ? ` by ${data.updatedByName}` : ""}
         </p>
@@ -197,6 +196,6 @@ export default function AdminContentPage() {
           </div>
         </div>
       )}
-    </div>
+    </AdminPage>
   );
 }

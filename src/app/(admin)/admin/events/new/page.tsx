@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 const EVENT_CATEGORIES = [
   { value: "reunion", label: "Reunion" },
@@ -203,8 +204,11 @@ export default function NewEventPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl px-4 sm:px-6 py-8 sm:py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Publish event</h1>
+    <AdminPage
+      title="Publish event"
+      description="Create an event and choose who it is sent to."
+      width="narrow"
+    >
       <Card className="mt-6">
         <CardContent className="p-6">
           <form onSubmit={onSubmit} className="space-y-4">
@@ -522,6 +526,6 @@ export default function NewEventPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AdminPage>
   );
 }

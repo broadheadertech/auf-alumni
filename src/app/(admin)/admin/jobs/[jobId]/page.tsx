@@ -18,7 +18,6 @@ import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   Building2,
   CalendarDays,
   Check,
@@ -47,8 +46,12 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import {
   PostingStatusBadge,
   StageBadge,
-  StatTile,
 } from "@/components/auf/AdminBits";
+import {
+  DetailPage,
+  Stat,
+  StatStrip,
+} from "@/components/auf/admin-ui";
 
 const DAY = 86_400_000;
 
@@ -143,34 +146,23 @@ export default function AdminJobDetailPage() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/jobs"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Job postings
-      </Link>
-
-      {/* Header */}
-      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {posting.title}
-            </h1>
-            <PostingStatusBadge status={posting.status} />
-          </div>
-          <Link
-            href={`/admin/employers/${employer.id}`}
-            className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <Building2 className="h-4 w-4" />
-            {employer.name}
-          </Link>
-        </div>
-        {pending && (
-          <div className="flex flex-wrap items-center gap-2">
+    <DetailPage
+      backHref="/admin/jobs"
+      backLabel="Job postings"
+      title={posting.title}
+      badges={<PostingStatusBadge status={posting.status} />}
+      subtitle={
+        <Link
+          href={`/admin/employers/${employer.id}`}
+          className="inline-flex items-center gap-1.5 hover:text-foreground"
+        >
+          <Building2 className="h-3.5 w-3.5" />
+          {employer.name}
+        </Link>
+      }
+      actions={
+        pending ? (
+          <>
             <Button size="sm" disabled={busy} onClick={onApprove}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Approve &amp; publish
@@ -187,25 +179,24 @@ export default function AdminJobDetailPage() {
               <X className="h-4 w-4" />
               Reject
             </Button>
-          </div>
-        )}
-      </div>
-
+          </>
+        ) : undefined
+      }
+    >
       {posting.statusReason && (
         <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
           <span className="font-medium">Moderation note:</span> {posting.statusReason}
         </div>
       )}
 
-      {/* Summary */}
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Applicants" value={applicants.length} />
-        <StatTile
+      <StatStrip className={posting.statusReason ? "mt-3" : ""}>
+        <Stat label="Applicants" value={applicants.length} />
+        <Stat
           label="Days posted"
           value={daysLive}
           hint={`since ${fmtDate(posting.postedAt)}`}
         />
-        <StatTile
+        <Stat
           label="CVs reviewed"
           value={`${reviewed} / ${applicants.length}`}
           hint={
@@ -214,8 +205,8 @@ export default function AdminJobDetailPage() {
               : undefined
           }
         />
-        <StatTile label="Hired" value={hired} />
-      </div>
+        <Stat label="Hired" value={hired} tone={hired > 0 ? "good" : "default"} />
+      </StatStrip>
 
       {/* Post details */}
       <Card className="mt-4">
@@ -393,7 +384,7 @@ export default function AdminJobDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DetailPage>
   );
 }
 

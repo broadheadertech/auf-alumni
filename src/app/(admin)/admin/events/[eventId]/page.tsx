@@ -12,12 +12,10 @@
  */
 
 import { useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   Clock,
@@ -46,6 +44,9 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { StatTile } from "@/components/auf/AdminBits";
 import { cn } from "@/lib/utils";
+import {
+  DetailPage,
+} from "@/components/auf/admin-ui";
 
 export default function AdminEventDetailPage() {
   const params = useParams<{ eventId: string }>();
@@ -123,18 +124,12 @@ export default function AdminEventDetailPage() {
   const totalForBar = Math.max(1, reach, responded);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/events"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Events
-      </Link>
-
-      {/* Header */}
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{event.title}</h1>
+    <DetailPage
+      backHref="/admin/events"
+      backLabel="Events"
+      title={event.title}
+      badges={
+        <>
         <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
           {eventCategoryLabel(event.category)}
         </span>
@@ -150,11 +145,11 @@ export default function AdminEventDetailPage() {
         >
           {event.cancelled ? "Cancelled" : event.upcoming ? "Upcoming" : "Past"}
         </span>
-      </div>
-      <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        {event.description}
-      </p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+        </>
+      }
+      subtitle={event.description}
+    >
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <CalendarDays className="h-4 w-4" />
           {fmtDateTime(event.startsAt)}
@@ -274,7 +269,7 @@ export default function AdminEventDetailPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </DetailPage>
   );
 }
 

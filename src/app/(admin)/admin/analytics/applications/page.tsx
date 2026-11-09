@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { toast } from "sonner";
-import { ArrowLeft, Download, SlidersHorizontal } from "lucide-react";
+import { Download, SlidersHorizontal } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { APPLICATION_STAGES, STAGE_LABEL, type ApplicationStage } from "@/lib/mock-admin";
 import {
@@ -37,6 +37,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { DetailPage } from "@/components/auf/admin-ui";
 
 type View = "applications" | "hires" | "hire-rate" | "time-to-hire";
 
@@ -170,21 +171,17 @@ export default function AnalyticsApplicationsPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href={backHref}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Analytics
-      </Link>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{viewMeta.label}</h1>
+    <DetailPage
+      backHref={backHref}
+      backLabel="Analytics"
+      title={viewMeta.label}
+      subtitle={viewMeta.description}
+      actions={
         <Button variant="outline" size="sm" onClick={onExport} disabled={rows.length === 0}>
           <Download className="h-4 w-4" /> Export CSV
         </Button>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">{viewMeta.description}</p>
+      }
+    >
 
       {/* Active analytics filters */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
@@ -385,7 +382,7 @@ export default function AnalyticsApplicationsPage() {
           </Button>
         </div>
       )}
-    </div>
+    </DetailPage>
   );
 }
 

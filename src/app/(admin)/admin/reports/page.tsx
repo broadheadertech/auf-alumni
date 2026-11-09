@@ -5,6 +5,7 @@ import { Loader2, Mail } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return "—";
@@ -33,11 +34,11 @@ export default function AdminReportsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-      <p className="text-sm text-muted-foreground">
-        Weekly and monthly operational summaries.
-      </p>
+    <AdminPage
+      title="Reports"
+      description="Weekly and monthly operational summaries."
+      width="narrow"
+    >
 
       <Card className="mt-6">
         <CardContent className="p-6">
@@ -81,7 +82,7 @@ export default function AdminReportsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </AdminPage>
   );
 }
 

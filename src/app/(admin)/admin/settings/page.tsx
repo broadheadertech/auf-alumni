@@ -19,7 +19,6 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Settings2,
   X,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
@@ -28,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 const DEGREES = ["Undergraduate", "Graduate"] as const;
 
@@ -84,15 +84,11 @@ export default function AdminSettingsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <Settings2 className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Manage the colleges and courses/programs alumni choose from. Changes here
-        take effect immediately across profiles, verification, and filters.
-      </p>
+    <AdminPage
+      title="Colleges & programmes"
+      description="The colleges and programmes alumni choose from. Changes take effect immediately across profiles, verification and filters."
+      width="narrow"
+    >
 
       {data === undefined ? (
         <Card className="mt-6">
@@ -146,7 +142,7 @@ export default function AdminSettingsPage() {
           </div>
         </>
       )}
-    </div>
+    </AdminPage>
   );
 }
 

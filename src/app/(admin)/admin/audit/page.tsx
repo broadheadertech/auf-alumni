@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type AuditRow = {
   _id: string;
@@ -80,11 +81,10 @@ export default function AdminAuditPage() {
   const list = rows as AuditRow[];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Audit log</h1>
-      <p className="text-sm text-muted-foreground">
-        Immutable append-only log of every admin action.
-      </p>
+    <AdminPage
+      title="Audit log"
+      description="Immutable, append-only record of every admin action."
+    >
 
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <div>
@@ -193,6 +193,6 @@ export default function AdminAuditPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </AdminPage>
   );
 }

@@ -18,18 +18,15 @@
  */
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowLeft,
   Check,
   Download,
   FileText,
   Loader2,
-  ShieldCheck,
   X,
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
@@ -58,6 +55,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { DetailPage, Stat } from "@/components/auf/admin-ui";
 
 const FILTER_KEYS = ["q", "flags", "college", "program", "batch", "from", "to"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -312,24 +310,12 @@ export default function AlumniApprovalsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/alumni"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Alumni
-      </Link>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <ShieldCheck className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Alumnus approvals
-        </h1>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Verify and admit new alumni registrations. Review the registry match and
-        uploaded documents before approving.
-      </p>
+    <DetailPage
+      backHref="/admin/alumni"
+      backLabel="Alumni"
+      title="Alumnus approvals"
+      subtitle="Verify and admit new alumni registrations. Review the registry match and uploaded documents before approving."
+    >
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="In queue" value={rows ? totals.pending : "—"} />
@@ -707,7 +693,7 @@ export default function AlumniApprovalsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </DetailPage>
   );
 }
 

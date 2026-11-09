@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ExternalLink, RotateCcw, Save, ShieldCheck, Stamp } from "lucide-react";
+import { ExternalLink, RotateCcw, Save, ShieldCheck } from "lucide-react";
 import {
   CV_ACCENTS,
   CV_SECTIONS,
@@ -30,6 +30,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 const POLICIES: { value: SectionPolicy; label: string }[] = [
   { value: "required", label: "Required" },
@@ -69,13 +70,11 @@ export default function AdminCvTemplatePage() {
   const accentHex = CV_ACCENTS[cfg.accent].hex;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Stamp className="h-5 w-5 text-muted-foreground" />
-          <h1 className="text-2xl font-semibold tracking-tight">CV template</h1>
-        </div>
-        <div className="flex items-center gap-2">
+    <AdminPage
+      title="CV template"
+      description="The official AUF CV template. Alumni generate their CV against this — set the branding, verification marks, and which sections they may include."
+      actions={
+        <>
           <Button variant="ghost" size="sm" onClick={onReset}>
             <RotateCcw className="h-4 w-4" />
             Reset
@@ -84,8 +83,9 @@ export default function AdminCvTemplatePage() {
             <Save className="h-4 w-4" />
             {dirty ? "Save template" : "Saved"}
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
       <p className="mt-1 text-sm text-muted-foreground">
         The official AUF CV template. Alumni generate their CV against this — set
         the branding, verification marks, and which sections they may include.
@@ -248,7 +248,7 @@ export default function AdminCvTemplatePage() {
         Saved to this browser for the prototype. When wired to the backend this
         becomes a single org-wide template all alumni CVs inherit.
       </p>
-    </div>
+    </AdminPage>
   );
 }
 
