@@ -14,7 +14,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, PlayCircle } from "lucide-react";
 import { topicForPath, type Surface } from "@/lib/guide/content";
 import { tourForPath } from "@/lib/guide/tours";
 import { cn } from "@/lib/utils";
@@ -47,16 +47,19 @@ export function PageHelpLink({
   );
 
   if (tour) {
+    // Named for what it does, not for what it is about. "How this page works"
+    // reads like a link to documentation, which is what it used to be — and
+    // left people unsure they could run the walkthrough a second time.
     return (
       <button
         type="button"
         data-tour="page-help"
-        title={`Take the tour: ${tour.label}`}
+        title={`Show me: ${tour.label} (${tour.steps.length} steps)`}
         onClick={() => window.dispatchEvent(new Event("auf:start-tour"))}
         className={classes}
       >
-        <CircleHelp size={18} />
-        <span className="hidden lg:inline text-[13px]">How this page works</span>
+        <PlayCircle size={18} />
+        <span className="hidden lg:inline text-[13px]">Show me this page</span>
       </button>
     );
   }
