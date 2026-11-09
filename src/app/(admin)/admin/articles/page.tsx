@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type Row = {
   _id: string;
@@ -130,27 +131,24 @@ export default function AdminArticlesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <Newspaper className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">Articles</h1>
-        <div className="ml-auto flex items-center gap-2">
+    <AdminPage
+      title="Articles"
+      description="News and announcements shown on the public newsroom. Only published articles are visible to visitors."
+      actions={
+        <>
           <Link
             href="/news"
             target="_blank"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
           >
             Newsroom <ExternalLink className="h-3.5 w-3.5" />
           </Link>
           <Button onClick={onNew} disabled={busy}>
             <Plus className="h-4 w-4" /> New article
           </Button>
-        </div>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        News and announcements shown on the public newsroom. Only published
-        articles are visible to visitors.
-      </p>
+        </>
+      }
+    >
 
       {rows === undefined ? (
         <Card className="mt-6">
@@ -231,6 +229,6 @@ export default function AdminArticlesPage() {
           </div>
         </>
       )}
-    </div>
+    </AdminPage>
   );
 }
