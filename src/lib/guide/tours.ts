@@ -30,6 +30,12 @@ export type TourStep = {
 export type Tour = {
   /** Exact pathname, or a prefix when it ends in "*". */
   route: string;
+  /**
+   * Exact paths a prefix route must not claim. `/admin/alumni/*` is meant for
+   * `/admin/alumni/<id>`, not for the sibling `/admin/alumni/approvals`,
+   * which is a different screen entirely.
+   */
+  exclude?: string[];
   /** Shown in the offer prompt and the tour header. */
   label: string;
   steps: TourStep[];
@@ -88,7 +94,18 @@ export const TOURS: Tour[] = [
         placement: "right",
       },
       {
-        target: "privacy-control",
+        target: "profile-sections",
+        title: "Contact is closed by default",
+        body: "Phone, address and your social links. Phone starts visible only to connections and your address only to you \u2014 open them up deliberately, never by accident.",
+        placement: "right",
+      },
+      {
+        target: "profile-sections",
+        title: "Employment history takes real dates",
+        body: "Under Experience, each role has From and To month pickers and an \"I currently work here\" tick. The dates are what tracer-study reporting counts.",
+        placement: "right",
+      },
+      {
         title: "Every field has its own privacy",
         body: "Public, alumni-only, connections-only or private. Set it once and the whole site honours it.",
         placement: "left",
@@ -111,7 +128,6 @@ export const TOURS: Tour[] = [
         placement: "center",
       },
       {
-        target: "jobs-filters",
         title: "Narrow it down",
         body: "Work mode, employment type and experience level. Your filters are remembered while you browse.",
         placement: "bottom",
@@ -134,15 +150,20 @@ export const TOURS: Tour[] = [
         placement: "center",
       },
       {
-        target: "applications-list",
         title: "Your pipeline",
         body: "The stage chip shows where you are. \"CV reviewed\" means the employer has actually opened it.",
         placement: "top",
       },
       {
-        target: "applications-list",
+        target: "interview-invite",
         title: "Interview invitations appear here",
-        body: "When an employer proposes a time, you'll see it on the application with buttons to confirm or decline.",
+        body: "The time, place and any note from the employer, with buttons to confirm or decline.",
+        placement: "top",
+      },
+      {
+        target: "interview-invite",
+        title: "Declining doesn't withdraw you",
+        body: "If the time doesn't suit, say so and suggest when would \u2014 you stay in the process and they can propose another.",
         placement: "top",
       },
     ],
@@ -157,13 +178,11 @@ export const TOURS: Tour[] = [
         placement: "center",
       },
       {
-        target: "id-card",
         title: "Your card",
         body: "The QR code resolves to a public verification page, so anyone can check it's genuine without seeing your details.",
         placement: "right",
       },
       {
-        target: "id-actions",
         title: "Issue, activate or replace",
         body: "Set a PIN when you activate. Report it lost here and the old one stops working immediately.",
         placement: "left",
@@ -186,7 +205,6 @@ export const TOURS: Tour[] = [
         placement: "bottom",
       },
       {
-        target: "mentorship-list",
         title: "Send a request",
         body: "Say what you'd like to discuss. A specific ask gets a reply far more often than a general one.",
         placement: "right",
@@ -217,9 +235,15 @@ export const TOURS: Tour[] = [
         placement: "top",
       },
       {
-        target: "applicants-list",
+        target: "interview-scheduler",
         title: "Schedule a screening",
-        body: "Inside a candidate, set a time, format and place. They're notified and asked to confirm.",
+        body: "Set a time, length, format and place. The candidate is notified and asked to confirm, and the application moves to the interview stage for you.",
+        placement: "top",
+      },
+      {
+        target: "interview-scheduler",
+        title: "You can tell confirmed from unanswered",
+        body: "\"Awaiting confirmation\" means they haven't replied yet; \"Confirmed\" means they have. Rescheduling clears a previous confirmation.",
         placement: "top",
       },
     ],
@@ -308,6 +332,31 @@ export const TOURS: Tour[] = [
     ],
   },
   {
+    // Prefix: the route carries the alumnus id.
+    route: "/admin/alumni/*",
+    exclude: ["/admin/alumni/approvals"],
+    label: "An alumnus record",
+    steps: [
+      {
+        title: "Everything about one graduate",
+        body: "Their applications, CV, Alumni ID and account status \u2014 and the one field an admin can override.",
+        placement: "center",
+      },
+      {
+        target: "employment-override",
+        title: "Correcting employment status",
+        body: "Alumni set this themselves, so it goes stale. If you learn otherwise \u2014 a tracer-study call, say \u2014 you can correct it here.",
+        placement: "left",
+      },
+      {
+        target: "employment-override",
+        title: "A reason is required",
+        body: "You're changing someone else's profile, so the reason is mandatory and goes into the audit log alongside the change.",
+        placement: "left",
+      },
+    ],
+  },
+  {
     route: "/admin/users",
     label: "Managing accounts",
     steps: [
@@ -358,7 +407,6 @@ export const TOURS: Tour[] = [
         placement: "bottom",
       },
       {
-        target: "analytics-export",
         title: "Take it away",
         body: "Export CSV gives you the filtered rows for your own reporting.",
         placement: "left",
@@ -375,7 +423,6 @@ export const TOURS: Tour[] = [
         placement: "center",
       },
       {
-        target: "moderation-list",
         title: "Approve or reject",
         body: "Read the posting, check the employer's tier, then decide. Rejections ask for a reason the employer will see.",
         placement: "top",
@@ -384,20 +431,28 @@ export const TOURS: Tour[] = [
   },
 ];
 
-/** The tour for a pathname, or null. Longest matching route wins. */
+/**
+ * The tour for a pathname, or null.
+ *
+ * An exact route always beats a prefix one: `/admin/alumni` is the roster and
+ * `/admin/alumni/<id>` is one record, and a prefix that also matched the bare
+ * base would have given the roster the record's tour. Among prefixes, the
+ * longest wins.
+ */
 export function tourForPath(pathname: string): Tour | null {
+  const exact = TOURS.find((t) => !t.route.endsWith("*") && t.route === pathname);
+  if (exact) return exact;
+
   let best: Tour | null = null;
   let bestLength = -1;
 
   for (const tour of TOURS) {
-    const isPrefix = tour.route.endsWith("*");
-    const base = isPrefix ? tour.route.slice(0, -1) : tour.route;
-    const matches = isPrefix
-      ? pathname === base.replace(/\/$/, "") || pathname.startsWith(base)
-      : pathname === base;
-    // Compare against the matched base, not the incumbent's raw route, or a
-    // short prefix can beat a longer exact match.
-    if (matches && base.length > bestLength) {
+    if (!tour.route.endsWith("*")) continue;
+    const base = tour.route.slice(0, -1);
+    // Require something after the base, or a prefix would claim its own root.
+    if (!pathname.startsWith(base) || pathname.length <= base.length) continue;
+    if (tour.exclude?.includes(pathname)) continue;
+    if (base.length > bestLength) {
       best = tour;
       bestLength = base.length;
     }

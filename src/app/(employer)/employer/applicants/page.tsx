@@ -305,6 +305,7 @@ function ApplicantsInner() {
         {/* Filters */}
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <FilterPanel
+            data-tour="applicants-filters"
             fields={fields}
             values={values}
             onChange={onFilterChange}
@@ -334,7 +335,7 @@ function ApplicantsInner() {
             </select>
           </div>
 
-          <div className="space-y-2">
+          <div data-tour="applicants-list" className="space-y-2">
             {applicants === undefined ? (
               <Card>
                 <CardContent className="p-10 text-center text-sm text-muted-foreground">

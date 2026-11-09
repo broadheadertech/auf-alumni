@@ -252,7 +252,7 @@ export default function AdminAnalyticsPage() {
       </p>
 
       {/* Filters */}
-      <Card className="mt-5">
+      <Card data-tour="analytics-filters" className="mt-5">
         <CardContent className="grid gap-4 p-4 md:grid-cols-[200px_1fr]">
           <div className="space-y-3">
             <div>

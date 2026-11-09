@@ -512,7 +512,10 @@ export default function ProfileEditPage() {
       </Card>
 
       {/* Section tabs — switch panels instead of scrolling */}
-      <div className="my-4 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1">
+      <div
+        data-tour="profile-sections"
+        className="my-4 flex gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1"
+      >
         {SECTIONS.map((s) => (
           <button
             key={s.id}
@@ -1398,7 +1401,7 @@ export default function ProfileEditPage() {
           </Card>
 
           <div className="flex justify-end gap-2">
-            <Button type="submit" size="lg" disabled={submitting}>
+            <Button data-tour="profile-save" type="submit" size="lg" disabled={submitting}>
               {submitting ? "Saving…" : "Save profile"}
             </Button>
           </div>

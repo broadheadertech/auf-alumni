@@ -75,6 +75,12 @@ type Rect = { top: number; left: number; width: number; height: number };
 
 const PAD = 6;
 
+/** Rendered and non-zero. A hidden tab's contents measure 0x0. */
+function isVisible(el: Element): boolean {
+  const r = el.getBoundingClientRect();
+  return r.width > 1 && r.height > 1;
+}
+
 /**
  * The target's rect, clamped to the viewport.
  *
@@ -174,7 +180,12 @@ export function Tour({ surface }: { surface: Surface }) {
       for (let i = from; i >= 0 && i < steps.length; i += direction) {
         const t = steps[i].target;
         if (!t) return i; // centred steps need no target
-        if (document.querySelector(`[data-tour="${t}"]`)) return i;
+        const el = document.querySelector(`[data-tour="${t}"]`);
+        // Present but collapsed counts as absent. Several targets live inside
+        // a tab that is only rendered when selected, or a row that is only
+        // rendered when expanded — a zero-size rect would put the spotlight on
+        // nothing and leave the card pointing at the corner of the screen.
+        if (el && isVisible(el)) return i;
       }
       return -1;
     },
@@ -193,7 +204,7 @@ export function Tour({ surface }: { surface: Surface }) {
     }
 
     const el = document.querySelector(`[data-tour="${step.target}"]`);
-    if (!el) {
+    if (!el || !isVisible(el)) {
       const id = requestAnimationFrame(() => setRect(null));
       return () => cancelAnimationFrame(id);
     }

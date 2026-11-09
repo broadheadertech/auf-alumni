@@ -216,6 +216,7 @@ function FindMentors() {
     <div className="mt-4 grid gap-6 lg:grid-cols-[260px_1fr]">
       <aside className="lg:sticky lg:top-20 lg:self-start">
         <FilterPanel
+          data-tour="mentorship-filters"
           fields={fields}
           values={values}
           onChange={onFilterChange}
@@ -257,6 +258,7 @@ function FindMentors() {
               {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
+              {/* list anchor */}
               {mentors.map((m, i) => (
                 <Card key={m.userId}>
                   <CardContent className="flex h-full flex-col p-4">
