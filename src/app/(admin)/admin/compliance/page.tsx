@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type DSR = {
   _id: string;
@@ -158,11 +159,10 @@ export default function CompliancePage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Compliance</h1>
-      <p className="text-sm text-muted-foreground">
-        Data subject rights (DPA) + incident response (NFR34 72-hour window).
-      </p>
+    <AdminPage
+      title="Compliance"
+      description="Data subject rights (DPA) and incident response (NFR34 72-hour window)."
+    >
 
       {/* Incidents */}
       <section className="mt-6">
@@ -468,6 +468,6 @@ export default function CompliancePage() {
         <AlertTriangle />
         <Clock />
       </span>
-    </div>
+    </AdminPage>
   );
 }

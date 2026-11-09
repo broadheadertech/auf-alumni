@@ -122,7 +122,7 @@ function DashboardBody({ d }: { d: ReturnType<typeof buildMetrics> }) {
   return (
     <>
       {/* 1 · Core counts */}
-      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div data-tour="dash-counts" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Tile
           icon={Building2}
           label="Employers"
@@ -156,7 +156,7 @@ function DashboardBody({ d }: { d: ReturnType<typeof buildMetrics> }) {
 
       {/* 2 · Needs attention */}
       <SectionTitle>Needs attention</SectionTitle>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div data-tour="dash-attention" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Tile
           icon={UserPlus}
           label="Pending approvals"
@@ -202,7 +202,7 @@ function DashboardBody({ d }: { d: ReturnType<typeof buildMetrics> }) {
           These are read as findings now: two columns, a rule between them,
           and tone carried by a short prefix rather than a decorative dot.
         */
-        <div className="mt-4 rounded-lg border border-border bg-card p-4">
+        <div data-tour="dash-insights" className="mt-4 rounded-lg border border-border bg-card p-4">
           <SectionHeading className="mb-3">What the numbers say</SectionHeading>
           <ul className="grid gap-x-8 gap-y-2 sm:grid-cols-2">
             {d.insights.map((ins, i) => (

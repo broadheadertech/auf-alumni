@@ -27,6 +27,8 @@ export function SelectCheckbox({
   label: string;
   disabled?: boolean;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -56,6 +58,7 @@ export function BulkActionBar({
   noun = "item",
   children,
   className,
+  "data-tour": dataTour,
 }: {
   count: number;
   total: number;
@@ -68,10 +71,13 @@ export function BulkActionBar({
   /** Bulk action buttons, shown when something is selected. */
   children?: React.ReactNode;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   const plural = (n: number) => `${n} ${noun}${n === 1 ? "" : "s"}`;
   return (
     <div
+      data-tour={dataTour}
       role="toolbar"
       aria-label="Bulk actions"
       className={cn(

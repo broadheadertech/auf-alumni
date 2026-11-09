@@ -43,6 +43,7 @@ import {
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { PageHelpLink } from "./PageHelpLink";
+import { Tour } from "./Tour";
 import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
@@ -167,6 +168,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <div className="ml-auto flex min-w-0 items-center gap-1.5">
               <GlobalSearch variant="icon" />
               <PageHelpLink surface="admin" />
+              <Tour surface="admin" />
               <NotificationDropdown />
             </div>
           </div>

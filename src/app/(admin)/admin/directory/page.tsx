@@ -29,6 +29,9 @@ import {
 } from "@/components/auf/DirectoryCard";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
+import { AdminPage } from "@/components/auf/admin-ui";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 
 const FILTER_KEYS = [
   "q",
@@ -218,9 +221,17 @@ export default function AdminDirectoryPage() {
 
   const loading = convexResult === undefined;
 
-  const totalLabel = counts
-    ? `${counts.matched} of ${counts.total} alumni`
-    : `${convexCards.length} alumni`;
+  const paged = usePagination(convexCards, {
+    resetKey: Object.values(values).join("|"),
+  });
+
+  // counts.total is the whole verified roster, which the fetched page does not
+  // know about — keep it in the summary so a filtered view still says what it
+  // is a subset of.
+  const pagedPlural =
+    counts && counts.matched !== counts.total
+      ? `matching alumni (of ${counts.total} verified)`
+      : "alumni";
 
   const applySuggestion = (f: SuggestionFilter) => {
     const years = f.batches ?? [];
@@ -238,34 +249,22 @@ export default function AdminDirectoryPage() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-10">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight">Alumni directory</h1>
-        <p className="mt-2 text-muted-foreground">
-          Full verified-alumni roster. Filter by college, program, batch, city,
-          status, or company — or search by name, company, or skill.
-        </p>
-        <p className="mt-2 text-xs italic text-muted-foreground">
-          Admin-only. The directory is private to alumni and is not exposed in
-          the alumnus-facing app.
-        </p>
-      </div>
+    <AdminPage
+      title="Alumni directory"
+      description="Full verified-alumni roster. Admin-only — the directory is private to alumni and is not exposed in the alumnus-facing app."
+    >
 
-      <div className="grid gap-8 lg:grid-cols-[280px_1fr]">
-        <aside className="lg:sticky lg:top-20 lg:self-start">
-          <FilterPanel
-            fields={fields}
-            values={values}
-            onChange={onFilterChange}
-            onReset={reset}
-            restored={restored}
-          />
-        </aside>
+      <FilterPanel
+        layout="bar"
+        fields={fields}
+        values={values}
+        onChange={onFilterChange}
+        onReset={reset}
+        restored={restored}
+      />
 
-        <section>
-          <div className="mb-4 text-sm text-muted-foreground">
-            Showing {totalLabel}
-          </div>
+      <div className="mt-3">
+        <div>
 
           {loading ? (
             <div className="py-16 text-center text-sm text-muted-foreground">
@@ -286,13 +285,16 @@ export default function AdminDirectoryPage() {
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {convexCards.map((card) => (
+              {paged.pageItems.map((card) => (
                 <DirectoryCard key={card.slug} data={card} />
               ))}
             </div>
           )}
-        </section>
+          {!loading && convexCards.length > 0 && (
+            <Pagination state={paged} noun="alumnus" plural={pagedPlural} />
+          )}
+        </div>
       </div>
-    </div>
+    </AdminPage>
   );
 }

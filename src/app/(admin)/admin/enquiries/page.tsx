@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type Enquiry = {
   _id: string;
@@ -158,20 +159,17 @@ export default function AdminEnquiriesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <Inbox className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">Enquiries</h1>
-        {rows !== undefined && (
-          <span className="text-sm text-muted-foreground">
+    <AdminPage
+      title="Enquiries"
+      description="Messages from the public contact forms. A copy is emailed to the AUF address for each topic; this is the record you can triage."
+      actions={
+        rows !== undefined ? (
+          <span className="text-[13px] text-muted-foreground">
             {counts.new ?? 0} new
           </span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Messages sent from the public contact forms. A copy is emailed to the
-        AUF address for each topic; this is the record you can triage.
-      </p>
+        ) : undefined
+      }
+    >
 
       {rows === undefined ? (
         <Card className="mt-6">
@@ -344,6 +342,6 @@ export default function AdminEnquiriesPage() {
           </div>
         </>
       )}
-    </div>
+    </AdminPage>
   );
 }

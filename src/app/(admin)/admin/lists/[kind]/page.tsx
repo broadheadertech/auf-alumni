@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type Config = {
   kind: LookupKind;
@@ -209,15 +210,18 @@ function ReferenceList({ config }: { config: Config }) {
   const groupListId = `groups-${config.kind}`;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <config.Icon className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">{config.title}</h1>
-        {items !== undefined && (
-          <span className="text-sm text-muted-foreground">{activeCount} active</span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">{config.description}</p>
+    <AdminPage
+      title={config.title}
+      description={config.description}
+      width="narrow"
+      actions={
+        items !== undefined ? (
+          <span className="text-[13px] text-muted-foreground">
+            {activeCount} active
+          </span>
+        ) : undefined
+      }
+    >
       <p className="mt-1 text-xs text-muted-foreground">
         Other lists:{" "}
         {Object.entries(CONFIGS)
@@ -449,6 +453,6 @@ function ReferenceList({ config }: { config: Config }) {
           </div>
         </div>
       )}
-    </div>
+    </AdminPage>
   );
 }

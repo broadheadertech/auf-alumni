@@ -13,7 +13,6 @@ import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 import {
   Archive,
-  ArrowLeft,
   ExternalLink,
   ImagePlus,
   Save,
@@ -29,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { cn } from "@/lib/utils";
+import { DetailPage } from "@/components/auf/admin-ui";
 
 type Article = {
   _id: string;
@@ -197,15 +197,12 @@ export default function AdminArticleEditorPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/articles"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Articles
-      </Link>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+    <DetailPage
+      backHref="/admin/articles"
+      backLabel="Articles"
+      width="narrow"
+      title={form.title || "Untitled article"}
+      badges={
         <span
           className={cn(
             "rounded px-1.5 py-0.5 text-[11px] font-medium capitalize",
@@ -214,22 +211,27 @@ export default function AdminArticleEditorPage() {
         >
           {article.status}
         </span>
-        <span className="text-xs text-muted-foreground">
+      }
+      subtitle={
+        <>
           {article.publishedAt
             ? `First published ${new Date(article.publishedAt).toLocaleDateString()} · `
             : ""}
           Last saved {new Date(article.updatedAt).toLocaleString()}
-        </span>
-        {article.status === "published" && (
+        </>
+      }
+      actions={
+        article.status === "published" ? (
           <Link
             href={`/news/${article.slug}`}
             target="_blank"
-            className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+            className="inline-flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground"
           >
             View live <ExternalLink className="h-3.5 w-3.5" />
           </Link>
-        )}
-      </div>
+        ) : undefined
+      }
+    >
 
       <Card className="mt-4">
         <CardContent className="space-y-4 p-5">
@@ -356,6 +358,6 @@ export default function AdminArticleEditorPage() {
           )}
         </div>
       </div>
-    </div>
+    </DetailPage>
   );
 }

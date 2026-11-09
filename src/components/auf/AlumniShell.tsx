@@ -36,6 +36,7 @@ import { AUFAvatar } from "./AUFAvatar";
 import { GlobalSearch } from "./GlobalSearch";
 import { NotificationDropdown } from "./NotificationDropdown";
 import { PageHelpLink } from "./PageHelpLink";
+import { Tour } from "./Tour";
 import { useSameRouteRefresh } from "@/lib/use-same-route-refresh";
 import { cn } from "@/lib/utils";
 
@@ -185,7 +186,7 @@ function Sidebar({
         </button>
       </div>
 
-      <nav className="px-3 flex flex-col gap-0.5 mt-1">
+      <nav data-tour="nav-primary" className="px-3 flex flex-col gap-0.5 mt-1">
         {NAV.map((n) => {
           const active = pathname === n.href || pathname.startsWith(n.href + "/");
           const badge = badgeFor(n.href);
@@ -254,7 +255,7 @@ function NetworkStats() {
   const fmt = (n: number | null | undefined) =>
     n == null ? "—" : n.toLocaleString();
   return (
-    <div className="space-y-2.5">
+    <div data-tour="network-panel" className="space-y-2.5">
       <Row label="Connections" value={fmt(counts?.connected)} />
       <Row
         label="Pending requests"
@@ -316,6 +317,7 @@ function TopBar({
         <div className="flex-1 md:hidden" />
 
         <PageHelpLink surface="alumni" />
+              <Tour surface="alumni" />
         <NotificationDropdown />
         <Link
           href="/messages"

@@ -15,7 +15,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import {
-  ArrowLeft,
   Briefcase,
   Download,
   FileText,
@@ -25,14 +24,19 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/auf/EmptyState";
 import { AccountStatusCard } from "@/components/auf/AccountStatusCard";
 import { EmploymentStatusCard } from "@/components/auf/EmploymentStatusCard";
 import { AlumniIdCard } from "@/components/auf/AlumniIdCard";
-import { StageBadge, StatTile, WorkStatusBadge } from "@/components/auf/AdminBits";
+import { StageBadge, WorkStatusBadge } from "@/components/auf/AdminBits";
 import type { ApplicationStage, WorkStatus } from "@/lib/mock-admin";
+import {
+  DetailAvatar,
+  DetailPage,
+  Stat,
+  StatStrip,
+} from "@/components/auf/admin-ui";
 
 function fmtDate(ms?: number | null): string {
   if (!ms) return "—";
@@ -67,66 +71,57 @@ export default function AlumnaDetailPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 sm:py-8">
-      <Link
-        href="/admin/alumni"
-        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Alumni
-      </Link>
-
-      {/* Header */}
-      <div className="mt-3 flex flex-wrap items-start gap-4">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-xl font-semibold">
-          {a.initials}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">{a.name}</h1>
-            <WorkStatusBadge status={a.workStatus as WorkStatus} />
-            {a.openToWork && <Badge variant="secondary">Open to work</Badge>}
-            {a.verifiedAt == null && (
-              <Badge variant="outline">Verification pending</Badge>
-            )}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {a.currentRole
-              ? `${a.currentRole}${a.currentCompany ? " at " + a.currentCompany : ""}`
-              : "Seeking first role"}{" "}
-            · {a.program} · Batch {a.batch}
-          </p>
+    <DetailPage
+      backHref="/admin/alumni"
+      backLabel="Alumni"
+      avatar={<DetailAvatar>{a.initials}</DetailAvatar>}
+      title={a.name}
+      subtitle={
+        <>
+          {a.currentRole
+            ? `${a.currentRole}${a.currentCompany ? " at " + a.currentCompany : ""}`
+            : "Seeking first role"}{" "}
+          · {a.program} · Batch {a.batch} ·{" "}
           <Link
             href={`/profile/${a.slug}`}
-            className="mt-1 inline-block text-xs text-primary hover:underline"
+            className="text-primary hover:underline"
           >
-            View public profile →
+            Public profile &rarr;
           </Link>
-        </div>
-        <div className="flex gap-2">
-          {a.cv?.url && (
-            <a
-              href={a.cv.url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-muted"
-            >
-              <Download className="h-4 w-4" />
-              CV
-            </a>
+        </>
+      }
+      badges={
+        <>
+          <WorkStatusBadge status={a.workStatus as WorkStatus} />
+          {a.openToWork && <Badge variant="secondary">Open to work</Badge>}
+          {a.verifiedAt == null && (
+            <Badge variant="outline">Verification pending</Badge>
           )}
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-        <StatTile label="Skills" value={a.skills.length} />
-        <StatTile label="Applications" value={a.applications.length} />
-        <StatTile
+        </>
+      }
+      actions={
+        a.cv?.url ? (
+          <a
+            href={a.cv.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-[13px] hover:bg-muted"
+          >
+            <Download className="h-4 w-4" />
+            CV
+          </a>
+        ) : undefined
+      }
+    >
+      <StatStrip>
+        <Stat label="Skills" value={a.skills.length} />
+        <Stat label="Applications" value={a.applications.length} />
+        <Stat
           label="Alumni ID"
           value={a.alumniId ? "Issued" : "Not issued"}
           hint={a.alumniId ?? undefined}
         />
-      </div>
+      </StatStrip>
 
       <div className="mt-4">
         <AlumniIdCard
@@ -279,7 +274,7 @@ export default function AlumnaDetailPage() {
           </Card>
         </div>
       </div>
-    </div>
+    </DetailPage>
   );
 }
 

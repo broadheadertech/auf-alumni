@@ -79,7 +79,7 @@ export function EmploymentStatusCard({
   };
 
   return (
-    <Card>
+    <Card data-tour="employment-override">
       <CardContent className="p-4">
         <h2 className="flex items-center gap-2 text-sm font-medium">
           <Briefcase className="h-4 w-4" />

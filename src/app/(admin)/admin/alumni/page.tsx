@@ -30,6 +30,8 @@ import { useLookupOptions } from "@/lib/use-lookup-options";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { parseBatchInput } from "@/lib/batch-input";
 import { WorkStatusBadge } from "@/components/auf/AdminBits";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import {
   AdminPage,
@@ -262,6 +264,12 @@ export default function AdminAlumniPage() {
     }
   };
 
+  // Every filter plus the sort feeds the reset key: re-sorting is a new
+  // ordering, so page 3 of the old order means nothing in the new one.
+  const paged = usePagination(rows, {
+    resetKey: `${Object.values(values).join("|")}|${sort}|${dir}`,
+  });
+
   const loading = data === undefined;
 
   return (
@@ -288,7 +296,7 @@ export default function AdminAlumniPage() {
         </Callout>
       )}
 
-      <StatStrip className={pendingCount > 0 ? "mt-3" : ""}>
+      <StatStrip data-tour="roster-stats" className={pendingCount > 0 ? "mt-3" : ""}>
         <Stat
           label="Registered"
           value={totals.total}
@@ -300,6 +308,7 @@ export default function AdminAlumniPage() {
       </StatStrip>
 
       <FilterPanel
+        data-tour="roster-filters"
         layout="bar"
         className="mt-3"
         fields={fields}
@@ -310,7 +319,7 @@ export default function AdminAlumniPage() {
       />
 
       <div className="mt-3">
-        <DataTable>
+        <DataTable data-tour="roster-table">
                 <THead>
                     <tr>
                       <Th label="Alumna" sortKey="name" {...{ sort, dir, setSortKey }} />
@@ -338,7 +347,7 @@ export default function AdminAlumniPage() {
                         </td>
                       </tr>
                     ) : (
-                      rows.map((a) => (
+                      paged.pageItems.map((a) => (
                         <tr
                           key={a.id}
                           className="group border-b border-border last:border-0 hover:bg-muted/40"
@@ -426,9 +435,15 @@ export default function AdminAlumniPage() {
                   </tbody>
         </DataTable>
         {!loading && (
-          <p className="mt-2 text-[12px] text-muted-foreground">
-            Showing {rows.length} of {alumni.length} alumni · sorted by {sort} ({dir}).
-          </p>
+          <Pagination
+            state={paged}
+            noun="alumnus"
+            plural={
+              rows.length === alumni.length
+                ? "alumni"
+                : `matching alumni (of ${alumni.length} total)`
+            }
+          />
         )}
       </div>
     </AdminPage>

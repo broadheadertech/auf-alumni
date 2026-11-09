@@ -28,6 +28,8 @@ import { useCollegePrograms } from "@/lib/use-program-options";
 import { useLookupOptions } from "@/lib/use-lookup-options";
 import { parseBatchInput } from "@/lib/batch-input";
 import { cn } from "@/lib/utils";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 
 const FILTER_KEYS = [
   "q",
@@ -137,6 +139,10 @@ function ApplicantsInner() {
           : b.createdAt - a.createdAt,
       );
   })();
+
+  const paged = usePagination(rows, {
+    resetKey: Object.values(values).join("|"),
+  });
 
   const totals = useMemo(() => {
     const counts = Object.fromEntries(
@@ -299,6 +305,7 @@ function ApplicantsInner() {
         {/* Filters */}
         <aside className="lg:sticky lg:top-20 lg:self-start">
           <FilterPanel
+            data-tour="applicants-filters"
             fields={fields}
             values={values}
             onChange={onFilterChange}
@@ -328,7 +335,7 @@ function ApplicantsInner() {
             </select>
           </div>
 
-          <div className="space-y-2">
+          <div data-tour="applicants-list" className="space-y-2">
             {applicants === undefined ? (
               <Card>
                 <CardContent className="p-10 text-center text-sm text-muted-foreground">
@@ -355,7 +362,7 @@ function ApplicantsInner() {
                 </CardContent>
               </Card>
             ) : (
-              rows.map((a) => (
+              paged.pageItems.map((a) => (
                 <ApplicantRow
                   key={a._id}
                   applicant={a}
@@ -369,6 +376,7 @@ function ApplicantsInner() {
               ))
             )}
           </div>
+          <Pagination state={paged} noun="applicant" />
         </section>
       </div>
     </div>

@@ -30,7 +30,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { MoreHorizontal } from "lucide-react";
+import { ChevronLeft, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,15 +50,26 @@ export function AdminPage({
   title,
   description,
   actions,
+  width = "wide",
   children,
 }: {
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /**
+   * "narrow" for forms and editors. A settings form stretched to 1600px puts
+   * the label at one edge of the screen and its field at the other.
+   */
+  width?: "wide" | "narrow";
   children: React.ReactNode;
 }) {
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-5 py-5">
+    <div
+      className={cn(
+        "mx-auto w-full px-5 py-5",
+        width === "narrow" ? "max-w-[900px]" : "max-w-[1600px]",
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
@@ -187,12 +198,16 @@ export function Stat({
 export function StatStrip({
   children,
   className,
+  "data-tour": dataTour,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   return (
     <div
+      data-tour={dataTour}
       className={cn(
         "grid grid-cols-2 divide-x divide-border rounded-lg border border-border bg-card sm:grid-cols-3 lg:grid-cols-4",
         "[&>*]:border-t [&>*]:border-border [&>*:nth-child(-n+2)]:border-t-0",
@@ -284,12 +299,16 @@ export function Chip({
 export function DataTable({
   children,
   className,
+  "data-tour": dataTour,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Anchor for a spotlight tour step. */
+  "data-tour"?: string;
 }) {
   return (
     <div
+      data-tour={dataTour}
       className={cn(
         "overflow-x-auto rounded-lg border border-border bg-card",
         className,
@@ -573,5 +592,107 @@ export function NoRows({
         {children}
       </td>
     </tr>
+  );
+}
+
+/* ----------------------------------------------------------- detail page */
+
+/**
+ * The header for a single record: one alumnus, one posting, one employer.
+ *
+ * The five detail screens had each built this independently and arrived at
+ * five versions of the same thing — a back link, an identity block, some
+ * status badges and a row of actions — at four different page widths. The
+ * differences were never deliberate.
+ *
+ * `backHref` is required rather than optional. A detail page reached from a
+ * list always needs the way back, and leaving it to each page is how three of
+ * them ended up with a differently-worded link.
+ */
+export function DetailPage({
+  backHref,
+  backLabel,
+  title,
+  subtitle,
+  badges,
+  actions,
+  avatar,
+  width = "wide",
+  children,
+}: {
+  backHref: string;
+  /** Where the link goes, named for the reader: "Alumni", "Job postings". */
+  backLabel: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  /** Status chips shown beside the title. */
+  badges?: React.ReactNode;
+  actions?: React.ReactNode;
+  /** Initials bubble, logo, or icon. */
+  avatar?: React.ReactNode;
+  width?: "wide" | "narrow";
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "mx-auto w-full px-5 py-5",
+        width === "narrow" ? "max-w-[900px]" : "max-w-[1600px]",
+      )}
+    >
+      <Link
+        href={backHref}
+        className="inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+        {backLabel}
+      </Link>
+
+      <div className="mt-2 flex flex-wrap items-start gap-3">
+        {avatar}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
+            {badges}
+          </div>
+          {subtitle && (
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
+        {actions && (
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        )}
+      </div>
+
+      <div className="mt-4">{children}</div>
+    </div>
+  );
+}
+
+/** Initials bubble for a detail header. */
+export function DetailAvatar({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted text-[13px] font-semibold">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Two-column detail body: the record on the left, supporting panels on the
+ * right. Collapses to one column below `lg`, main content first.
+ */
+export function DetailColumns({
+  main,
+  aside,
+}: {
+  main: React.ReactNode;
+  aside: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="min-w-0 space-y-4">{main}</div>
+      <div className="space-y-4">{aside}</div>
+    </div>
   );
 }

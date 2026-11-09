@@ -252,7 +252,7 @@ export default function AdminAnalyticsPage() {
       </p>
 
       {/* Filters */}
-      <Card className="mt-5">
+      <Card data-tour="analytics-filters" className="mt-5">
         <CardContent className="grid gap-4 p-4 md:grid-cols-[200px_1fr]">
           <div className="space-y-3">
             <div>
@@ -388,7 +388,7 @@ export default function AdminAnalyticsPage() {
           </div>
 
           <SectionHeading className="mt-5">Hiring performance</SectionHeading>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div data-tour="analytics-kpis" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi
               icon={TrendingUp}
               label="Hire rate"

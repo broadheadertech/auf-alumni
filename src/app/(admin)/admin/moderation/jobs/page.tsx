@@ -16,7 +16,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
-import { Building2, Check, Clock, Loader2, X } from "lucide-react";
+import { Building2, Check, Loader2, X } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
 import { runBulk, useBulkSelection } from "@/lib/use-bulk-selection";
 import { cn } from "@/lib/utils";
+import { AdminPage } from "@/components/auf/admin-ui";
 
 type PendingJob = {
   _id: string;
@@ -164,17 +165,10 @@ export default function JobModerationPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center gap-2">
-        <Clock className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Job moderation
-        </h1>
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Employer-submitted postings awaiting review. Read the full posting, then
-        approve to publish it to alumni or reject with a reason.
-      </p>
+    <AdminPage
+      title="Job moderation"
+      description="Employer-submitted postings awaiting review. Read the posting, then approve it to publish to alumni or reject it with a reason."
+    >
 
       <div className="mt-6 space-y-4">
         {queue === undefined ? (
@@ -441,7 +435,7 @@ export default function JobModerationPage() {
         </Link>
         .
       </p>
-    </div>
+    </AdminPage>
   );
 }
 

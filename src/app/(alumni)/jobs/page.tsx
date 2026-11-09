@@ -394,7 +394,7 @@ export default function JobsBoardPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(320px,400px)_1fr]">
           {/* List */}
-          <div className="space-y-2">
+          <div data-tour="jobs-list" className="space-y-2">
             {filtered.map((j) => {
               const salary = formatSalary(j.salaryMin, j.salaryMax, j.salaryCurrency);
               const isSel = selected?._id === j._id;

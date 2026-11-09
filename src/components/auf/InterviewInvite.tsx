@@ -72,6 +72,7 @@ export function InterviewInvite({
 
   return (
     <div
+      data-tour="interview-invite"
       className={cn(
         "mt-3 rounded-md border p-3",
         state === "cancelled"

@@ -32,6 +32,8 @@ import {
 import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
+import { Pagination } from "@/components/auf/Pagination";
+import { usePagination } from "@/lib/use-pagination";
 import { cn } from "@/lib/utils";
 import {
   AdminPage,
@@ -119,6 +121,13 @@ export default function AdminUsersPage() {
 
   const list = (users ?? []) as UserRow[];
   const selection = useBulkSelection(list.map((u) => u._id));
+
+  // Filters feed the reset key: narrowing the list while sitting on page 5
+  // should put you back on page 1, not on an empty page.
+  const paged = usePagination(list, {
+    resetKey: `${values.q}|${values.role}|${values.status}`,
+  });
+
 
   const fields: FilterField[] = [
     { type: "search", key: "q", label: "Search", placeholder: "Email or name…" },
@@ -254,6 +263,7 @@ export default function AdminUsersPage() {
       description="Grant or revoke admin roles, and suspend abusive accounts. Select several users to act on them at once."
     >
       <FilterPanel
+        data-tour="users-filters"
         layout="bar"
         fields={fields}
         values={values}
@@ -263,6 +273,7 @@ export default function AdminUsersPage() {
       />
 
       <BulkActionBar
+        data-tour="users-bulk"
         className="mt-4"
         noun="user"
         count={selection.count}
@@ -299,7 +310,7 @@ export default function AdminUsersPage() {
         </Button>
       </BulkActionBar>
 
-      <DataTable className="mt-3">
+      <DataTable data-tour="users-table" className="mt-3">
         <THead>
           <tr>
             <Th width="36px">
@@ -328,7 +339,7 @@ export default function AdminUsersPage() {
           {list.length === 0 ? (
             <NoRows colSpan={5}>No users match these filters.</NoRows>
           ) : (
-            list.map((u) => {
+            paged.pageItems.map((u) => {
               const mine = isMe(u);
               const suspended = u.suspendedAt != null;
               const deleted = u.deletedAt != null;
@@ -440,6 +451,8 @@ export default function AdminUsersPage() {
           )}
         </tbody>
       </DataTable>
+
+      <Pagination state={paged} noun="user" />
 
       {/* Single-row suspend */}
       <Dialog

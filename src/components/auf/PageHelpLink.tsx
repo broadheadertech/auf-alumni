@@ -1,19 +1,22 @@
 "use client";
 
 /**
- * "How this page works" — the contextual entry into the guide.
+ * "How this page works" — the entry point to both halves of the help.
  *
- * A guide nobody can find is a guide nobody reads, so rather than relying on
- * people remembering there is a Guide tab, every screen offers its own
- * walkthrough from the topbar. It resolves the current route to a topic and
- * deep-links to it; on a page with no walkthrough of its own it renders
- * nothing rather than sending the reader somewhere unhelpful.
+ * Clicking it runs the page's spotlight tour when one exists, because being
+ * walked through the actual screen beats reading about it. Pages without a
+ * tour fall through to the written guide, and the last step of every tour
+ * links there anyway for anyone who wants the detail.
+ *
+ * A guide nobody can find is a guide nobody reads, so this sits in the topbar
+ * of every screen rather than relying on people remembering the Guide tab.
  */
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CircleHelp } from "lucide-react";
 import { topicForPath, type Surface } from "@/lib/guide/content";
+import { tourForPath } from "@/lib/guide/tours";
 import { cn } from "@/lib/utils";
 
 const GUIDE_ROOT: Record<Surface, string> = {
@@ -31,18 +34,39 @@ export function PageHelpLink({
 }) {
   const pathname = usePathname();
   const topic = topicForPath(pathname, surface);
-  if (!topic) return null;
+  const tour = tourForPath(pathname);
+
+  // Nothing to offer at all.
+  if (!topic && !tour) return null;
   // Don't offer "how this page works" while reading the guide itself.
   if (pathname.startsWith(GUIDE_ROOT[surface])) return null;
 
+  const classes = cn(
+    "inline-flex items-center gap-1.5 rounded-md p-2 text-sm ink-2 transition-colors hover:bg-[var(--surface-2)] hover:ink",
+    className,
+  );
+
+  if (tour) {
+    return (
+      <button
+        type="button"
+        data-tour="page-help"
+        title={`Take the tour: ${tour.label}`}
+        onClick={() => window.dispatchEvent(new Event("auf:start-tour"))}
+        className={classes}
+      >
+        <CircleHelp size={18} />
+        <span className="hidden lg:inline text-[13px]">How this page works</span>
+      </button>
+    );
+  }
+
   return (
     <Link
-      href={`${GUIDE_ROOT[surface]}?topic=${topic.slug}`}
-      title={`How ${topic.tab} works`}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md p-2 text-sm ink-2 transition-colors hover:bg-[var(--surface-2)] hover:ink",
-        className,
-      )}
+      href={`${GUIDE_ROOT[surface]}?topic=${topic!.slug}`}
+      data-tour="page-help"
+      title={`How ${topic!.tab} works`}
+      className={classes}
     >
       <CircleHelp size={18} />
       <span className="hidden lg:inline text-[13px]">How this page works</span>

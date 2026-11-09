@@ -134,6 +134,7 @@ export default function EmployerJobsPage() {
           </p>
         </div>
         <Button
+          data-tour="post-job"
           size="sm"
           onClick={() => setDialogOpen(true)}
           disabled={!org}
