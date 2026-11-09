@@ -176,7 +176,11 @@ export function Stat({
     </>
   );
 
-  const base = "min-w-0 px-4 py-3 first:pl-0";
+  // Every cell gets the same padding. `first:pl-0` used to strip it from the
+  // first one, which was written for a borderless strip flush to the page
+  // edge — inside StatStrip's bordered card it just pressed the first label
+  // against the border, 16px out of line with every card below it.
+  const base = "min-w-0 px-4 py-3";
   if (!href) return <div className={base}>{inner}</div>;
   return (
     <Link
@@ -195,6 +199,27 @@ export function Stat({
  * about their column widths the way the analytics page's two stacked grids
  * did.
  */
+/**
+ * Column counts, keyed by how many stats are in the strip.
+ *
+ * The grid used to be a fixed four columns whatever it held, so a strip of
+ * three left an empty quarter on the right with no divider beside it — the
+ * row looked truncated rather than complete. Tailwind needs whole class names
+ * to be present in the source, hence the lookup rather than a template string.
+ *
+ * Each entry also carries the nth-child rules that suppress the top border on
+ * the first row, which have to agree with the column count or a strip that
+ * wraps grows a stray rule across its middle.
+ */
+const STRIP_COLUMNS: Record<number, string> = {
+  1: "grid-cols-1 [&>*:nth-child(-n+1)]:border-t-0",
+  2: "grid-cols-2 [&>*:nth-child(-n+2)]:border-t-0",
+  3: "grid-cols-2 sm:grid-cols-3 [&>*:nth-child(-n+2)]:border-t-0 sm:[&>*:nth-child(-n+3)]:border-t-0",
+  4: "grid-cols-2 lg:grid-cols-4 [&>*:nth-child(-n+2)]:border-t-0 lg:[&>*:nth-child(-n+4)]:border-t-0",
+  5: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 [&>*:nth-child(-n+2)]:border-t-0 sm:[&>*:nth-child(-n+3)]:border-t-0 lg:[&>*:nth-child(-n+5)]:border-t-0",
+  6: "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 [&>*:nth-child(-n+2)]:border-t-0 sm:[&>*:nth-child(-n+3)]:border-t-0 lg:[&>*:nth-child(-n+6)]:border-t-0",
+};
+
 export function StatStrip({
   children,
   className,
@@ -205,13 +230,17 @@ export function StatStrip({
   /** Anchor for a spotlight tour step. */
   "data-tour"?: string;
 }) {
+  // Children can be conditional, so count the ones that will actually render.
+  const count = React.Children.toArray(children).filter(Boolean).length;
+  const columns = STRIP_COLUMNS[count] ?? STRIP_COLUMNS[4];
+
   return (
     <div
       data-tour={dataTour}
       className={cn(
-        "grid grid-cols-2 divide-x divide-border rounded-lg border border-border bg-card sm:grid-cols-3 lg:grid-cols-4",
-        "[&>*]:border-t [&>*]:border-border [&>*:nth-child(-n+2)]:border-t-0",
-        "sm:[&>*:nth-child(-n+3)]:border-t-0 lg:[&>*:nth-child(-n+4)]:border-t-0",
+        "grid divide-x divide-border rounded-lg border border-border bg-card",
+        "[&>*]:border-t [&>*]:border-border",
+        columns,
         className,
       )}
     >
