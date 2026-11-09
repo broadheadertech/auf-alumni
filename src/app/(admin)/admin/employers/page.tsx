@@ -34,7 +34,6 @@ import {
 import { api } from "@/lib/convex-api";
 import { useAsOf } from "@/lib/use-as-of";
 import { EMPLOYER_TIERS, fmtDate, type EmployerTier } from "@/lib/mock-admin";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -48,7 +47,6 @@ import {
 } from "@/components/ui/dialog";
 import {
   ContractBadge,
-  StatTile,
   TierBadge,
 } from "@/components/auf/AdminBits";
 import { ACCOUNT_STATUS_LABEL, ACCOUNT_STATUS_TONE } from "@/lib/account-status";
@@ -58,6 +56,13 @@ import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { cn } from "@/lib/utils";
 import { Pagination } from "@/components/auf/Pagination";
 import { usePagination } from "@/lib/use-pagination";
+import {
+  AdminPage,
+  DataTable,
+  Stat,
+  StatStrip,
+  THead,
+} from "@/components/auf/admin-ui";
 
 type EmployerView = FunctionReturnType<typeof api.adminData.employers>[number];
 type ContractFilter = EmployerView["contractState"];
@@ -249,32 +254,26 @@ export default function AdminEmployersPage() {
   const tile = (n: number) => (loading ? "—" : n);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Employers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Partner organisations, their contracts, documents, and hiring
-            activity.
-          </p>
-        </div>
+    <AdminPage
+      title="Employers"
+      description="Partner organisations, their contracts, documents and hiring activity."
+      actions={
         <Button size="sm" onClick={() => setAddOpen(true)}>
           <Plus className="h-4 w-4" />
           Add employer
         </Button>
-      </div>
+      }
+    >
+      <StatStrip>
+        <Stat label="Employers" value={tile(totals.employers)} />
+        <Stat label="Active postings" value={tile(totals.postings)} />
+        <Stat label="Total applicants" value={tile(totals.applicants)} />
+        <Stat label="Hires via AUF" value={tile(totals.hires)} />
+      </StatStrip>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Employers" value={tile(totals.employers)} />
-        <StatTile label="Active postings" value={tile(totals.postings)} />
-        <StatTile label="Total applicants" value={tile(totals.applicants)} />
-        <StatTile label="Hires via AUF" value={tile(totals.hires)} />
-      </div>
-
-      {/* Filters */}
       <FilterPanel
         layout="bar"
-        className="mt-6"
+        className="mt-3"
         fields={fields}
         values={values}
         onChange={(k, v) => set(k as FilterKey, v)}
@@ -282,12 +281,8 @@ export default function AdminEmployersPage() {
         restored={restored}
       />
 
-      {/* Table */}
-      <Card className="mt-4">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+      <DataTable className="mt-3">
+              <THead>
                 <tr>
                   <Th label="Employer" sortKey="name" {...{ sort, dir, setSortKey }} />
                   <Th label="Contract" sortKey="contractEnd" {...{ sort, dir, setSortKey }} />
@@ -297,7 +292,7 @@ export default function AdminEmployersPage() {
                   <Th label="Hired" sortKey="hired" align="right" {...{ sort, dir, setSortKey }} />
                   <th className="px-3 py-2" />
                 </tr>
-              </thead>
+              </THead>
               <tbody>
                 {loading ? (
                   <tr>
@@ -401,10 +396,7 @@ export default function AdminEmployersPage() {
                   ))
                 )}
               </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      </DataTable>
 
       {!loading && (
         <Pagination
@@ -422,7 +414,7 @@ export default function AdminEmployersPage() {
         onClose={() => setAddOpen(false)}
         industryOptions={industryOptions}
       />
-    </div>
+    </AdminPage>
   );
 }
 

@@ -22,7 +22,6 @@ import { ArrowUpDown, Check, ChevronRight, Loader2, X } from "lucide-react";
 import { api } from "@/lib/convex-api";
 import { useAsOf } from "@/lib/use-as-of";
 import { fmtDate, type PostingStatus } from "@/lib/mock-admin";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -33,7 +32,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { PostingStatusBadge, StatTile } from "@/components/auf/AdminBits";
+import { PostingStatusBadge } from "@/components/auf/AdminBits";
+import {
+  AdminPage,
+  DataTable,
+  Stat,
+  StatStrip,
+  THead,
+  Th,
+} from "@/components/auf/admin-ui";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { cn } from "@/lib/utils";
@@ -212,28 +219,32 @@ export default function AdminJobsPage() {
   const tile = (n: number) => (loading ? "—" : n);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <h1 className="text-2xl font-semibold tracking-tight">Job postings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Every posting across all employers. For a full read of each pending
-        submission, use{" "}
-        <Link href="/admin/moderation/jobs" className="underline">
-          Job moderation
+    <AdminPage
+      title="Job postings"
+      description="Every posting across all employers."
+      actions={
+        <Link
+          href="/admin/moderation/jobs"
+          className="text-[13px] underline underline-offset-2"
+        >
+          Job moderation &rarr;
         </Link>
-        .
-      </p>
+      }
+    >
+      <StatStrip>
+        <Stat label="Postings" value={tile(totals.total)} />
+        <Stat label="Published" value={tile(totals.published)} />
+        <Stat
+          label="Pending review"
+          value={tile(totals.pending)}
+          tone={totals.pending > 0 ? "warn" : "default"}
+        />
+        <Stat label="Total applicants" value={tile(totals.applicants)} />
+      </StatStrip>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Postings" value={tile(totals.total)} />
-        <StatTile label="Published" value={tile(totals.published)} />
-        <StatTile label="Pending review" value={tile(totals.pending)} />
-        <StatTile label="Total applicants" value={tile(totals.applicants)} />
-      </div>
-
-      {/* Filters */}
       <FilterPanel
+        className="mt-3"
         layout="bar"
-        className="mt-6"
         values={values}
         onChange={(k, v) => set(k as (typeof FILTER_KEYS)[number], v)}
         onReset={reset}
@@ -253,15 +264,12 @@ export default function AdminJobsPage() {
       </div>
 
       {/* Table */}
-      <Card className="mt-4">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+      <DataTable className="mt-3">
+              <THead>
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Posting</th>
-                  <th className="px-3 py-2 text-left font-medium">Company</th>
-                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                  <Th>Posting</Th>
+                  <Th>Company</Th>
+                  <Th>Status</Th>
                   <SortableTh
                     label="Applicants"
                     active={sort === "applicants"}
@@ -272,9 +280,9 @@ export default function AdminJobsPage() {
                     active={sort === "posted"}
                     onClick={() => setSort("posted")}
                   />
-                  <th className="px-3 py-2 text-right font-medium">Actions</th>
+                  <Th align="right">Actions</Th>
                 </tr>
-              </thead>
+              </THead>
               <tbody>
                 {loading ? (
                   <tr>
@@ -386,10 +394,7 @@ export default function AdminJobsPage() {
                   })
                 )}
               </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+      </DataTable>
 
       {!loading && (
         <Pagination
@@ -439,7 +444,7 @@ export default function AdminJobsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AdminPage>
   );
 }
 

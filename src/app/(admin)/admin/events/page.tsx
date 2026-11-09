@@ -40,7 +40,7 @@ import {
 } from "@/lib/admin-event-format";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
-import { StatTile } from "@/components/auf/AdminBits";
+import { AdminPage, Stat, StatStrip } from "@/components/auf/admin-ui";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { useUrlFilters } from "@/lib/use-url-filters";
 import { useCollegePrograms } from "@/lib/use-program-options";
@@ -219,38 +219,33 @@ export default function AdminEventsPage() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 sm:py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <CalendarPlus className="h-5 w-5 text-muted-foreground" />
-            <h1 className="text-2xl font-semibold tracking-tight">Events</h1>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Alumni events and who they&apos;re sent to — everyone, by year
-            graduated, or by program.
-          </p>
-        </div>
+    <AdminPage
+      title="Events"
+      description="Alumni events and who they're sent to — everyone, by year graduated, or by programme."
+      actions={
         <Link href="/admin/events/new" className={buttonVariants({ size: "sm" })}>
           <Plus className="h-4 w-4" />
           Create event
         </Link>
-      </div>
-
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Total events" value={liveEvents ? totals.total : "—"} />
-        <StatTile label="Upcoming" value={liveEvents ? totals.upcoming : "—"} />
-        <StatTile
+      }
+    >
+      <StatStrip>
+        <Stat label="Total events" value={liveEvents ? totals.total : "—"} />
+        <Stat label="Upcoming" value={liveEvents ? totals.upcoming : "—"} />
+        <Stat
           label="Going RSVPs"
           value={liveEvents ? totals.going.toLocaleString() : "—"}
-          hint={liveEvents ? `${totals.upcomingGoing.toLocaleString()} for upcoming events` : undefined}
+          hint={
+            liveEvents
+              ? `${totals.upcomingGoing.toLocaleString()} for upcoming events`
+              : undefined
+          }
         />
-      </div>
+      </StatStrip>
 
-      {/* Filters */}
       <FilterPanel
         layout="bar"
-        className="mt-6"
+        className="mt-3"
         fields={fields}
         values={values}
         onChange={onFilterChange}
@@ -301,7 +296,7 @@ export default function AdminEventsPage() {
           verified alumni matching each audience today.
         </p>
       )}
-    </div>
+    </AdminPage>
   );
 }
 
