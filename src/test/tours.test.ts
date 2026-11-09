@@ -19,15 +19,21 @@ describe("tourForPath", () => {
     );
   });
 
-  it("does not claim an excluded sibling of a prefix route", () => {
-    // /admin/alumni/approvals is a different screen; the record tour talking
-    // about an employment-status override would be nonsense there.
-    expect(tourForPath("/admin/alumni/approvals")).toBeNull();
+  it("does not let a prefix route claim an excluded sibling", () => {
+    // /admin/alumni/approvals is a different screen, so it must not get the
+    // single-record tour talking about an employment-status override. It has
+    // a tour of its own; the point is that it is not the record one.
+    const tour = tourForPath("/admin/alumni/approvals");
+    expect(tour?.label).toBe("Approving registrations");
+    expect(tour?.label).not.toBe("An alumnus record");
+
+    const onboard = tourForPath("/admin/employers/onboard");
+    expect(onboard?.label).not.toBe("An employer record");
   });
 
-  it("returns null for a page with no tour", () => {
-    expect(tourForPath("/admin/compliance")).toBeNull();
+  it("returns null for a path with no tour", () => {
     expect(tourForPath("/nonsense")).toBeNull();
+    expect(tourForPath("/admin")).toBeNull();
   });
 });
 

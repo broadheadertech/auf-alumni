@@ -70,7 +70,10 @@ export function AdminPage({
         width === "narrow" ? "max-w-[900px]" : "max-w-[1600px]",
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div
+        data-tour="page-header"
+        className="flex flex-wrap items-start justify-between gap-3"
+      >
         <div className="min-w-0">
           <h1 className="text-[19px] font-semibold tracking-tight">{title}</h1>
           {description && (
@@ -80,10 +83,12 @@ export function AdminPage({
           )}
         </div>
         {actions && (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          <div data-tour="page-actions" className="flex flex-wrap items-center gap-2">
+            {actions}
+          </div>
         )}
       </div>
-      <div className="mt-4">{children}</div>
+      <div data-tour="page-body" className="mt-4">{children}</div>
     </div>
   );
 }
@@ -677,7 +682,10 @@ export function DetailPage({
         {backLabel}
       </Link>
 
-      <div className="mt-2 flex flex-wrap items-start gap-3">
+      <div
+        data-tour="page-header"
+        className="mt-2 flex flex-wrap items-start gap-3"
+      >
         {avatar}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -689,11 +697,13 @@ export function DetailPage({
           )}
         </div>
         {actions && (
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          <div data-tour="page-actions" className="flex flex-wrap items-center gap-2">
+            {actions}
+          </div>
         )}
       </div>
 
-      <div className="mt-4">{children}</div>
+      <div data-tour="page-body" className="mt-4">{children}</div>
     </div>
   );
 }
