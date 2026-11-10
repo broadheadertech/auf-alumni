@@ -132,8 +132,10 @@ async function candidateProfiles(
   if (term.length < 2) {
     // profileMatches() drops unverified rows anyway, so reading them was pure
     // waste on the directory's default (no-term) load.
+    // @no-privacy-required: candidate rows for the roster; every row that reaches a client passes through applyPrivacy in list().
     return await verifiedProfiles(ctx);
   }
+  // @no-privacy-required: candidate rows for the roster; every row that reaches a client passes through applyPrivacy in list().
   return await ctx.db
     .query("profiles")
     .withSearchIndex("search_all", (q) => q.search("searchText", term))
@@ -291,6 +293,7 @@ export const count = query({
     // verified rows by index gives the same denominator, since the loop below
     // discarded the unverified ones regardless.
     const [profiles, hidden] = await Promise.all([
+      // @no-privacy-required: aggregate counts only; no per-alumna field is returned.
       verifiedProfiles(ctx),
       hiddenUserIds(ctx),
     ]);
@@ -448,6 +451,7 @@ export const facets = query({
   args: {},
   handler: async (ctx) => {
     await requireMember(ctx);
+    // @no-privacy-required: facet value counts only; no per-alumna field is returned.
     const verified = await verifiedProfiles(ctx);
 
     const batches = new Map<number, number>();

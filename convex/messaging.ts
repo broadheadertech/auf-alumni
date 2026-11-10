@@ -87,6 +87,7 @@ async function bothVerifiedAlumni(
 ): Promise<boolean> {
   const profiles = await Promise.all(
     [a, b].map((id) =>
+      // @no-privacy-required: reads verifiedAt and displayName only, both always included; returns a boolean or a name.
       ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", id))
@@ -114,6 +115,7 @@ async function canMessage(
 
 /** How the recipient should be addressed and where their inbox lives. */
 async function inboxOf(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
+  // @no-privacy-required: reads verifiedAt and displayName only, both always included; returns a boolean or a name.
   const profile = await ctx.db
     .query("profiles")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -289,6 +291,7 @@ export const listMyThreads = query({
     for (const t of merged) {
       const otherId = t.userA === me ? t.userB : t.userA;
       const other = await ctx.db.get(otherId);
+      // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
       const otherProfile = await ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", otherId))
@@ -321,6 +324,7 @@ export const getThread = query({
     if (thread.userA !== me && thread.userB !== me) return null;
 
     const otherId = thread.userA === me ? thread.userB : thread.userA;
+    // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
     const otherProfile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", otherId))
@@ -400,6 +404,7 @@ export const threadWith = query({
     if (!me || me === otherUserId) return null;
     const allowed = await canMessage(ctx, me, otherUserId);
     const thread = await findThread(ctx, me, otherUserId);
+    // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
     const otherProfile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", otherUserId))

@@ -117,8 +117,18 @@ export function AlumniIdCard({ alumna }: { alumna: AlumnaIdInput }) {
         alumnaName: alumna.name,
         email: email.trim(),
       });
-      setActivationLink(res.url);
-      toast.success(`Activation email sent to ${email.trim()}`);
+      // withAuditLog returns the handler's `result`, typed as possibly
+      // undefined. The email is sent by the mutation either way, so a missing
+      // link only costs the admin the copyable URL — worth saying so rather
+      // than claiming success and showing nothing.
+      if (res?.url) {
+        setActivationLink(res.url);
+        toast.success(`Activation email sent to ${email.trim()}`);
+      } else {
+        toast.success(
+          `Activation email sent to ${email.trim()} — the link could not be shown here`,
+        );
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to send");
     } finally {

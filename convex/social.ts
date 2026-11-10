@@ -11,6 +11,7 @@
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 import { mutation, query } from "./_generated/server";
 
 // ─────────────────────────────────────────────────────────────
@@ -118,12 +119,15 @@ export const listMyFollowing = query({
         .withIndex("by_userId", (q) => q.eq("userId", r.followeeId))
         .unique();
       if (!profile) continue;
+      // program and batch default to the alumni tier and can be narrowed
+      // further, so they cannot be read straight off the row.
+      const safe = applyPrivacy(profile, await getViewerContext(ctx, profile.userId));
       out.push({
         userId: r.followeeId,
         slug: profile.slug,
         displayName: profile.displayName,
-        program: profile.program,
-        batch: profile.batch,
+        program: safe.program ?? null,
+        batch: safe.batch ?? null,
         followedAt: r.createdAt,
       });
     }
@@ -163,6 +167,7 @@ export const endorse = mutation({
       });
     }
     // Verify the skill exists on the target profile.
+    // @no-privacy-required: gate check only -- confirms the skill is on the target profile; no field is returned.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", profileUserId))
@@ -254,6 +259,7 @@ export const listEndorsements = query({
       bucket.count += 1;
       if (me && r.endorserId === me) bucket.iEndorsed = true;
       if (bucket.recent.length < 3) {
+        // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
         const profile = await ctx.db
           .query("profiles")
           .withIndex("by_userId", (q) => q.eq("userId", r.endorserId))
@@ -386,12 +392,17 @@ export const listPublishedRecommendations = query({
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", r.authorId))
         .unique();
+      // currentRole and company are tiered, so they come from the
+      // privacy-filtered copy rather than the raw row.
+      const safe = profile
+        ? applyPrivacy(profile, await getViewerContext(ctx, profile.userId))
+        : null;
       out.push({
         _id: r._id,
         authorName: profile?.displayName ?? "Alumna",
         authorSlug: profile?.slug ?? null,
-        authorRole: profile?.currentRole ?? null,
-        authorCompany: profile?.company ?? null,
+        authorRole: safe?.currentRole ?? null,
+        authorCompany: safe?.company ?? null,
         relationship: r.relationship,
         body: r.body,
         decidedAt: r.decidedAt ?? r.createdAt,
@@ -415,6 +426,7 @@ export const myPendingRecommendations = query({
     rows.sort((a, b) => b.createdAt - a.createdAt);
     const out = [];
     for (const r of rows) {
+      // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
       const profile = await ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", r.authorId))
@@ -450,6 +462,7 @@ export const setOpenToWork = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -491,6 +504,7 @@ export const setOpenToHire = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

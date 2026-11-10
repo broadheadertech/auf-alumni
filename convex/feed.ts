@@ -18,6 +18,7 @@ import {
   type QueryCtx,
 } from "./_generated/server";
 import { verifiedProfiles } from "./helpers/indexedReads";
+import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 
 const POST_MAX_LENGTH = 2000;
 const FEED_PAGE_DEFAULT = 30;
@@ -149,13 +150,18 @@ export const getFeed = query({
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", p.authorId))
         .unique();
+      // photoStorageId is not an always-included field, so an author who
+      // restricted their photo should not have it rendered here.
+      const safeAuthor = authorProfile
+        ? applyPrivacy(authorProfile, await getViewerContext(ctx, authorProfile.userId))
+        : null;
       visible.push({
         _id: p._id,
         authorId: p.authorId,
         authorName: authorProfile?.displayName ?? author.name ?? null,
         authorSlug: authorProfile?.slug ?? null,
-        authorPhotoUrl: authorProfile?.photoStorageId
-          ? await ctx.storage.getUrl(authorProfile.photoStorageId)
+        authorPhotoUrl: safeAuthor?.photoStorageId
+          ? await ctx.storage.getUrl(safeAuthor.photoStorageId)
           : null,
         kind: p.kind,
         content: p.content,

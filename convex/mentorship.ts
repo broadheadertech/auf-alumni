@@ -50,6 +50,7 @@ export const requestMentorship = mutation({
       });
     }
     // Verify the mentor is "open to mentorship"
+    // @no-privacy-required: gate check only -- confirms the mentor is open to mentorship; no field is returned.
     const mentorProfile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", mentorId))

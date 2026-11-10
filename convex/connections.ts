@@ -451,6 +451,7 @@ export const inbox = query({
       for (const r of rows) {
         const otherId =
           r.requesterId === me ? r.recipientId : r.requesterId;
+        // @no-privacy-required: returns only identity fields (displayName, slug) that applyPrivacy always includes.
         const otherProfile = await ctx.db
           .query("profiles")
           .withIndex("by_userId", (q) => q.eq("userId", otherId))

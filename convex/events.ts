@@ -90,6 +90,7 @@ async function profileMatchesAudience(
   audience: Doc<"events">["audienceFilter"],
 ): Promise<boolean> {
   if (!audience) return true;
+  // @no-privacy-required: self-read: the viewer's own batch and program, tested against the event's audience filter; returns a boolean.
   const profile = await ctx.db
     .query("profiles")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -753,13 +754,25 @@ export const listPublic = query({
  */
 export const setEventPublic = mutation({
   args: { eventId: v.id("events"), isPublic: v.boolean() },
-  handler: async (ctx, { eventId, isPublic }) => {
+  // The type argument is needed because withAuditLog defaults Args to `any`,
+  // which would widen ctx.db.get(eventId) to a union of every document type.
+  handler: withAuditLog<{ eventId: Id<"events">; isPublic: boolean }>(async (
+    ctx,
+    { eventId, isPublic },
+  ) => {
     await requireRole(ctx, ["super-admin", "moderator"]);
     const event = await ctx.db.get(eventId);
     if (!event) {
       throw new ConvexError({ code: "not-found", message: "Event not found" });
     }
     await ctx.db.patch(eventId, { isPublic });
-    return { isPublic };
-  },
+    // Exposing an event to logged-out visitors is a disclosure decision, so
+    // who flipped it and in which direction belongs in the trail.
+    return {
+      action: "set-event-public",
+      target: { type: "event", id: eventId as string },
+      metadata: { isPublic, previousIsPublic: event.isPublic ?? false },
+      result: { isPublic },
+    };
+  }),
 });

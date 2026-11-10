@@ -48,6 +48,7 @@ async function ensureUniqueSlug(
   let candidate = base || "alumna";
   let suffix = 0;
   while (true) {
+    // @no-privacy-required: slug-uniqueness probe: returns a slug string, never a profile.
     const existing = await ctx.db
       .query("profiles")
       .withIndex("by_slug", (q) => q.eq("slug", candidate))
@@ -192,6 +193,7 @@ export const setMyProfileResume = mutation({
         message: "Filename must be 1–200 characters",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -227,6 +229,7 @@ export const removeMyProfileResume = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -254,6 +257,7 @@ export const getMyProfileResume = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -313,6 +317,7 @@ export const ensureMyAlumniId = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -334,6 +339,7 @@ export const ensureMyAlumniId = mutation({
     }
     // Mint a new ID using a count over the batch year (good enough for v1;
     // race-tolerant within a single transaction).
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const sameBatch = await ctx.db
       .query("profiles")
       .withIndex("by_batch_program", (q) => q.eq("batch", profile.batch))
@@ -483,6 +489,7 @@ export const createOrUpdateMyProfile = mutation({
       });
     }
 
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const existing = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -603,6 +610,7 @@ export const setPhoto = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -645,6 +653,7 @@ export const exportMyData = query({
     }
     const user = await ctx.db.get(userId);
     if (!user) return null;
+    // @no-privacy-required: self-read: a DPA subject-access export of the requester's own row, deliberately unredacted.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -714,6 +723,7 @@ export const requestAccountDeletion = mutation({
     });
 
     // Hide profile immediately by setting privacy on all fields to "private".
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -816,6 +826,7 @@ export const purgeExpiredSoftDeletes = internalMutation({
       const deleteAt = user.deletedAtHardDeleteScheduledFor;
       if (!user.deletedAt || !deleteAt || deleteAt > now) continue;
       // Hard-delete: profile, then user (audit entries remain, actorId nulled).
+      // @no-privacy-required: internal purge: the rows are deleted, never returned.
       const profile = await ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", user._id))

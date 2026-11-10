@@ -358,6 +358,7 @@ export const browse = query({
   handler: async (ctx, { onlyStrong }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
+    // @no-privacy-required: self-read: the viewer's own profile, used to score job matches.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -416,6 +417,7 @@ export const myAvailableCount = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return 0;
+    // @no-privacy-required: self-read: the authenticated user's own row.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -1169,6 +1171,7 @@ export const respondToInterview = mutation({
     });
 
     const job = await ctx.db.get(app.jobId);
+    // @no-privacy-required: self-read: the responder's own displayName, for the employer's notification.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

@@ -2,105 +2,138 @@
 /**
  * lint-privacy-usage.mjs (Story 1.3)
  *
- * Scans web/convex/**\/*.ts for reads of the `profiles` table and flags any
- * file that does not subsequently call `applyPrivacy` OR carry a
- * `// @no-privacy-required: <reason>` annotation above the offending line.
+ * Every read of the `profiles` table must either pass its rows through
+ * `applyPrivacy` in the same exported handler, or carry a
+ * `// @no-privacy-required: <reason>` annotation saying why it does not.
  *
- * A "read" is either a direct `ctx.db.query("profiles")` or a call to one of
- * the shared indexed readers in convex/helpers/indexedReads.ts, which return
+ * Two things about this lint were wrong for a long time, and both made it
+ * report success while barely looking:
+ *
+ * 1. It matched line by line. A Convex chain is usually split as
+ *    `ctx.db\n  .query("profiles")\n  .collect()`, so it was examining 23 of
+ *    76 reads -- 30% -- and printing "no violations" the whole time.
+ *
+ * 2. The `applyPrivacy` exemption was file-scoped. One call anywhere in a
+ *    module exempted every read in it, and convex/profiles.ts has fifteen.
+ *    The exemption is now scoped to the enclosing exported function, so an
+ *    unrelated handler in the same file cannot vouch for a read.
+ *
+ * A "read" is a direct `ctx.db.query("profiles")` or a call to one of the
+ * shared indexed readers in convex/helpers/indexedReads.ts, which hand back
  * the same raw documents. Without the second form, moving a query behind a
- * helper would silently drop the file out of this check — the helper is a
- * performance change, not a privacy exemption.
+ * helper would silently drop it out of this check -- a helper is a performance
+ * change, not a privacy exemption.
  *
- * Exits with code 1 if any unsafe usage is found.
+ * Exits 1 if any read is neither covered nor explained, and also if the
+ * matcher cannot account for every `.query("profiles")` in the source, since
+ * a lint that has gone blind would otherwise pass.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { globSync } from "glob";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
-
-const files = globSync("convex/**/*.ts", {
-  cwd: root,
-  ignore: ["convex/_generated/**", "convex/tests/**"],
-});
-
-/**
- * Call sites that hand back raw `profiles` documents. Keep in sync with the
- * exports of convex/helpers/indexedReads.ts that return profile rows.
- */
-const PROFILE_READS = ['ctx.db.query("profiles")', "verifiedProfiles(ctx)"];
-
-/** The helper's own definition is where the annotation legitimately lives. */
-const HELPER_MODULE = "convex/helpers/indexedReads.ts";
-
-const isProfileRead = (line) => PROFILE_READS.some((frag) => line.includes(frag));
+import {
+  convexFiles,
+  readSource,
+  maskComments,
+  findTableQueries,
+  exportBlocks,
+  blockContaining,
+  hasMarkerAbove,
+  lineAt,
+  assertAccountedFor,
+} from "./lib/convex-source.mjs";
 
 const ANNOTATION = "// @no-privacy-required:";
 
-/**
- * Is the annotation somewhere in the contiguous comment block directly above?
- *
- * This used to look only at the single preceding line, which made the check
- * brittle in a way that mattered: adding any other comment above the query --
- * a `@full-scan-ok` reason, say -- silently detached the annotation and failed
- * the build, so the codebase grew notes like "the lint annotation must sit on
- * the immediately-prior line". Walking the block is still tight, because the
- * walk stops at the first line that is not a comment or blank: an annotation
- * can never be claimed across intervening code.
- */
-function hasAnnotationAbove(lines, index) {
-  for (let j = index - 1; j >= 0; j -= 1) {
-    const t = (lines[j] ?? "").trim();
-    if (t.startsWith(ANNOTATION)) return true;
-    if (t === "" || t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
-    return false;
-  }
-  return false;
-}
+/** Helpers that return raw profile documents. Keep in sync with indexedReads. */
+const HELPER_READS = [/verifiedProfiles\s*\(/g];
+
+/** The helpers' own definitions, where the annotation legitimately lives. */
+const HELPER_MODULE = "convex/helpers/indexedReads.ts";
 
 const violations = [];
+let examined = 0;
+let expected = 0;
+let coveredByHelper = 0;
+let annotated = 0;
 
-for (const rel of files) {
-  const abs = join(root, rel);
-  const src = readFileSync(abs, "utf8");
+for (const rel of convexFiles()) {
+  const src = readSource(rel);
+  const masked = maskComments(src);
   const lines = src.split("\n");
-  // Importing the helper is not itself a read; only calling it is.
-  const queriesProfiles = lines.some(
-    (line) => isProfileRead(line) && !line.trimStart().startsWith("import"),
-  );
-  if (!queriesProfiles) continue;
+  const blocks = exportBlocks(src, masked);
 
-  const hasApplyPrivacy = src.includes("applyPrivacy(");
-  if (hasApplyPrivacy) continue;
+  // Independent, deliberately dumber count as a cross-check on the matcher:
+  // any `.query("profiles")` at all, however the chain is written.
+  expected += (masked.match(/\.query\(\s*"profiles"\s*\)/g) ?? []).length;
 
-  // Check each `ctx.db.query("profiles")` line for an inline override
-  let unsafeFound = false;
-  lines.forEach((line, i) => {
-    if (!isProfileRead(line)) return;
-    if (line.trimStart().startsWith("import")) return;
-    if (rel.replaceAll("\\", "/") === HELPER_MODULE) return;
-    if (hasAnnotationAbove(lines, i)) return;
-    violations.push(`${rel}:${i + 1}  profiles read without applyPrivacy or @no-privacy-required annotation`);
-    unsafeFound = true;
-  });
+  if (rel === HELPER_MODULE) {
+    // Count its own reads so the totals balance, but it is the definition
+    // site: its module docstring carries the justification.
+    examined += (masked.match(/\.query\(\s*"profiles"\s*\)/g) ?? []).length;
+    coveredByHelper += 1;
+    continue;
+  }
 
-  if (!unsafeFound) continue;
+  const reads = findTableQueries(src, masked)
+    .filter((q) => q.table === "profiles")
+    .map((q) => ({ offset: q.offset, line: q.line, kind: "query" }));
+  examined += reads.length;
+
+  for (const re of HELPER_READS) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(masked)) !== null) {
+      const line = lineAt(src, m.index);
+      // Importing a helper is not calling it.
+      if ((lines[line - 1] ?? "").trimStart().startsWith("import")) continue;
+      reads.push({ offset: m.index, line, kind: "helper" });
+    }
+  }
+
+  for (const read of reads) {
+    if (hasMarkerAbove(lines, read.line, ANNOTATION)) {
+      annotated += 1;
+      continue;
+    }
+    const block = blockContaining(blocks, read.offset);
+    // A justification that covers the whole handler belongs above the handler,
+    // which is where the existing ones in convex/profiles.ts already sit. Only
+    // looking above the read itself made those read as unannotated and would
+    // have had us duplicate the comment inside the body.
+    if (block && hasMarkerAbove(lines, block.line, ANNOTATION)) {
+      annotated += 1;
+      continue;
+    }
+    const scope = block ? masked.slice(block.start, block.end) : "";
+    if (block && scope.includes("applyPrivacy(")) continue;
+
+    const where = block ? `in ${block.name}()` : "at module scope";
+    violations.push(
+      `${rel}:${read.line}  profiles read ${where} with no applyPrivacy in that handler and no @no-privacy-required`,
+    );
+  }
 }
 
+assertAccountedFor({
+  label: "lint:privacy",
+  examined,
+  expected,
+  detail: 'ctx.db.query("profiles") call sites',
+});
+
 if (violations.length > 0) {
-  console.error("Privacy lint failed — every ctx.db.query(\"profiles\") must apply the privacy helper.");
+  console.error(
+    'Privacy lint failed - every read of "profiles" must apply the privacy helper or explain itself.',
+  );
   console.error("");
   for (const v of violations) console.error("  " + v);
   console.error("");
-  console.error("Fix: import { applyPrivacy } from \"./helpers/privacy\"; and filter results,");
-  console.error("or annotate the line above with `// @no-privacy-required: <reason>`.");
+  console.error('Fix: import { applyPrivacy } from "./helpers/privacy"; and filter the rows');
+  console.error("in the same handler, or annotate the line above with");
+  console.error(`\`${ANNOTATION} <reason>\`.`);
   process.exit(1);
 }
 
 console.log(
-  `lint:privacy OK — scanned ${files.length} files for ${PROFILE_READS.length} read forms, no violations.`,
+  `lint:privacy OK - examined ${examined} of ${expected} profiles reads, ` +
+    `${annotated} annotated, ${coveredByHelper} helper module(s), 0 unexplained.`,
 );

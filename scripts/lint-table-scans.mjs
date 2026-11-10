@@ -26,89 +26,56 @@
  * Bounded reads are not flagged. `.take(n)`, `.first()` and `.paginate()` stop
  * early, so their cost does not grow with the table even without an index.
  *
- * Note on matching: the query chain is usually split across lines, as
- * `ctx.db\n  .query("x")\n  .withIndex(...)`, so this works over the whole file
- * rather than line by line — a per-line version of this check saw only 67 of
- * the 308 call sites and reported a clean run. Comments are masked out first so
- * that prose mentioning `.collect()` cannot be mistaken for code.
+ * Matching lives in scripts/lib/convex-source.mjs, shared with the other
+ * convex lints. The first version of this script had its own line-by-line
+ * matcher and saw 67 of 308 call sites while reporting a clean run; that is
+ * why there is now one matcher instead of three.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { globSync } from "glob";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, "..");
-
-const files = globSync("convex/**/*.ts", {
-  cwd: root,
-  ignore: ["convex/_generated/**", "convex/tests/**"],
-});
+import {
+  convexFiles,
+  readSource,
+  maskComments,
+  findTableQueries,
+  hasMarkerAbove,
+  assertAccountedFor,
+} from "./lib/convex-source.mjs";
 
 const LINE_OK = "// @full-scan-ok:";
 const FILE_OK = "// @full-scan-file-ok:";
 
-/**
- * Blank out comments, keeping every other byte at its original offset so line
- * numbers and the windows below stay accurate.
- */
-function maskComments(src) {
-  const out = src.split("");
-  let i = 0;
-  let inLine = false;
-  let inBlock = false;
-  while (i < src.length) {
-    const two = src.slice(i, i + 2);
-    if (!inLine && !inBlock && two === "//") {
-      inLine = true;
-    } else if (!inLine && !inBlock && two === "/*") {
-      inBlock = true;
-    }
-    if (inLine && src[i] === "\n") {
-      inLine = false;
-    } else if (inBlock && two === "*/") {
-      out[i] = " ";
-      out[i + 1] = " ";
-      i += 2;
-      inBlock = false;
-      continue;
-    }
-    if ((inLine || inBlock) && src[i] !== "\n") out[i] = " ";
-    i += 1;
-  }
-  return out.join("");
-}
-
-const QUERY = /ctx\.db\s*\.\s*query\(\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)/g;
-
 const violations = [];
+let examined = 0;
+let expected = 0;
 let indexed = 0;
 let bounded = 0;
 let justified = 0;
 
-for (const rel of files) {
-  const src = readFileSync(join(root, rel), "utf8");
+for (const rel of convexFiles()) {
+  const src = readSource(rel);
   const masked = maskComments(src);
   const lines = src.split("\n");
   const fileExempt = lines.slice(0, 40).some((l) => l.trim().startsWith(FILE_OK));
 
-  QUERY.lastIndex = 0;
-  let m;
-  while ((m = QUERY.exec(masked)) !== null) {
-    const table = m[1];
-    const end = m.index + m[0].length;
+  // Independent, deliberately dumber count as a cross-check on the matcher:
+  // any `.query("…")` at all, however the chain is written.
+  expected += (masked.match(/\.query\(\s*"[A-Za-z_][A-Za-z0-9_]*"\s*\)/g) ?? []).length;
+
+  for (const q of findTableQueries(src, masked)) {
+    examined += 1;
 
     // The chain runs to the end of its statement. Stop at the next `;` or at
     // the next query in the same statement — a Promise.all array holds several
     // chains before the one semicolon that closes it.
-    const semi = masked.indexOf(";", end);
-    const nextQuery = masked.slice(end).search(/ctx\.db\s*\.\s*query\(/);
-    const stops = [
-      semi === -1 ? masked.length : semi,
-      nextQuery === -1 ? masked.length : end + nextQuery,
-    ];
-    const window = masked.slice(end, Math.min(...stops));
+    const semi = masked.indexOf(";", q.end);
+    const nextQuery = masked.slice(q.end).search(/ctx\.db\s*\.\s*query\(/);
+    const window = masked.slice(
+      q.end,
+      Math.min(
+        semi === -1 ? masked.length : semi,
+        nextQuery === -1 ? masked.length : q.end + nextQuery,
+      ),
+    );
 
     const firstOf = (...needles) => {
       let best = Infinity;
@@ -133,40 +100,27 @@ for (const rel of files) {
     }
     if (unboundedAt === Infinity) continue; // no terminator in this statement
 
-    if (fileExempt) {
+    if (fileExempt || hasMarkerAbove(lines, q.line, LINE_OK)) {
       justified += 1;
       continue;
     }
 
-    const line = src.slice(0, m.index).split("\n").length;
-    // Accept the annotation anywhere in the comment block directly above.
-    let j = line - 2;
-    let ok = false;
-    while (j >= 0) {
-      const t = (lines[j] ?? "").trim();
-      if (t.startsWith(LINE_OK)) {
-        ok = true;
-        break;
-      }
-      if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t === "") {
-        j -= 1;
-        continue;
-      }
-      break;
-    }
-    if (ok) {
-      justified += 1;
-      continue;
-    }
     violations.push(
-      `${rel}:${line}  unbounded read of "${table}" without an index or a reason`,
+      `${rel}:${q.line}  unbounded read of "${q.table}" without an index or a reason`,
     );
   }
 }
 
+assertAccountedFor({
+  label: "lint:scans",
+  examined,
+  expected,
+  detail: "ctx.db.query() call sites",
+});
+
 if (violations.length > 0) {
   console.error(
-    "Table-scan lint failed — an unbounded read must either use an index or say why it does not.",
+    "Table-scan lint failed - an unbounded read must either use an index or say why it does not.",
   );
   console.error("");
   for (const v of violations) console.error("  " + v);
@@ -178,5 +132,6 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `lint:scans OK — ${indexed} indexed, ${bounded} bounded, ${justified} scans justified, 0 unexplained.`,
+  `lint:scans OK - examined ${examined} of ${expected} query sites: ` +
+    `${indexed} indexed, ${bounded} bounded, ${justified} scans justified, 0 unexplained.`,
 );

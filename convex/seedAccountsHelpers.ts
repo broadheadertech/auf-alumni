@@ -202,6 +202,7 @@ export const upsertDemoAccount = internalMutation({
 
     if (args.alumnaProfile) {
       const p = args.alumnaProfile;
+      // @no-privacy-required: seeder writing demo rows; there is no viewer.
       const existingProfile = await ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", userId))

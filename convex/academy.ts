@@ -76,6 +76,7 @@ export const listPublished = query({
     const out = [];
     for (const c of filtered) {
       const inst = await ctx.db.get(c.instructorId);
+      // @no-privacy-required: returns the instructor's displayName and slug only, both always included.
       const instProfile = await ctx.db
         .query("profiles")
         .withIndex("by_userId", (q) => q.eq("userId", c.instructorId))
@@ -124,6 +125,7 @@ export const getCourseBySlug = query({
     lessons.sort((a, b) => a.order - b.order);
 
     const inst = await ctx.db.get(course.instructorId);
+    // @no-privacy-required: returns the instructor's displayName and slug only, both always included.
     const instProfile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", course.instructorId))
@@ -368,6 +370,7 @@ export const createCourse = mutation({
         message: "Sign in required",
       });
     }
+    // @no-privacy-required: self-read: gate check on the author's own verification status.
     const profile = await ctx.db
       .query("profiles")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

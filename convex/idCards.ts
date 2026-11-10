@@ -13,6 +13,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { api } from "./_generated/api";
 import { requireRole, type Role } from "./helpers/rbac";
+import { withAuditLog } from "./helpers/audit";
 
 const STAFF: Role[] = ["verifier", "moderator", "super-admin"];
 const ACTIVATION_TTL_MS = 30 * 60 * 1000;
@@ -175,7 +176,7 @@ export const verify = mutation({
 
 export const bindUid = mutation({
   args: { alumnaId: v.string(), uid: v.string() },
-  handler: async (ctx, { alumnaId, uid }) => {
+  handler: withAuditLog(async (ctx, { alumnaId, uid }) => {
     await requireRole(ctx, STAFF);
     if (!uid.trim()) throw new Error("UID required");
     const salt = randomHex(8);
@@ -205,31 +206,54 @@ export const bindUid = mutation({
         updatedAt: now,
       });
     }
-  },
+    // The UID itself is never logged -- only a salted hash of it is stored at
+    // all, and the audit trail does not need the number to be useful.
+    return {
+      action: "bind-id-card",
+      target: { type: "idCard", id: alumnaId },
+      metadata: { rebound: !!existing },
+    };
+  }),
 });
 
 export const setStatus = mutation({
   args: { alumnaId: v.string(), status: v.string() },
-  handler: async (ctx, { alumnaId, status }) => {
+  handler: withAuditLog(async (ctx, { alumnaId, status }) => {
     await requireRole(ctx, STAFF);
     const card = await ctx.db
       .query("idCards")
       .withIndex("by_alumna", (q) => q.eq("alumnaId", alumnaId))
       .unique();
     if (card) await ctx.db.patch(card._id, { status, updatedAt: Date.now() });
-  },
+    return {
+      action: "set-id-card-status",
+      target: { type: "idCard", id: alumnaId },
+      metadata: { status, previousStatus: card?.status ?? null, found: !!card },
+    };
+  }),
 });
 
 export const reissue = mutation({
   args: { alumnaId: v.string() },
-  handler: async (ctx, { alumnaId }) => {
+  handler: withAuditLog(async (ctx, { alumnaId }) => {
     await requireRole(ctx, STAFF);
     const card = await ctx.db
       .query("idCards")
       .withIndex("by_alumna", (q) => q.eq("alumnaId", alumnaId))
       .unique();
     if (card) await ctx.db.delete(card._id);
-  },
+    // This destroys the row, so the audit entry is the only remaining record
+    // that the card existed and what state it was in.
+    return {
+      action: "reissue-id-card",
+      target: { type: "idCard", id: alumnaId },
+      metadata: {
+        destroyed: !!card,
+        previousStatus: card?.status ?? null,
+        hadPin: !!card?.pinHash,
+      },
+    };
+  }),
 });
 
 export const issueActivation = mutation({
@@ -238,7 +262,7 @@ export const issueActivation = mutation({
     alumnaName: v.string(),
     email: v.string(),
   },
-  handler: async (ctx, { alumnaId, alumnaName, email }) => {
+  handler: withAuditLog(async (ctx, { alumnaId, alumnaName, email }) => {
     await requireRole(ctx, STAFF);
     const now = Date.now();
 
@@ -274,8 +298,17 @@ export const issueActivation = mutation({
       activationUrl: url,
     });
 
-    return { token, url };
-  },
+    // The token is a live single-use credential for setting the card's PIN.
+    // It goes in `result`, which is returned to the caller and not stored;
+    // putting it in `metadata` would persist a working credential into a table
+    // every admin can read. The trail records who was sent one, not what it is.
+    return {
+      action: "issue-id-card-activation",
+      target: { type: "idCard", id: alumnaId },
+      metadata: { email, cardCreated: !existing, expiresAt: now + ACTIVATION_TTL_MS },
+      result: { token, url },
+    };
+  }),
 });
 
 export const activate = mutation({

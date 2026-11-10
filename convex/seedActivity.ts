@@ -185,11 +185,13 @@ async function activeNames(ctx: MutationCtx, kind: "area" | "status" | "skill") 
 export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // @no-privacy-required: seeder writing demo rows; there is no viewer.
     const base = await ctx.db
       .query("profiles")
       .withIndex("by_slug", (q) => q.eq("slug", "lara-mendoza"))
       .unique();
     if (!base) return { status: "run `npx convex run seed:run` first" };
+    // @no-privacy-required: seeder writing demo rows; there is no viewer.
     const marker = await ctx.db
       .query("profiles")
       .withIndex("by_slug", (q) => q.eq("slug", MARKER_SLUG))

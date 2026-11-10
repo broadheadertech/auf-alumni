@@ -467,6 +467,7 @@ export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
     // Idempotency guard
+    // @no-privacy-required: seeder writing demo rows; there is no viewer.
     const marker = await ctx.db
       .query("profiles")
       .withIndex("by_slug", (q) => q.eq("slug", "lara-mendoza"))
