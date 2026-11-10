@@ -31,7 +31,7 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { AdminPage } from "@/components/auf/admin-ui";
 import { Pagination } from "@/components/auf/Pagination";
-import { usePagination } from "@/lib/use-pagination";
+import { useServerPagination } from "@/lib/use-pagination";
 
 const FILTER_KEYS = [
   "q",
@@ -103,11 +103,19 @@ export default function AdminDirectoryPage() {
     [values, batch.key, programKey],
   );
 
+  // The pager owns the page number and so supplies the cursor; it has to be
+  // declared before the query that consumes it.
+  const pager = useServerPagination<DirectoryCardData>({
+    resetKey: Object.values(values).join("|"),
+  });
+
   // Hold queries until the taxonomy loads when a college filter depends on it.
   const waitForTaxonomy = !!values.college && !values.program && !taxonomy.ready;
   const convexResult = useQuery(
     api.directory.list,
-    waitForTaxonomy ? "skip" : { ...filters, pageSize: 60 },
+    waitForTaxonomy
+      ? "skip"
+      : { ...filters, pageSize: pager.pageSize, cursor: pager.cursor },
   );
   const counts = useQuery(api.directory.count, waitForTaxonomy ? "skip" : filters);
   const suggestions = useQuery(
@@ -221,9 +229,9 @@ export default function AdminDirectoryPage() {
 
   const loading = convexResult === undefined;
 
-  const paged = usePagination(convexCards, {
-    resetKey: Object.values(values).join("|"),
-  });
+  // convexCards is this page's rows, not the whole result set — the server
+  // sliced it. `total` is what the list query can serve for these filters.
+  const paged = pager.withRows(convexCards, convexResult?.total);
 
   // counts.total is the whole verified roster, which the fetched page does not
   // know about — keep it in the summary so a filtered view still says what it
@@ -270,7 +278,7 @@ export default function AdminDirectoryPage() {
             <div className="py-16 text-center text-sm text-muted-foreground">
               Loading directory…
             </div>
-          ) : convexCards.length === 0 ? (
+          ) : paged.total === 0 ? (
             <EmptyState
               message="No alumni match these filters."
               description="Try widening your search."
@@ -290,7 +298,7 @@ export default function AdminDirectoryPage() {
               ))}
             </div>
           )}
-          {!loading && convexCards.length > 0 && (
+          {!loading && paged.total > 0 && (
             <Pagination state={paged} noun="alumnus" plural={pagedPlural} />
           )}
         </div>

@@ -260,6 +260,17 @@ export const list = query({
       page: pageWithPrivacy,
       isDone: next >= matched.length,
       continueCursor: String(next),
+      /**
+       * How many rows this query can serve for these filters.
+       *
+       * Deliberately not `count.matched`: that one substring-matches every
+       * verified profile, while this query narrows through the search index
+       * first, which is token-prefix. So with a search term `count.matched`
+       * can be larger than anything this query will ever return, and a
+       * paginator built on it would offer pages that come back empty. This
+       * number is the one the page numbers have to agree with.
+       */
+      total: matched.length,
     };
   },
 });

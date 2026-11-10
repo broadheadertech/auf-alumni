@@ -152,3 +152,105 @@ export function pageWindow(
  * sort a page you have not read. That is a larger change than this one and
  * belongs on its own.
  */
+
+/**
+ * Server-paged variant: the rows for the current page come from a query, not
+ * from an array the page already holds.
+ *
+ * usePagination() above slices an array that has been fetched in full, which
+ * is the right trade for screens that filter and sort in memory. It is the
+ * wrong trade when the query has a row cap, because then the rows past the cap
+ * are not merely slow to reach — they are unreachable. /admin/directory asked
+ * for 60 rows and paginated those, so with 71 verified alumni eleven of them
+ * could not be shown on any page.
+ *
+ * Two phases, because the cursor has to exist before the query that needs it:
+ *
+ *   const pager = useServerPagination({ resetKey });
+ *   const result = useQuery(api.x.list, { cursor: pager.cursor, ... });
+ *   const paged = pager.withRows(result?.page, result?.total);
+ *
+ * `withRows` is a plain function, not a hook, so this does not depend on call
+ * order beyond the one hook. It returns the same `Pagination<T>` shape as
+ * usePagination, so <Pagination> renders unchanged.
+ *
+ * `total` must be the count the query itself can serve for the current
+ * filters — see the note on `total` in convex/directory.ts for why a separate
+ * count query is not interchangeable with it.
+ */
+export type ServerPager<T> = {
+  /** Pass to the query as its `cursor` argument. */
+  cursor: string;
+  /** Pass to the query as its `pageSize` argument. */
+  pageSize: number;
+  withRows: (rows: T[] | undefined, total: number | undefined) => Pagination<T>;
+};
+
+export function useServerPagination<T>(options?: {
+  pageSize?: number;
+  /** Changing this sends the reader back to page one. Same contract as above. */
+  resetKey?: string;
+}): ServerPager<T> {
+  const [pageSize, setPageSizeState] = useState(
+    options?.pageSize ?? DEFAULT_PAGE_SIZE,
+  );
+  const [rawPage, setRawPage] = useState(1);
+  const [lastKey, setLastKey] = useState(options?.resetKey ?? "");
+
+  const resetKey = options?.resetKey ?? "";
+
+  // Derive rather than correct in an effect, as usePagination does. This also
+  // happens to be what keeps the cursor honest: a filter change resets to page
+  // one before the query runs, so the query is never asked for an offset that
+  // the new filters have already invalidated.
+  const keyChanged = resetKey !== lastKey;
+  if (keyChanged) {
+    setLastKey(resetKey);
+    setRawPage(1);
+  }
+
+  const page = keyChanged ? 1 : Math.max(1, rawPage);
+
+  const setPage = useCallback((next: number) => setRawPage(Math.max(1, next)), []);
+  const setPageSize = useCallback((size: number) => {
+    setPageSizeState(size);
+    // Row 30 is on a different page at 25/page than at 100/page.
+    setRawPage(1);
+  }, []);
+
+  return {
+    // The server reads this as a row offset.
+    cursor: String((page - 1) * pageSize),
+    pageSize,
+    withRows: (rows, total) => {
+      // While the count is in flight there is nothing to clamp against, and
+      // clamping to 1 would bounce the reader back to page one on every page
+      // change — asking for page 4 is what made the count undefined.
+      const known = total !== undefined;
+      const totalPages = known
+        ? Math.max(1, Math.ceil(total / pageSize))
+        : Math.max(1, page);
+      const shown = Math.min(page, totalPages);
+      const pageItems = rows ?? [];
+      // Before the first response, report this page's own row count rather
+      // than 0, so the summary does not read "Showing 1–0 of 0" mid-flight.
+      const reportedTotal = known ? total : pageItems.length;
+
+      return {
+        pageItems,
+        page: shown,
+        setPage,
+        pageSize,
+        setPageSize,
+        totalPages,
+        total: reportedTotal,
+        from: reportedTotal === 0 ? 0 : (shown - 1) * pageSize + 1,
+        to: Math.min(shown * pageSize, reportedTotal),
+        next: () => setRawPage((p) => Math.min(p + 1, totalPages)),
+        prev: () => setRawPage((p) => Math.max(1, p - 1)),
+        hasPrev: shown > 1,
+        hasNext: shown < totalPages,
+      };
+    },
+  };
+}
