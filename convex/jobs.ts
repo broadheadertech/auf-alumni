@@ -582,6 +582,7 @@ async function resolveMyOrgs(ctx: QueryCtx, userId: Id<"users">) {
     roles.has("partner-employer-admin") ||
     roles.has("verified-employer-admin");
   if (!isAdmin && !isEmployer) return [];
+  // @full-scan-ok: employerOrgs membership is tested against the adminUserIds array, and Convex cannot index an array's elements
   const orgs = await ctx.db.query("employerOrgs").collect();
   return isAdmin
     ? orgs

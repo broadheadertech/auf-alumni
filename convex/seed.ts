@@ -17,6 +17,8 @@
  * lists. Not called by any cron — strictly manual.
  */
 
+// @full-scan-file-ok: seeder: reading every row is the job
+
 import { internalMutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 

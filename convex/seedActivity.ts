@@ -21,6 +21,8 @@
  * marker alumna exists. `clearDemo:run` removes it along with the rest.
  */
 
+// @full-scan-file-ok: seeder and backfill migrations: reading every row is the job
+
 import { v } from "convex/values";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";

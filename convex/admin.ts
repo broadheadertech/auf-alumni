@@ -387,6 +387,7 @@ export const listUsers = query({
     await requireRole(ctx, ["super-admin"]);
     // Filter the whole table, then cap. (Capping first meant search only saw
     // the first 100 users, so results disagreed with what's in the database.)
+    // @full-scan-ok: admin user list with no filter applied; the fix here is pagination, not an index
     const rows = await ctx.db.query("users").collect();
     const q = (search ?? "").trim().toLowerCase();
     const filtered = rows.filter((u) => {

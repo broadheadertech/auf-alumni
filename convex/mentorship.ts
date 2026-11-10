@@ -14,6 +14,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { applyPrivacy, type ViewerContext } from "./helpers/privacy";
 import { loadCollegeClassifier } from "./helpers/taxonomy";
+import { hiddenUserIds, verifiedProfiles } from "./helpers/indexedReads";
 
 // @no-audit-required: user self-service.
 export const requestMentorship = mutation({
@@ -349,10 +350,14 @@ export const availableMentors = query({
     // Resolve the viewer's context ONCE. Calling getViewerContext per profile
     // meant two extra reads per mentor (~70 round trips on this page), which
     // is what made the list take seconds to appear.
-    const [profiles, users, collegeFor, myRequests, sentLinks, recvLinks, myProfile] =
+    const [profiles, viewer, blocked, collegeFor, myRequests, sentLinks, recvLinks, myProfile] =
       await Promise.all([
-        ctx.db.query("profiles").collect(),
-        ctx.db.query("users").collect(),
+        verifiedProfiles(ctx),
+        // Was ctx.db.query("users").collect() for two things: the viewer's own
+        // roles, which is a single get, and the set of switched-off accounts,
+        // which the indexes answer directly. Neither needed the whole table.
+        ctx.db.get(me),
+        hiddenUserIds(ctx),
         loadCollegeClassifier(ctx),
         ctx.db
           .query("mentorshipRequests")
@@ -379,15 +384,12 @@ export const availableMentors = query({
       ...sentLinks.map((c) => c.recipientId as string),
       ...recvLinks.map((c) => c.requesterId as string),
     ]);
-    const viewerRoles = new Set(users.find((u) => u._id === me)?.roles ?? []);
+    const viewerRoles = new Set(viewer?.roles ?? []);
     const viewerIsAlumnus =
       !!myProfile ||
       ["alumnus", "current-student", "super-admin", "verifier", "moderator"].some((r) =>
         viewerRoles.has(r),
       );
-    const blocked = new Set(
-      users.filter((u) => u.suspendedAt || u.deletedAt).map((u) => u._id as string),
-    );
     // Latest request per mentor wins.
     const statusByMentor = new Map<string, string>();
     for (const r of [...myRequests].sort((a, b) => a.createdAt - b.createdAt)) {
@@ -399,7 +401,6 @@ export const availableMentors = query({
     const out: MentorCard[] = [];
 
     for (const p of profiles) {
-      if (p.verifiedAt == null) continue;
       if (p.userId === me) continue;
       if (blocked.has(p.userId as string)) continue;
       if (!isOpenToMentorship(p.openTo)) continue;

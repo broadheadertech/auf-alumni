@@ -22,6 +22,7 @@ import { requireRole } from "./helpers/rbac";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { loadCollegeClassifier, type CollegeClassifier } from "./helpers/taxonomy";
 import { accountStatusOf, type AccountStatusView } from "./accountStatus";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 const ADMIN_ROLES = ["verifier", "moderator", "super-admin"] as const;
 const DAY = 86_400_000;
@@ -136,9 +137,13 @@ type Loaded = {
 async function loadMarketplace(ctx: QueryCtx): Promise<Loaded> {
   const [profiles, orgs, jobs, applications, collegeFor] = await Promise.all([
     // @no-privacy-required: admin-only aggregate/roster view; requireRole(ADMIN_ROLES) runs first in every caller.
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     ctx.db.query("profiles").collect(),
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     ctx.db.query("employerOrgs").collect(),
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     ctx.db.query("jobs").collect(),
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     ctx.db.query("applications").collect(),
     loadCollegeClassifier(ctx),
   ]);
@@ -448,7 +453,9 @@ export const overview = query({
         .query("verificationSubmissions")
         .withIndex("by_status_time", (q) => q.eq("status", "pending-review"))
         .collect(),
+      // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
       ctx.db.query("events").collect(),
+      // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
       ctx.db.query("rsvps").collect(),
     ]);
 
@@ -652,12 +659,14 @@ export type EventView = {
 
 async function buildEvents(ctx: QueryCtx, now: number, only?: Id<"events">): Promise<EventView[]> {
   const [events, rsvps, profiles] = await Promise.all([
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     only ? ctx.db.get(only).then((e) => (e ? [e] : [])) : ctx.db.query("events").collect(),
+    // @full-scan-ok: admin aggregate dashboard: these are whole-table counts, so the scan is the answer
     ctx.db.query("rsvps").collect(),
     // @no-privacy-required: admin-only audience reach count (batch/program only); requireRole in callers.
-    ctx.db.query("profiles").collect(),
+    verifiedProfiles(ctx),
   ]);
-  const verified = profiles.filter((p) => p.verifiedAt != null);
+  const verified = profiles;
   return events
     .map((e) => {
       const batches = e.audienceFilter?.batches ?? [];

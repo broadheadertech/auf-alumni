@@ -433,7 +433,7 @@ export const inbox = query({
       .collect();
     const asB = await ctx.db
       .query("connections")
-      .filter((q) => q.eq(q.field("userB"), me))
+      .withIndex("by_userB", (q) => q.eq("userB", me))
       .collect();
     const connected = [...asA, ...asB].filter(
       (r) => r.status === "connected",
@@ -491,7 +491,7 @@ export const myCounts = query({
       .collect();
     const asB = await ctx.db
       .query("connections")
-      .filter((q) => q.eq(q.field("userB"), me))
+      .withIndex("by_userB", (q) => q.eq("userB", me))
       .collect();
     const all = [...asA, ...asB];
     return {

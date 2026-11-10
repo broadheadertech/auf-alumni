@@ -188,6 +188,7 @@ export async function maybeInsertNotification(
 export const scheduleWeeklyDigests = internalMutation({
   args: {},
   handler: async (ctx) => {
+    // @full-scan-ok: digest fan-out, where every user is the intended audience
     const users = await ctx.db.query("users").collect();
     let scheduled = 0;
     for (const u of users) {

@@ -193,6 +193,7 @@ export const universal = query({
     const roles = meUser.roles ?? [];
     const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
     const isAlumnus = roles.some((r) => ALUMNI_ROLES.includes(r));
+    // @full-scan-ok: employerOrgs membership is tested against the adminUserIds array, and Convex cannot index an array's elements
     const myOrgs = await ctx.db.query("employerOrgs").collect();
     const myEmployerOrgs = myOrgs.filter((o) => (o.adminUserIds ?? []).includes(meUser._id));
     const isEmployer = myEmployerOrgs.length > 0;
@@ -626,6 +627,7 @@ export const scopesFor = query({
     const roles = meUser.roles ?? [];
     const isAdmin = roles.some((r) => ADMIN_ROLES.includes(r));
     const encoded = encodeURIComponent(needle);
+    // @full-scan-ok: employerOrgs membership is tested against the adminUserIds array, and Convex cannot index an array's elements
     const orgs = await ctx.db.query("employerOrgs").collect();
     const isEmployer = orgs.some((o) => (o.adminUserIds ?? []).includes(meUser._id as Id<"users">));
 

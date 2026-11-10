@@ -39,6 +39,29 @@ const HELPER_MODULE = "convex/helpers/indexedReads.ts";
 
 const isProfileRead = (line) => PROFILE_READS.some((frag) => line.includes(frag));
 
+const ANNOTATION = "// @no-privacy-required:";
+
+/**
+ * Is the annotation somewhere in the contiguous comment block directly above?
+ *
+ * This used to look only at the single preceding line, which made the check
+ * brittle in a way that mattered: adding any other comment above the query --
+ * a `@full-scan-ok` reason, say -- silently detached the annotation and failed
+ * the build, so the codebase grew notes like "the lint annotation must sit on
+ * the immediately-prior line". Walking the block is still tight, because the
+ * walk stops at the first line that is not a comment or blank: an annotation
+ * can never be claimed across intervening code.
+ */
+function hasAnnotationAbove(lines, index) {
+  for (let j = index - 1; j >= 0; j -= 1) {
+    const t = (lines[j] ?? "").trim();
+    if (t.startsWith(ANNOTATION)) return true;
+    if (t === "" || t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) continue;
+    return false;
+  }
+  return false;
+}
+
 const violations = [];
 
 for (const rel of files) {
@@ -60,8 +83,7 @@ for (const rel of files) {
     if (!isProfileRead(line)) return;
     if (line.trimStart().startsWith("import")) return;
     if (rel.replaceAll("\\", "/") === HELPER_MODULE) return;
-    const prev = lines[i - 1] ?? "";
-    if (prev.trim().startsWith("// @no-privacy-required:")) return;
+    if (hasAnnotationAbove(lines, i)) return;
     violations.push(`${rel}:${i + 1}  profiles read without applyPrivacy or @no-privacy-required annotation`);
     unsafeFound = true;
   });

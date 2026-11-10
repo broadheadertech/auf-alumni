@@ -17,6 +17,7 @@ import {
   query,
   type QueryCtx,
 } from "./_generated/server";
+import { verifiedProfiles } from "./helpers/indexedReads";
 
 const POST_MAX_LENGTH = 2000;
 const FEED_PAGE_DEFAULT = 30;
@@ -206,11 +207,10 @@ export const generateWorkAnniversaryPosts = internalMutation({
     const todayYear = now.getUTCFullYear();
 
     // @no-privacy-required: internal cron iterating verified profiles to generate auto-posts; no viewer-facing read.
-    const profiles = await ctx.db.query("profiles").collect();
+    const profiles = await verifiedProfiles(ctx);
     let posted = 0;
 
     for (const p of profiles) {
-      if (p.verifiedAt == null) continue;
       const user = await ctx.db.get(p.userId);
       if (!user || user.deletedAt || user.suspendedAt) continue;
 

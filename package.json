@@ -10,7 +10,7 @@
     "lint": "eslint",
     "lint:privacy": "node scripts/lint-privacy-usage.mjs",
     "lint:admin": "node scripts/lint-admin-mutations.mjs",
-    "lint:all": "npm run lint && npm run lint:privacy && npm run lint:admin && npm run lint:tours",
+    "lint:all": "npm run lint && npm run lint:privacy && npm run lint:admin && npm run lint:tours && npm run lint:scans",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,7 +19,8 @@
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy",
-    "lint:tours": "node scripts/lint-tour-anchors.mjs"
+    "lint:tours": "node scripts/lint-tour-anchors.mjs",
+    "lint:scans": "node scripts/lint-table-scans.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.4",

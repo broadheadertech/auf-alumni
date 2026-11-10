@@ -41,11 +41,16 @@ export const listRoster = query({
     // small and this avoids an N+1 across every profile.
     const [profiles, applications, jobs, orgs, collegeFor, users] = await Promise.all([
       // @no-privacy-required: admin-only roster; requireRole(verifier/moderator/super-admin) above.
+      // @full-scan-ok: admin roster view joining four whole tables in one pass; paginating it is the real fix
       ctx.db.query("profiles").collect(),
+      // @full-scan-ok: admin roster view joining four whole tables in one pass; paginating it is the real fix
       ctx.db.query("applications").collect(),
+      // @full-scan-ok: admin roster view joining four whole tables in one pass; paginating it is the real fix
       ctx.db.query("jobs").collect(),
+      // @full-scan-ok: admin roster view joining four whole tables in one pass; paginating it is the real fix
       ctx.db.query("employerOrgs").collect(),
       loadCollegeClassifier(ctx),
+      // @full-scan-ok: admin roster view joining four whole tables in one pass; paginating it is the real fix
       ctx.db.query("users").collect(),
     ]);
     const userById = new Map(users.map((u) => [u._id, u]));
@@ -136,9 +141,13 @@ export const getAlumna = query({
     const collegeFor = await loadCollegeClassifier(ctx);
 
     // This alumna's applications, joined to job + employer.
-    const apps = (await ctx.db.query("applications").collect()).filter(
-      (a) => a.applicantId === p.userId,
-    );
+    // by_applicant_time is (applicantId, createdAt), so an eq on the first
+    // field is a valid prefix -- this used to read every application in the
+    // system to show one person's handful.
+    const apps = await ctx.db
+      .query("applications")
+      .withIndex("by_applicant_time", (q) => q.eq("applicantId", p.userId))
+      .collect();
     const applications = [];
     for (const a of apps) {
       const job = await ctx.db.get(a.jobId);

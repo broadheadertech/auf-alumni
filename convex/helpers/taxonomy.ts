@@ -30,7 +30,9 @@ export type CollegeClassifier = (program: string) => string;
 /** Load the taxonomy once per request and return a program → college function. */
 export async function loadCollegeClassifier(ctx: QueryCtx): Promise<CollegeClassifier> {
   const [colleges, programs] = await Promise.all([
+    // @full-scan-ok: small reference table, read once per request to build a program-to-college lookup
     ctx.db.query("colleges").collect(),
+    // @full-scan-ok: small reference table, read once per request to build a program-to-college lookup
     ctx.db.query("programs").collect(),
   ]);
   const collegeName = new Map(colleges.map((c) => [c._id, c.name]));

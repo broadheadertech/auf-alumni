@@ -259,6 +259,9 @@ export default defineSchema({
   })
     .index("by_status_time", ["status", "createdAt"])
     .index("by_email_time", ["email", "createdAt"])
+    // The admin list is every enquiry, newest first, with no status filter --
+    // so the leading `status` field of by_status_time is in the way.
+    .index("by_created", ["createdAt"])
     .searchIndex("search_message", {
       searchField: "message",
       filterFields: ["status", "topic"],
@@ -346,7 +349,16 @@ export default defineSchema({
   })
     .index("by_requester_status", ["requesterId", "status"])
     .index("by_recipient_status", ["recipientId", "status"])
-    .index("by_pair", ["userA", "userB"]),
+    .index("by_pair", ["userA", "userB"])
+    // A connection is stored once, with the lower id as userA, so finding
+    // everyone connected to a user means walking both sides. by_pair handles
+    // the userA side, but userB is not a usable prefix of it, so that half was
+    // a full table scan on every connections read.
+    .index("by_userB", ["userB"])
+    // The other three all need a specific user to narrow on. The analytics
+    // dashboard wants every connected pair in the system, which none of them
+    // can answer, so it was reading the whole table.
+    .index("by_status", ["status"]),
 
   // ---------- blocks (Epic 5 Story 5.4) ----------
   blocks: defineTable({

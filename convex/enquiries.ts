@@ -119,6 +119,7 @@ export const submit = mutation({
 
     // Tell the admins in-app…
     const meta = TOPIC_META[args.topic as Topic];
+    // @full-scan-ok: admin fan-out by role, and roles is an array Convex cannot index
     const users = await ctx.db.query("users").collect();
     for (const u of users) {
       const roles = u.roles ?? [];
@@ -152,8 +153,13 @@ export const adminList = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, [...ADMIN_ROLES]);
-    const rows = await ctx.db.query("enquiries").collect();
-    rows.sort((a, b) => b.createdAt - a.createdAt);
+    // by_created gives newest-first straight from the index, so neither the
+    // full read nor the in-memory sort is needed.
+    const rows = await ctx.db
+      .query("enquiries")
+      .withIndex("by_created")
+      .order("desc")
+      .collect();
     const handlers = new Map<Id<"users">, string>();
     const out = [];
     for (const r of rows) {

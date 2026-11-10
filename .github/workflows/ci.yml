@@ -59,6 +59,9 @@ jobs:
       - name: Tour-anchor lint
         run: npm run lint:tours
 
+      - name: Table-scan lint
+        run: npm run lint:scans
+
       - name: Tests
         run: npm run test
 

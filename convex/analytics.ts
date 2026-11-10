@@ -18,6 +18,7 @@ export const dashboard = query({
     const now = Date.now();
     const monthAgo = now - 30 * MS_PER_DAY;
 
+    // @full-scan-ok: aggregate MAU count over every account
     const users = await ctx.db.query("users").collect();
     // The unverified rows were only ever filtered back out, so read past them.
     // @no-privacy-required: aggregate counts only; no per-alumna field reaches the response.
@@ -31,23 +32,38 @@ export const dashboard = query({
       (u) => (u.lastLoginAt ?? 0) > monthAgo && !u.deletedAt,
     ).length;
 
-    const employers = await ctx.db.query("employerOrgs").collect();
-    const activePartners = employers.filter(
-      (e) => e.tier === "partner" && !e.suspendedAt,
-    ).length;
-    const activeVerified = employers.filter(
-      (e) => e.tier === "verified" && !e.suspendedAt,
-    ).length;
+    // Only these two tiers are counted, so read the two tiers rather than
+    // every employer. Suspension is not in the index, so it stays a predicate
+    // over the much smaller result.
+    const [partnerOrgs, verifiedOrgs] = await Promise.all([
+      ctx.db
+        .query("employerOrgs")
+        .withIndex("by_tier", (q) => q.eq("tier", "partner"))
+        .collect(),
+      ctx.db
+        .query("employerOrgs")
+        .withIndex("by_tier", (q) => q.eq("tier", "verified"))
+        .collect(),
+    ]);
+    const activePartners = partnerOrgs.filter((e) => !e.suspendedAt).length;
+    const activeVerified = verifiedOrgs.filter((e) => !e.suspendedAt).length;
 
-    const jobs = await ctx.db.query("jobs").collect();
-    const openJobs = jobs.filter((j) => j.status === "published").length;
+    // by_status_time is (status, createdAt); an eq on status alone is a prefix.
+    const openJobs = (
+      await ctx.db
+        .query("jobs")
+        .withIndex("by_status_time", (q) => q.eq("status", "published"))
+        .collect()
+    ).length;
     const applicationsThisMonth = await ctx.db
       .query("applications")
       .withIndex("by_created", (q) => q.gt("createdAt", monthAgo))
       .collect();
 
-    const connections = await ctx.db.query("connections").collect();
-    const connectedRows = connections.filter((c) => c.status === "connected");
+    const connectedRows = await ctx.db
+      .query("connections")
+      .withIndex("by_status", (q) => q.eq("status", "connected"))
+      .collect();
     const avgConnections =
       verifiedRows.length === 0
         ? 0
@@ -79,8 +95,12 @@ export const publicStats = query({
     );
     const verifiedAlumni = verified.length;
 
-    const jobs = await ctx.db.query("jobs").collect();
-    const openJobs = jobs.filter((j) => j.status === "published").length;
+    const openJobs = (
+      await ctx.db
+        .query("jobs")
+        .withIndex("by_status_time", (q) => q.eq("status", "published"))
+        .collect()
+    ).length;
 
     const countrySet = new Set<string>();
     for (const p of verified) {

@@ -134,6 +134,7 @@ export const listEmployers = query({
           .query("employerOrgs")
           .withIndex("by_tier", (q) => q.eq("tier", tier))
           .collect()
+      // @full-scan-ok: the unfiltered branch of an admin list is every employer by definition; the tier-filtered branch above does use by_tier
       : await ctx.db.query("employerOrgs").collect();
     return rows.map((r) => ({
       _id: r._id,
@@ -176,6 +177,7 @@ export const listMine = query({
       roles.has("verified-employer-admin");
     if (!isAdmin && !isEmployer) return [];
 
+    // @full-scan-ok: the unfiltered branch of an admin list is every employer by definition; the tier-filtered branch above does use by_tier
     const rows = await ctx.db.query("employerOrgs").collect();
     const visible = isAdmin
       ? rows

@@ -69,7 +69,7 @@ export const listPrograms = query({
   args: {},
   handler: async (ctx) => {
     const [colleges, programs] = await Promise.all([
-      ctx.db.query("colleges").collect(),
+      ctx.db.query("colleges").withIndex("by_sort").collect(),
       ctx.db.query("programs").withIndex("by_sort").collect(),
     ]);
     const collegeById = new Map(colleges.map((c) => [c._id, c]));
@@ -142,6 +142,7 @@ export const createCollege = mutation({
   handler: withAuditLog(async (ctx, { name, shortName }) => {
     await requireRole(ctx, [...ADMIN_ROLES]);
     const clean = cleanName(name);
+    // @full-scan-ok: duplicate-name check over an admin-managed reference table of a few dozen rows
     const existing = await ctx.db.query("colleges").collect();
     if (
       existing.some(
@@ -230,6 +231,7 @@ export const createProgram = mutation({
       throw new ConvexError({ code: "not-found", message: "College not found" });
     }
     const clean = cleanName(name);
+    // @full-scan-ok: duplicate-name check over an admin-managed reference table of a few dozen rows
     const existing = await ctx.db.query("programs").collect();
     if (
       existing.some(

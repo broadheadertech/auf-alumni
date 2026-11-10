@@ -148,10 +148,10 @@ export const list = query({
           .query("employerOrgs")
           .withIndex("by_tier", (q) => q.eq("tier", tier))
           .collect()
+      // @full-scan-ok: the unfiltered branch is every employer by definition; the tier-filtered branch above does use by_tier
       : await ctx.db.query("employerOrgs").collect();
 
-    // One-shot profile fetch for company-name counting. The lint annotation
-    // must sit on the immediately-prior line.
+    // One-shot profile fetch for company-name counting.
     // @no-privacy-required: public-tier fields only; aggregate counts.
     const profiles = await verifiedProfiles(ctx);
     const alumniByCompany = new Map<string, number>();

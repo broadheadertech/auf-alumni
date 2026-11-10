@@ -52,6 +52,7 @@ export const adminPages = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, [...ADMIN_ROLES]);
+    // @full-scan-ok: one row per CMS page, so the table is bounded by the number of pages
     const rows = await ctx.db.query("siteContent").collect();
     return Object.entries(PAGES).map(([key, page]) => ({
       key,

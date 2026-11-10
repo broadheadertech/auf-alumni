@@ -129,6 +129,7 @@ async function inboxOf(ctx: QueryCtx | MutationCtx, userId: Id<"users">) {
 
 /** Employer org names a user administers (labels employer threads). */
 async function employerLabel(ctx: QueryCtx, userId: Id<"users">): Promise<string | null> {
+  // @full-scan-ok: employerOrgs membership is tested against the adminUserIds array, and Convex cannot index an array's elements
   const orgs = await ctx.db.query("employerOrgs").collect();
   const names = orgs.filter((o) => (o.adminUserIds ?? []).includes(userId)).map((o) => o.name);
   return names.length ? names.join(", ") : null;
