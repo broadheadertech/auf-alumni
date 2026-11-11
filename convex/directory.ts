@@ -16,6 +16,7 @@ import { query, type QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { applyPrivacy, getViewerContext } from "./helpers/privacy";
 import { hiddenUserIds, verifiedProfiles } from "./helpers/indexedReads";
+import { resolveOffset, resolvePageSize } from "./helpers/paging";
 
 /**
  * The roster is members-only.
@@ -223,11 +224,9 @@ export const list = query({
   handler: async (ctx, args) => {
     await requireMember(ctx);
     const filters = toFilters(args);
-    const pageSize = Math.min(
-      args.pageSize ?? PAGE_SIZE_DEFAULT,
-      PAGE_SIZE_MAX,
-    );
-    const offset = Math.max(0, Number(args.cursor ?? 0) || 0);
+    // Same contract as every other paged query; see convex/helpers/paging.ts.
+    const pageSize = resolvePageSize(args.pageSize ?? PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX);
+    const offset = resolveOffset(args.cursor);
 
     // Filter the full set, then page. (Previously this paged raw rows first and
     // filtered after, so filtered results could be silently truncated and

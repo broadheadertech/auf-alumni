@@ -21,6 +21,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { EmptyState } from "@/components/auf/EmptyState";
+import { Pagination } from "@/components/auf/Pagination";
+import { useServerPagination } from "@/lib/use-pagination";
 import { AdminPage } from "@/components/auf/admin-ui";
 
 type DSR = {
@@ -59,7 +61,15 @@ function formatDuration(ms: number): string {
 }
 
 export default function CompliancePage() {
-  const dsrs = useQuery(api.compliance.listDataSubjectRequests, { limit: 50 });
+  // Declared before the query because it supplies the cursor. DSR volume is
+  // low today, but the list used to cap at 50 with no pagination, so the
+  // fifty-first rights request would simply not have appeared -- on the one
+  // screen that exists to evidence the NFR33 response SLA.
+  const dsrPager = useServerPagination<DSR>();
+  const dsrs = useQuery(api.compliance.listDataSubjectRequests, {
+    pageSize: dsrPager.pageSize,
+    cursor: dsrPager.cursor,
+  });
   const incidents = useQuery(api.compliance.listIncidents);
   const startIncident = useMutation(api.compliance.startIncident);
   const markNotified = useMutation(api.compliance.markIncidentNotified);
@@ -91,7 +101,8 @@ export default function CompliancePage() {
     );
   }
 
-  const dsrList = dsrs as DSR[];
+  const dsrList = dsrs.page as DSR[];
+  const pagedDsrs = dsrPager.withRows(dsrList, dsrs.total);
   const incidentList = incidents as Incident[];
 
   const handleStart = async () => {
@@ -304,7 +315,7 @@ export default function CompliancePage() {
         </h2>
         <Card>
           <CardContent className="p-0">
-            {dsrList.length === 0 ? (
+            {pagedDsrs.total === 0 ? (
               <div className="p-6 text-sm text-muted-foreground">
                 No DSR requests yet.
               </div>
@@ -321,7 +332,7 @@ export default function CompliancePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dsrList.map((r) => (
+                  {pagedDsrs.pageItems.map((r) => (
                     <tr
                       key={r._id}
                       className="border-b border-border last:border-0"
@@ -365,6 +376,7 @@ export default function CompliancePage() {
             )}
           </CardContent>
         </Card>
+        <Pagination state={pagedDsrs} noun="request" />
       </section>
 
       {/* New-incident dialog */}

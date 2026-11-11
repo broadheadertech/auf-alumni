@@ -16,6 +16,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
+import { pageOf } from "./helpers/paging";
 
 export const approveVerification = mutation({
   args: { submissionId: v.id("verificationSubmissions") },
@@ -320,40 +321,57 @@ export const verificationQueue = query({
 /**
  * Audit log viewer with filters (Story 6.5).
  */
+/**
+ * Upper bound on the audit window a single request will read.
+ *
+ * auditEntries is the fastest-growing table in the schema -- every audited
+ * mutation appends to it and nothing prunes it -- so an unbounded read here
+ * would get slower every day the system is used. 5000 rows is far more than
+ * anyone pages through, and `atCap` tells the client when it was hit.
+ */
+const AUDIT_SCAN_CAP = 5000;
+
 export const auditLog = query({
   args: {
     actionType: v.optional(v.string()),
     targetType: v.optional(v.string()),
     fromMs: v.optional(v.number()),
     toMs: v.optional(v.number()),
-    limit: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    /** Offset cursor from a previous page's `continueCursor`. */
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, ["verifier", "moderator", "super-admin"]);
+    // Newest-first window. Bounded, because this is the fastest-growing table
+    // in the schema -- every audited mutation adds a row forever.
+    const candidates = args.actionType
+      ? await ctx.db
+          .query("auditEntries")
+          .withIndex("by_action_time", (q) => q.eq("actionType", args.actionType!))
+          .order("desc")
+          .take(AUDIT_SCAN_CAP)
+      : await ctx.db
+          .query("auditEntries")
+          .order("desc")
+          .take(AUDIT_SCAN_CAP);
+    const atCap = candidates.length >= AUDIT_SCAN_CAP;
 
-    let rows;
-    if (args.actionType) {
-      rows = await ctx.db
-        .query("auditEntries")
-        .withIndex("by_action_time", (q) => q.eq("actionType", args.actionType!))
-        .order("desc")
-        .take(args.limit ?? 100);
-    } else {
-      rows = await ctx.db
-        .query("auditEntries")
-        .order("desc")
-        .take(args.limit ?? 100);
-    }
-
+    // Filter the whole window BEFORE paging it. These three ran after the
+    // take, so asking for targetType "event" returned only the event rows
+    // that happened to fall inside the newest page -- not the matching ones.
+    let matched = candidates;
     if (args.targetType) {
-      rows = rows.filter((r) => r.targetType === args.targetType);
+      matched = matched.filter((r) => r.targetType === args.targetType);
     }
     if (args.fromMs) {
-      rows = rows.filter((r) => r.timestamp >= args.fromMs!);
+      matched = matched.filter((r) => r.timestamp >= args.fromMs!);
     }
     if (args.toMs) {
-      rows = rows.filter((r) => r.timestamp <= args.toMs!);
+      matched = matched.filter((r) => r.timestamp <= args.toMs!);
     }
+    const sliced = pageOf(matched, args);
+    const rows = sliced.page;
 
     // Attach actor email for display (with self-fetched IDs to be DB-safe)
     const out: Array<
@@ -367,7 +385,20 @@ export const auditLog = query({
       }
       out.push({ ...r, actorEmail: email });
     }
-    return out;
+    return {
+      ...sliced,
+      // `out` is `sliced.page` with actor emails attached, same order, same
+      // length — so the counts above still describe it.
+      page: out,
+      /**
+       * True when the bounded window was full, so `total` counts the newest
+       * AUDIT_SCAN_CAP entries rather than the whole table. The UI says so
+       * rather than presenting the window as the complete history -- showing a
+       * truncated audit trail as if it were everything is the failure this
+       * query already had.
+       */
+      atCap,
+    };
   },
 });
 
@@ -381,9 +412,11 @@ export const listUsers = query({
     role: v.optional(v.string()),
     /** "active" | "suspended" | "deleted" */
     status: v.optional(v.string()),
-    limit: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    /** Offset cursor from a previous page's `continueCursor`. */
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, { search, role, status, limit }) => {
+  handler: async (ctx, { search, role, status, pageSize: rawPageSize, cursor }) => {
     await requireRole(ctx, ["super-admin"]);
     // Filter the whole table, then cap. (Capping first meant search only saw
     // the first 100 users, so results disagreed with what's in the database.)
@@ -398,15 +431,22 @@ export const listUsers = query({
       if (status && state !== status) return false;
       return true;
     });
-    return filtered.slice(0, Math.min(Math.max(limit ?? 200, 1), 1000)).map((u) => ({
-      _id: u._id,
-      email: u.email ?? null,
-      name: u.name ?? null,
-      roles: u.roles ?? [],
-      suspendedAt: u.suspendedAt ?? null,
-      deletedAt: u.deletedAt ?? null,
-      createdAt: u.createdAt ?? null,
-    }));
+    // The page used to ask for 500 and paginate those in the browser, so a
+    // 501st account could not be reached and the summary line reported the
+    // cap as the total.
+    const sliced = pageOf(filtered, { cursor, pageSize: rawPageSize });
+    return {
+      ...sliced,
+      page: sliced.page.map((u) => ({
+        _id: u._id,
+        email: u.email ?? null,
+        name: u.name ?? null,
+        roles: u.roles ?? [],
+        suspendedAt: u.suspendedAt ?? null,
+        deletedAt: u.deletedAt ?? null,
+        createdAt: u.createdAt ?? null,
+      })),
+    };
   },
 });
 

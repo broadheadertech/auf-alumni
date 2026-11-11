@@ -43,6 +43,7 @@ import type * as helpers_audit from "../helpers/audit.js";
 import type * as helpers_experience from "../helpers/experience.js";
 import type * as helpers_indexedReads from "../helpers/indexedReads.js";
 import type * as helpers_links from "../helpers/links.js";
+import type * as helpers_paging from "../helpers/paging.js";
 import type * as helpers_privacy from "../helpers/privacy.js";
 import type * as helpers_rbac from "../helpers/rbac.js";
 import type * as helpers_registry from "../helpers/registry.js";
@@ -112,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/experience": typeof helpers_experience;
   "helpers/indexedReads": typeof helpers_indexedReads;
   "helpers/links": typeof helpers_links;
+  "helpers/paging": typeof helpers_paging;
   "helpers/privacy": typeof helpers_privacy;
   "helpers/rbac": typeof helpers_rbac;
   "helpers/registry": typeof helpers_registry;

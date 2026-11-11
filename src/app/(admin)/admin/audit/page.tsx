@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/auf/EmptyState";
-import { AdminPage } from "@/components/auf/admin-ui";
+import { AdminPage, Callout } from "@/components/auf/admin-ui";
+import { Pagination } from "@/components/auf/Pagination";
+import { useServerPagination } from "@/lib/use-pagination";
 
 type AuditRow = {
   _id: string;
@@ -47,10 +49,18 @@ export default function AdminAuditPage() {
   const actionType = sp.get("action") || undefined;
   const targetType = sp.get("target") || undefined;
 
+  // Declared before the query because it supplies the cursor. The filters
+  // feed the reset key, so changing one returns to page 1 rather than leaving
+  // the reader on a page the new filter may not have.
+  const pager = useServerPagination<AuditRow>({
+    resetKey: `${actionType ?? ""}|${targetType ?? ""}`,
+  });
+
   const rows = useQuery(api.admin.auditLog, {
     actionType,
     targetType,
-    limit: 200,
+    pageSize: pager.pageSize,
+    cursor: pager.cursor,
   });
 
   const setParam = (key: string, value: string) => {
@@ -78,7 +88,8 @@ export default function AdminAuditPage() {
     );
   }
 
-  const list = rows as AuditRow[];
+  const list = rows.page as AuditRow[];
+  const paged = pager.withRows(list, rows.total);
 
   return (
     <AdminPage
@@ -136,7 +147,7 @@ export default function AdminAuditPage() {
 
       <Card className="mt-4">
         <CardContent className="p-0">
-          {list.length === 0 ? (
+          {paged.total === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No audit entries match the current filters.
             </div>
@@ -152,7 +163,7 @@ export default function AdminAuditPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map((row) => (
+                {paged.pageItems.map((row) => (
                   <tr
                     key={row._id}
                     className="border-b border-border last:border-0 hover:bg-muted/30 cursor-pointer"
@@ -193,6 +204,16 @@ export default function AdminAuditPage() {
           )}
         </CardContent>
       </Card>
+
+      <Pagination state={paged} noun="entry" plural="entries" />
+
+      {rows.atCap && (
+        <Callout tone="warn">
+          Showing the most recent {paged.total.toLocaleString()} entries. The
+          log holds more than one page of history can reach — narrow by action
+          or target to see older records.
+        </Callout>
+      )}
     </AdminPage>
   );
 }

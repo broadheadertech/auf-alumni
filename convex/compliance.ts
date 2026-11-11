@@ -14,6 +14,7 @@ import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireRole } from "./helpers/rbac";
 import { withAuditLog } from "./helpers/audit";
+import { pageOf } from "./helpers/paging";
 
 const ACK_SLA_BUSINESS_DAYS = 5;
 const FULFIL_SLA_BUSINESS_DAYS = 15;
@@ -25,23 +26,31 @@ const MS_PER_HOUR = 60 * 60 * 1000;
 // DSR (Data Subject Requests)
 // ============================================================================
 
+/** Upper bound on the DSR window a single request will read. See AUDIT_SCAN_CAP. */
+const DSR_SCAN_CAP = 5000;
+
 export const listDataSubjectRequests = query({
   args: {
     type: v.optional(v.string()),
-    limit: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    /** Offset cursor from a previous page's `continueCursor`. */
+    cursor: v.optional(v.union(v.string(), v.null())),
   },
-  handler: async (ctx, { type, limit }) => {
+  handler: async (ctx, { type, pageSize: rawPageSize, cursor }) => {
     await requireRole(ctx, ["super-admin"]);
-    const rows = type
+    const candidates = type
       ? await ctx.db
           .query("dataSubjectRequests")
           .withIndex("by_type_time", (q) => q.eq("type", type))
           .order("desc")
-          .take(limit ?? 100)
+          .take(DSR_SCAN_CAP)
       : await ctx.db
           .query("dataSubjectRequests")
           .order("desc")
-          .take(limit ?? 100);
+          .take(DSR_SCAN_CAP);
+    const atCap = candidates.length >= DSR_SCAN_CAP;
+    const sliced = pageOf(candidates, { cursor, pageSize: rawPageSize });
+    const rows = sliced.page;
 
     const now = Date.now();
     const out = [];
@@ -60,7 +69,13 @@ export const listDataSubjectRequests = query({
         overdueFulfil,
       });
     }
-    return out;
+    return {
+      ...sliced,
+      // `out` is `sliced.page` decorated with SLA flags, same order and
+      // length, so the counts above still describe it.
+      page: out,
+      atCap,
+    };
   },
 });
 

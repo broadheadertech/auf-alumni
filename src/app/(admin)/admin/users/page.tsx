@@ -33,7 +33,7 @@ import { EmptyState } from "@/components/auf/EmptyState";
 import { FilterPanel, type FilterField } from "@/components/auf/FilterPanel";
 import { BulkActionBar, SelectCheckbox } from "@/components/auf/BulkActionBar";
 import { Pagination } from "@/components/auf/Pagination";
-import { usePagination } from "@/lib/use-pagination";
+import { useServerPagination } from "@/lib/use-pagination";
 import { cn } from "@/lib/utils";
 import {
   AdminPage,
@@ -89,11 +89,20 @@ type BulkDialog =
 export default function AdminUsersPage() {
   const me = useQuery(api.users.getMe);
   const { values, set, reset, restored } = useUrlFilters("admin-users", FILTER_KEYS);
+
+  // Declared before the query because it supplies the cursor. Filters feed the
+  // reset key: narrowing the list while sitting on page 5 should put you back
+  // on page 1, not on an empty page.
+  const pager = useServerPagination<UserRow>({
+    resetKey: `${values.q}|${values.role}|${values.status}`,
+  });
+
   const liveUsers = useQuery(api.admin.listUsers, {
     search: values.q || undefined,
     role: values.role || undefined,
     status: values.status || undefined,
-    limit: 500,
+    pageSize: pager.pageSize,
+    cursor: pager.cursor,
   });
   // Keep showing the previous results while a new filter loads, so typing in
   // search doesn't swap the page for a spinner (and drop input focus).
@@ -119,14 +128,13 @@ export default function AdminUsersPage() {
   const [bulkReason, setBulkReason] = useState("");
   const [bulkRole, setBulkRole] = useState(GRANTABLE_ROLES[0]);
 
-  const list = (users ?? []) as UserRow[];
+  // `list` is this page of accounts, not the whole filtered set -- the server
+  // sliced it. Selection is therefore per-page, which is also the honest
+  // behaviour: "select all" cannot mean rows the client has never seen.
+  const list = (users?.page ?? []) as UserRow[];
   const selection = useBulkSelection(list.map((u) => u._id));
 
-  // Filters feed the reset key: narrowing the list while sitting on page 5
-  // should put you back on page 1, not on an empty page.
-  const paged = usePagination(list, {
-    resetKey: `${values.q}|${values.role}|${values.status}`,
-  });
+  const paged = pager.withRows(list, users?.total);
 
 
   const fields: FilterField[] = [
@@ -336,7 +344,7 @@ export default function AdminUsersPage() {
           </tr>
         </THead>
         <tbody>
-          {list.length === 0 ? (
+          {paged.total === 0 ? (
             <NoRows colSpan={5}>No users match these filters.</NoRows>
           ) : (
             paged.pageItems.map((u) => {
